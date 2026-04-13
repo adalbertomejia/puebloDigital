@@ -1,16 +1,15 @@
-# Pueblo Digital MVP v3 (Admin-first)
+# Pueblo Digital MVP v3 (Admin-first + vistas operativas)
 
-## Enfoque correcto del MVP
-Esta versión corrige el error de la v2:
+## Enfoque del MVP
 - **No hay CRUD público de ciudadanos**
 - La operación principal ocurre en **Django Admin**
 - El acceso se controla con **auth de Django**
-- La arquitectura está preparada para **roles por comité**
+- El modelo E/R base está creado y se complementa con **vistas personalizadas por rol** para tareas diarias
 
 ## Apps incluidas
 - `core` → Ciudadano y base común
 - `comites` → Comite, UsuarioApp (roles)
-- `agua` → Toma
+- `agua` → Toma + vista operativa de tomas (`/agua/tomas/`)
 - `tesoreria` → Pago, Cooperacion
 - `operacion` → Junta, AsistenciaJunta, Faena, RegistroFaena, Actividad, ActividadArchivo
 
@@ -27,13 +26,12 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+## Uso recomendado
+1. Captura/edición completa de datos desde `/admin/`.
+2. Trabajo operativo diario por rol desde vistas específicas:
+   - Agua: `/agua/tomas/`
+3. Escalar nuevas pantallas según necesidad de cada comité (delegado, secretaría, tesorería, etc.).
+
 ## Nota
 No se incluyen migraciones generadas a propósito.
 Genera las migraciones en tu entorno local para evitar inconsistencias.
-
-## Próximo paso recomendado
-Implementar en v4:
-- restricciones reales por comité en admin (`get_queryset`, `save_model`, `formfield_for_foreignkey`)
-- dashboards / vistas de consulta (no CRUD)
-- perfil ciudadano consolidado
-# puebloDigital

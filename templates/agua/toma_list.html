@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Tomas de Agua</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f6f8fb; color: #1f2937; }
+    .card { max-width: 1100px; margin: 0 auto; background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .btn { padding: .55rem .9rem; border-radius: 8px; text-decoration: none; border: 1px solid #d1d5db; color: #111827; background: #fff; }
+    .btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    form { display: grid; grid-template-columns: 1fr 180px auto; gap: .75rem; margin-bottom: 1rem; }
+    input, select, button { padding: .55rem .7rem; border-radius: 8px; border: 1px solid #d1d5db; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: .6rem .4rem; text-align: left; font-size: .95rem; }
+    th { background: #f9fafb; }
+    .tag { padding: .2rem .5rem; border-radius: 999px; font-size: .8rem; background: #eef2ff; }
+    .muted { color: #6b7280; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Panel operativo de agua</h1>
+
+  {% if not tiene_acceso %}
+    <p>No tienes acceso a esta vista. Solicita un perfil activo del comité de agua.</p>
+    <a class="btn" href="/">Volver al inicio</a>
+  {% else %}
+    <p class="muted">Vista pensada para uso diario de delegado/secretaría con acceso rápido a consulta y edición.</p>
+    <div class="actions">
+      <a class="btn" href="/">Inicio</a>
+      <a class="btn" href="/admin/agua/toma/">Ir al admin de tomas</a>
+      <a class="btn btn-primary" href="/admin/agua/toma/add/">Nueva toma</a>
+    </div>
+
+    <form method="get">
+      <input type="search" name="q" value="{{ filtro_q }}" placeholder="Buscar por ciudadano, CURP o # toma">
+      <select name="estado">
+        <option value="">Todos los estados</option>
+        {% for value, label in estados %}
+          <option value="{{ value }}" {% if filtro_estado == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Filtrar</button>
+    </form>
+
+    <table>
+      <thead>
+      <tr>
+        <th># toma</th>
+        <th>Ciudadano</th>
+        <th>CURP</th>
+        <th>Estado</th>
+        <th>Costo anual</th>
+        <th></th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for toma in tomas %}
+        <tr>
+          <td>{{ toma.numero_toma }}</td>
+          <td>{{ toma.ciudadano.nombre_completo }}</td>
+          <td>{{ toma.ciudadano.curp }}</td>
+          <td><span class="tag">{{ toma.get_estado_display }}</span></td>
+          <td>${{ toma.costo_anual }}</td>
+          <td><a href="/admin/agua/toma/{{ toma.id }}/change/">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="6" class="muted">No hay resultados para los filtros actuales.</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+</body>
+</html>
