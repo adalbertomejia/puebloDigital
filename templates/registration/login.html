@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Iniciar sesión</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; color: #222; }
+    .card { max-width: 420px; margin: 4rem auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    input { width: 100%; padding: .7rem; margin: .4rem 0 1rem; border: 1px solid #ccc; border-radius: 8px; }
+    button { width: 100%; padding: .8rem; background: #0d6efd; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .errorlist { color: #b00020; }
+    a { color: #0d6efd; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Iniciar sesión</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Entrar</button>
+    </form>
+    <p><a href="/">Volver al inicio</a></p>
+  </div>
+</body>
+</html>
