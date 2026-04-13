@@ -7,27 +7,45 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; color: #222; }
     .card { max-width: 900px; margin: 0 auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
-    .btn { display: inline-block; padding: .8rem 1.2rem; border-radius: 8px; text-decoration: none; margin-right: .5rem; }
+    .btn { display: inline-block; padding: .8rem 1.2rem; border-radius: 8px; text-decoration: none; margin-right: .5rem; margin-top: .5rem; }
     .btn-primary { background: #0d6efd; color: white; }
     .btn-secondary { background: #6c757d; color: white; }
+    .btn-light { border: 1px solid #d1d5db; color: #111827; }
     code { background: #f1f1f1; padding: .15rem .35rem; border-radius: 6px; }
+    ul { line-height: 1.55; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Pueblo Digital MVP — Admin First</h1>
-    <p>Esta versión <strong>no expone CRUD público</strong>. La operación del sistema está diseñada para realizarse principalmente desde <strong>Django Admin</strong>, con autenticación y roles por comité.</p>
+    <p>El modelo E/R ya está listo. La base operativa sigue en <strong>Django Admin</strong> y se habilitan <strong>vistas personalizadas por rol</strong> para tareas diarias que necesitan mejor UX/UI.</p>
+
     <p>Flujo recomendado:</p>
     <ol>
       <li>Crear superusuario con <code>python manage.py createsuperuser</code></li>
       <li>Entrar por <a href="/login/">/login/</a> o directamente <a href="/admin/">/admin/</a></li>
-      <li>Administrar ciudadanos, comités, pagos, cooperaciones, faenas, juntas y tomas desde el panel</li>
+      <li>Usar admin para captura completa y vistas personalizadas para operación recurrente</li>
     </ol>
 
     {% if user.is_authenticated %}
       <p>Sesión activa como <strong>{{ user.username }}</strong>.</p>
       <a class="btn btn-primary" href="/admin/">Ir al panel admin</a>
       <a class="btn btn-secondary" href="/logout/">Cerrar sesión</a>
+
+      {% if user.is_superuser %}
+        <h3>Vistas operativas</h3>
+        <a class="btn btn-light" href="/agua/tomas/">Panel de tomas de agua</a>
+      {% elif perfiles %}
+        <h3>Tus perfiles activos</h3>
+        <ul>
+          {% for perfil in perfiles %}
+            <li>{{ perfil.comite.nombre }} — {{ perfil.get_rol_display }}</li>
+          {% endfor %}
+        </ul>
+        <a class="btn btn-light" href="/agua/tomas/">Panel de tomas de agua</a>
+      {% else %}
+        <p>No tienes perfiles activos en comités todavía.</p>
+      {% endif %}
     {% else %}
       <a class="btn btn-primary" href="/login/">Iniciar sesión</a>
       <a class="btn btn-secondary" href="/admin/">Entrar a admin</a>
