@@ -1,5 +1,7 @@
 from django.contrib import admin
-from django.db.models import Count, Q
+from django.core.exceptions import ValidationError
+from django.db.models import Count, Q, Sum
+from django.forms.models import BaseInlineFormSet
 
 from .models import (
     Actividad,
@@ -29,8 +31,33 @@ class JuntaAdmin(admin.ModelAdmin):
     inlines = [AsistenciaJuntaInline]
 
 
+class RegistroFaenaInlineFormSet(BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data"):
+                continue
+            data = form.cleaned_data
+            if not data or data.get("DELETE"):
+                continue
+
+            genera_adeudo = data.get("genera_adeudo")
+            monto_adeudo = data.get("monto_adeudo")
+
+            if genera_adeudo and (monto_adeudo is None or monto_adeudo <= 0):
+                raise ValidationError(
+                    "Si el registro genera adeudo, el monto de adeudo debe ser mayor a 0."
+                )
+
+            if not genera_adeudo and monto_adeudo and monto_adeudo > 0:
+                raise ValidationError(
+                    "No puedes capturar monto de adeudo si 'genera adeudo' está desactivado."
+                )
+
+
 class RegistroFaenaInline(admin.TabularInline):
     model = RegistroFaena
+    formset = RegistroFaenaInlineFormSet
     extra = 0
     autocomplete_fields = ["ciudadano"]
     show_change_link = True
@@ -53,8 +80,10 @@ class FaenaAdmin(admin.ModelAdmin):
         "total_registros",
         "total_asistencias",
         "total_adeudos",
+        "monto_total_adeudos",
     )
     list_filter = ("estado", "comite", "fecha")
+    list_editable = ("estado",)
     search_fields = (
         "descripcion",
         "notas",
@@ -70,6 +99,12 @@ class FaenaAdmin(admin.ModelAdmin):
     list_per_page = 50
     ordering = ("-fecha",)
     save_on_top = True
+    readonly_fields = ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
+    fieldsets = (
+        ("Datos de la faena", {"fields": ("comite", "fecha", "descripcion", "estado")}),
+        ("Notas y control", {"fields": ("notas",)}),
+        ("Resumen operativo", {"fields": ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")}),
+    )
     actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cancelada")
 
     def get_queryset(self, request):
@@ -86,6 +121,10 @@ class FaenaAdmin(admin.ModelAdmin):
                 filter=Q(registros__genera_adeudo=True),
                 distinct=True,
             ),
+            _monto_total_adeudos=Sum(
+                "registros__monto_adeudo",
+                filter=Q(registros__genera_adeudo=True),
+            ),
         )
 
     @admin.display(ordering="_total_registros", description="Registros")
@@ -99,6 +138,10 @@ class FaenaAdmin(admin.ModelAdmin):
     @admin.display(ordering="_total_adeudos", description="Adeudos")
     def total_adeudos(self, obj):
         return obj._total_adeudos
+
+    @admin.display(ordering="_monto_total_adeudos", description="Monto total adeudos")
+    def monto_total_adeudos(self, obj):
+        return obj._monto_total_adeudos or 0
 
     @admin.action(description="Marcar faenas seleccionadas como Programadas")
     def marcar_como_programada(self, request, queryset):
