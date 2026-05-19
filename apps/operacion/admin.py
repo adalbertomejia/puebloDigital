@@ -36,17 +36,11 @@ class RegistroFaenaInline(admin.TabularInline):
     show_change_link = True
     fields = (
         "ciudadano",
-        "asistio",
         "estatus",
         "genera_adeudo",
         "monto_adeudo",
         "observaciones",
     )
-    readonly_fields = ("asistio",)
-
-    @admin.display(boolean=True, description="Asistió")
-    def asistio(self, obj):
-        return obj.estatus == RegistroFaena.Estatus.ASISTIO
 
 
 @admin.register(Faena)
@@ -74,6 +68,7 @@ class FaenaAdmin(admin.ModelAdmin):
     inlines = [RegistroFaenaInline]
     list_select_related = ("comite",)
     list_per_page = 50
+    ordering = ("-fecha",)
     save_on_top = True
     actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cancelada")
 
