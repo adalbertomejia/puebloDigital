@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from django.db import models
 
 class TimeStampedModel(models.Model):
@@ -12,7 +11,7 @@ class Ciudadano(TimeStampedModel):
     nombre = models.CharField(max_length=100)
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
-    curp = models.CharField(max_length=18, unique=True)
+    edad = models.PositiveSmallIntegerField()
     fecha_nacimiento = models.DateField(null=True, blank=True)
     telefono = models.CharField(max_length=20, blank=True)
     direccion = models.TextField(blank=True)
@@ -24,25 +23,13 @@ class Ciudadano(TimeStampedModel):
         verbose_name_plural = 'Ciudadanos'
         ordering = ['apellido_paterno', 'apellido_materno', 'nombre']
         indexes = [
-            models.Index(fields=['curp']),
+            models.Index(fields=['edad']),
             models.Index(fields=['apellido_paterno', 'apellido_materno', 'nombre']),
         ]
-
-    def clean(self):
-        if self.curp:
-            self.curp = self.curp.strip().upper()
-            if len(self.curp) != 18:
-                raise ValidationError({'curp': 'La CURP debe tener 18 caracteres.'})
-
-    def save(self, *args, **kwargs):
-        if self.curp:
-            self.curp = self.curp.strip().upper()
-        self.full_clean()
-        return super().save(*args, **kwargs)
 
     @property
     def nombre_completo(self):
         return f"{self.nombre} {self.apellido_paterno} {self.apellido_materno}".strip()
 
     def __str__(self):
-        return f"{self.nombre_completo} ({self.curp})"
+        return f"{self.nombre_completo} ({self.edad} años)"
