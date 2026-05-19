@@ -16,8 +16,8 @@ class Junta(TimeStampedModel):
     notas = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Junta'
-        verbose_name_plural = 'Juntas'
+        verbose_name = '🤝 Junta'
+        verbose_name_plural = '🤝 Juntas'
         ordering = ['-fecha']
 
     def __str__(self):
@@ -50,8 +50,8 @@ class Faena(TimeStampedModel):
     notas = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Faena'
-        verbose_name_plural = 'Faenas'
+        verbose_name = '🛠️ Faena'
+        verbose_name_plural = '🛠️ Faenas'
         ordering = ['-fecha']
 
     def __str__(self):
@@ -85,8 +85,8 @@ class Actividad(TimeStampedModel):
     fecha = models.DateField()
 
     class Meta:
-        verbose_name = 'Actividad'
-        verbose_name_plural = 'Actividades'
+        verbose_name = '📌 Actividad'
+        verbose_name_plural = '📌 Actividades'
         ordering = ['-fecha']
 
     def __str__(self):

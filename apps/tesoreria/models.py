@@ -25,8 +25,8 @@ class Pago(TimeStampedModel):
     notas = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Pago'
-        verbose_name_plural = 'Pagos'
+        verbose_name = '💰 Pago'
+        verbose_name_plural = '💰 Pagos'
         ordering = ['-fecha', '-created_at']
 
     def __str__(self):
@@ -50,8 +50,8 @@ class Cooperacion(TimeStampedModel):
     notas = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Cooperación'
-        verbose_name_plural = 'Cooperaciones'
+        verbose_name = '💰 Cooperación'
+        verbose_name_plural = '💰 Cooperaciones'
         ordering = ['-fecha', '-created_at']
 
     def __str__(self):

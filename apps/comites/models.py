@@ -15,8 +15,8 @@ class Comite(TimeStampedModel):
     descripcion = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Comité'
-        verbose_name_plural = 'Comités'
+        verbose_name = '🏛️ Comité'
+        verbose_name_plural = '🏛️ Comités'
         ordering = ['nombre']
 
     def __str__(self):

@@ -19,8 +19,8 @@ class Ciudadano(TimeStampedModel):
     observaciones = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Ciudadano'
-        verbose_name_plural = 'Ciudadanos'
+        verbose_name = '🧑 Ciudadano'
+        verbose_name_plural = '🧑 Ciudadanos'
         ordering = ['apellido_paterno', 'apellido_materno', 'nombre']
         indexes = [
             models.Index(fields=['edad']),
