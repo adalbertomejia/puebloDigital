@@ -89,7 +89,8 @@
 
     {% if user.is_authenticated %}
       <p>Sesión activa como <strong>{{ user.username }}</strong>.</p>
-      <a class="btn btn-primary" href="/admin/">Ir al panel admin</a>
+      <a class="btn btn-primary" href="/dashboard/">Entrar al Dashboard Operativo</a>
+      <a class="btn btn-secondary" href="/admin/">Ir al panel admin</a>
       <a class="btn btn-secondary" href="/logout/">Cerrar sesión</a>
     {% else %}
       <a class="btn btn-primary" href="/login/">Iniciar sesión</a>
