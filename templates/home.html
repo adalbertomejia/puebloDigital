@@ -5,12 +5,75 @@
   <title>Pueblo Digital MVP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; color: #222; }
-    .card { max-width: 900px; margin: 0 auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
-    .btn { display: inline-block; padding: .8rem 1.2rem; border-radius: 8px; text-decoration: none; margin-right: .5rem; }
-    .btn-primary { background: #0d6efd; color: white; }
-    .btn-secondary { background: #6c757d; color: white; }
-    code { background: #f1f1f1; padding: .15rem .35rem; border-radius: 6px; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f8;
+      --surface: #fbfcfe;
+      --text: #2f3640;
+      --muted-text: #4f5a67;
+      --border: #dbe3ed;
+      --code-bg: #ecf1f6;
+      --shadow: 0 6px 20px rgba(28, 39, 54, 0.08);
+      --primary: #3a7de0;
+      --primary-hover: #2f6ecb;
+      --secondary: #758396;
+      --secondary-hover: #667487;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10151d;
+        --surface: #1a2230;
+        --text: #e7edf7;
+        --muted-text: #c3cfdf;
+        --border: #2e3a4d;
+        --code-bg: #111925;
+        --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      }
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .card {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--surface);
+      padding: 2rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .btn {
+      display: inline-block;
+      padding: .8rem 1.2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      margin-right: .5rem;
+      transition: background-color .2s ease;
+      color: #fff;
+    }
+
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--secondary); }
+    .btn-secondary:hover { background: var(--secondary-hover); }
+
+    p, li { color: var(--muted-text); }
+    strong, h1 { color: var(--text); }
+
+    code {
+      background: var(--code-bg);
+      padding: .15rem .35rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
   </style>
 </head>
 <body>
