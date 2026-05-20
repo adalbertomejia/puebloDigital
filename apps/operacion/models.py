@@ -59,13 +59,14 @@ class Faena(TimeStampedModel):
 
 class RegistroFaena(TimeStampedModel):
     class Estatus(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente'
         ASISTIO = 'ASISTIO', 'Asistió'
         FALTO = 'FALTO', 'Faltó'
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     faena = models.ForeignKey(Faena, on_delete=models.CASCADE, related_name='registros')
     ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='registros_faena')
-    estatus = models.CharField(max_length=20, choices=Estatus.choices)
+    estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     observaciones = models.TextField(blank=True)

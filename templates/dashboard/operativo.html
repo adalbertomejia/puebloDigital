@@ -1,6 +1,13 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Dashboard Operativo{% endblock %}
 {% block content %}
+{% if messages %}
+  <div class="space-y-2 mb-4">
+    {% for message in messages %}
+      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
 <section class="grid xl:grid-cols-4 gap-4 mb-6">
   <article class="xl:col-span-3 bg-white rounded-2xl border p-4 md:p-5">
     <h3 class="font-semibold text-lg">Buscador global de ciudadanos</h3>
@@ -67,6 +74,22 @@
           <li><span class="font-medium">{{ item.tipo }}</span> · {{ item.label }} <span class="text-slate-500">({{ item.fecha }})</span></li>
         {% empty %}<li class="text-slate-500">Sin actividad reciente.</li>{% endfor %}
       </ul>
+    </article>
+
+    <article class="bg-white rounded-xl border p-4">
+      <h4 class="font-semibold mb-2">Acción masiva: Faenas</h4>
+      <p class="text-sm text-slate-500 mb-2">Genera registros pendientes para todos los ciudadanos activos.</p>
+      <div class="space-y-2">
+        {% for faena in faenas_programadas %}
+          <form method="post" action="{% url 'generar_registros_faena' faena.id %}" class="flex items-center justify-between gap-2">
+            {% csrf_token %}
+            <span class="text-sm">{{ faena.fecha }} · {{ faena.descripcion }}</span>
+            <button class="rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-sm">Generar</button>
+          </form>
+        {% empty %}
+          <p class="text-sm text-slate-500">No hay faenas programadas.</p>
+        {% endfor %}
+      </div>
     </article>
     <article class="bg-white rounded-xl border p-4">
       <h4 class="font-semibold mb-2">Agua</h4>
