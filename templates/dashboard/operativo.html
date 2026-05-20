@@ -1,13 +1,25 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Dashboard Operativo{% endblock %}
 {% block content %}
-<form class="bg-white rounded-xl p-4 border mb-6" method="get">
-  <label class="block text-sm font-medium mb-2">Buscador global de ciudadanos</label>
-  <div class="flex gap-2">
-    <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 rounded-lg border px-3 py-2">
-    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Buscar</button>
-  </div>
-</form>
+<section class="grid xl:grid-cols-4 gap-4 mb-6">
+  <article class="xl:col-span-3 bg-white rounded-2xl border p-4 md:p-5">
+    <h3 class="font-semibold text-lg">Buscador global de ciudadanos</h3>
+    <p class="text-sm text-slate-500 mb-3">Acceso rápido a expediente, pagos y operaciones administrativas.</p>
+    <form method="get" class="flex flex-wrap gap-2">
+      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-2">
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Buscar</button>
+    </form>
+  </article>
+  <article class="bg-white rounded-2xl border p-4 md:p-5">
+    <h4 class="font-semibold mb-2">Acciones rápidas</h4>
+    <div class="space-y-2 text-sm">
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.pago_add }}">+ Registrar pago</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.cooperacion_add }}">+ Registrar cooperación</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.registro_faena_add }}">+ Registrar asistencia</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.faena_changelist }}">Ver próximas faenas</a>
+    </div>
+  </article>
+</section>
 
 <section class="grid md:grid-cols-5 gap-4 mb-6">
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Ciudadanos</p><p class="text-2xl font-bold">{{ metricas.total_ciudadanos }}</p></article>
@@ -34,9 +46,12 @@
           <p><strong>Última faena:</strong> {{ c.ultima_faena_fecha|default:'Sin registro' }}</p>
           <p><strong>Toma:</strong> {{ c.toma.numero_toma|default:'Sin toma' }}</p>
         </div>
-        <div class="mt-3 flex gap-2">
-          <a href="{% url 'perfil_ciudadano' c.pk %}" class="text-sm px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
-          <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="text-sm px-3 py-2 rounded-lg bg-slate-200">Abrir en admin</a>
+        <div class="mt-3 flex flex-wrap gap-2 text-sm">
+          <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
+          <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
+          <a href="/admin/tesoreria/pago/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar pago</a>
+          <a href="/admin/tesoreria/cooperacion/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar cooperación</a>
+          <a href="/admin/operacion/registrofaena/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar asistencia</a>
         </div>
       </article>
     {% empty %}
@@ -44,7 +59,7 @@
     {% endfor %}
   </div>
 
-  <aside class="space-y-4">
+  <aside id="actividad-reciente" class="space-y-4">
     <article class="bg-white rounded-xl border p-4">
       <h4 class="font-semibold mb-2">Actividad reciente</h4>
       <ul class="space-y-2 text-sm">
@@ -57,14 +72,6 @@
       <h4 class="font-semibold mb-2">Agua</h4>
       <p class="text-sm">Tomas pendientes/suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p>
       <p class="text-sm">Ciudadanos con pagos de servicio registrados: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p>
-    </article>
-    <article class="bg-white rounded-xl border p-4">
-      <h4 class="font-semibold mb-2">Faenas</h4>
-      <p class="text-sm">Ciudadanos con adeudo: <strong>{{ tarjeta_faena.con_adeudo }}</strong></p>
-      <p class="text-sm">Monto total adeudos: <strong>${{ tarjeta_faena.monto_total_adeudos }}</strong></p>
-      <ul class="mt-2 text-sm list-disc pl-5">
-        {% for f in tarjeta_faena.proximas_faenas %}<li>{{ f.fecha }} · {{ f.descripcion }}</li>{% empty %}<li>Sin faenas programadas.</li>{% endfor %}
-      </ul>
     </article>
   </aside>
 </section>

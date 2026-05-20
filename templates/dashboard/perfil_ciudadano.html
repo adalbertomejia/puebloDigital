@@ -3,13 +3,21 @@
 {% block content %}
 <nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Dashboard</a> / <span>{{ ciudadano.nombre_completo }}</span></nav>
 
-<section class="bg-white border rounded-xl p-5 mb-6">
+<section class="bg-white border rounded-2xl p-5 mb-6">
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 class="text-2xl font-bold">{{ ciudadano.nombre_completo }}</h2>
-      <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.telefono|default:'Sin teléfono' }}</p>
+    <div class="flex items-center gap-4">
+      <div class="h-16 w-16 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xl">{{ ciudadano.nombre|first }}{{ ciudadano.apellido_paterno|first }}</div>
+      <div>
+        <h2 class="text-2xl font-bold">{{ ciudadano.nombre_completo }}</h2>
+        <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.telefono|default:'Sin teléfono' }}</p>
+      </div>
     </div>
-    <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm">Editar en Admin</a>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Editar en Admin</a>
+      <a href="{{ quick_links.pago_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar pago</a>
+      <a href="{{ quick_links.cooperacion_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar cooperación</a>
+      <a href="{{ quick_links.registro_faena_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar asistencia</a>
+    </div>
   </div>
 </section>
 
