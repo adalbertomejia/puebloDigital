@@ -1,0 +1,71 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Dashboard Operativo{% endblock %}
+{% block content %}
+<form class="bg-white rounded-xl p-4 border mb-6" method="get">
+  <label class="block text-sm font-medium mb-2">Buscador global de ciudadanos</label>
+  <div class="flex gap-2">
+    <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 rounded-lg border px-3 py-2">
+    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Buscar</button>
+  </div>
+</form>
+
+<section class="grid md:grid-cols-5 gap-4 mb-6">
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Ciudadanos</p><p class="text-2xl font-bold">{{ metricas.total_ciudadanos }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Activos</p><p class="text-2xl font-bold">{{ metricas.ciudadanos_activos }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Morosos faena</p><p class="text-2xl font-bold">{{ metricas.morosos_faena }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Tomas suspendidas</p><p class="text-2xl font-bold">{{ metricas.tomas_suspendidas }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pagos del mes</p><p class="text-2xl font-bold">{{ metricas.pagos_mes }}</p></article>
+</section>
+
+<section class="grid lg:grid-cols-3 gap-6">
+  <div class="lg:col-span-2 space-y-4">
+    {% for c in ciudadanos %}
+      <article class="bg-white rounded-xl border p-4">
+        <div class="flex justify-between items-start gap-2">
+          <div>
+            <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
+            <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }}</p>
+          </div>
+          <span class="text-xs px-2 py-1 rounded-full {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
+        </div>
+        <div class="grid md:grid-cols-4 gap-2 mt-3 text-sm">
+          <p><strong>Último pago:</strong> {{ c.ultimo_pago_fecha|default:'Sin registro' }}</p>
+          <p><strong>Adeudos faena:</strong> {{ c.adeudos_faena }}</p>
+          <p><strong>Última faena:</strong> {{ c.ultima_faena_fecha|default:'Sin registro' }}</p>
+          <p><strong>Toma:</strong> {{ c.toma.numero_toma|default:'Sin toma' }}</p>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <a href="{% url 'perfil_ciudadano' c.pk %}" class="text-sm px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
+          <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="text-sm px-3 py-2 rounded-lg bg-slate-200">Abrir en admin</a>
+        </div>
+      </article>
+    {% empty %}
+      <article class="bg-white rounded-xl border p-6 text-slate-500">No se encontraron ciudadanos para este criterio.</article>
+    {% endfor %}
+  </div>
+
+  <aside class="space-y-4">
+    <article class="bg-white rounded-xl border p-4">
+      <h4 class="font-semibold mb-2">Actividad reciente</h4>
+      <ul class="space-y-2 text-sm">
+        {% for item in actividad_reciente %}
+          <li><span class="font-medium">{{ item.tipo }}</span> · {{ item.label }} <span class="text-slate-500">({{ item.fecha }})</span></li>
+        {% empty %}<li class="text-slate-500">Sin actividad reciente.</li>{% endfor %}
+      </ul>
+    </article>
+    <article class="bg-white rounded-xl border p-4">
+      <h4 class="font-semibold mb-2">Agua</h4>
+      <p class="text-sm">Tomas pendientes/suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p>
+      <p class="text-sm">Ciudadanos con pagos de servicio registrados: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p>
+    </article>
+    <article class="bg-white rounded-xl border p-4">
+      <h4 class="font-semibold mb-2">Faenas</h4>
+      <p class="text-sm">Ciudadanos con adeudo: <strong>{{ tarjeta_faena.con_adeudo }}</strong></p>
+      <p class="text-sm">Monto total adeudos: <strong>${{ tarjeta_faena.monto_total_adeudos }}</strong></p>
+      <ul class="mt-2 text-sm list-disc pl-5">
+        {% for f in tarjeta_faena.proximas_faenas %}<li>{{ f.fecha }} · {{ f.descripcion }}</li>{% empty %}<li>Sin faenas programadas.</li>{% endfor %}
+      </ul>
+    </article>
+  </aside>
+</section>
+{% endblock %}

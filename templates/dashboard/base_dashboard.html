@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dashboard Operativo{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <header class="bg-white border-b sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap gap-3 items-center justify-between">
+      <div>
+        <p class="text-xs uppercase tracking-wider text-slate-500">Pueblo Digital</p>
+        <h1 class="font-semibold text-lg">Centro Operativo</h1>
+      </div>
+      <nav class="flex items-center gap-2 text-sm">
+        <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Dashboard</a>
+        <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Admin</a>
+        <a class="px-3 py-2 rounded-lg bg-slate-200" href="/">Inicio</a>
+      </nav>
+    </div>
+  </header>
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
