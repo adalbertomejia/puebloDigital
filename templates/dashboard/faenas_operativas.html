@@ -1,0 +1,31 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Faenas Operativas{% endblock %}
+{% block content %}
+<section class="space-y-4">
+  <div class="bg-white border rounded-2xl p-5">
+    <h1 class="text-2xl font-semibold">Faenas operativas</h1>
+    <p class="text-slate-500 text-sm">Selecciona una faena para abrir la pantalla operativa con botones rápidos.</p>
+    <form class="mt-3 flex gap-2" method="get">
+      <select name="estado" class="rounded-lg border px-3 py-2">
+        <option value="">Todos los estados</option>
+        {% for value, label in estados_faena %}<option value="{{ value }}" {% if estado_actual == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button class="rounded-lg bg-indigo-600 text-white px-4">Filtrar</button>
+    </form>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    {% for faena in faenas %}
+    <article class="bg-white border rounded-xl p-4">
+      <p class="text-xs text-slate-500">{{ faena.comite.nombre }} · {{ faena.fecha }}</p>
+      <h3 class="font-semibold mt-1">{{ faena.descripcion }}</h3>
+      <p class="text-sm mt-2">Estado: <strong>{{ faena.get_estado_display }}</strong></p>
+      <p class="text-sm text-slate-600">Participantes: {{ faena.total }} · Pendientes: {{ faena.pendientes }}</p>
+      <div class="mt-3 flex gap-2">
+        <a href="{% url 'faena_operativa' faena.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Abrir panel operativo</a>
+        <a href="{% url 'admin:operacion_faena_change' faena.pk %}" class="px-3 py-2 rounded-lg bg-slate-200">Admin</a>
+      </div>
+    </article>
+    {% empty %}<article class="bg-white border rounded-xl p-5 text-slate-500">No hay faenas.</article>{% endfor %}
+  </div>
+</section>
+{% endblock %}

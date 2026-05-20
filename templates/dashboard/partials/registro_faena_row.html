@@ -1,0 +1,18 @@
+<tr id="registro-{{ registro.pk }}" class="border-t">
+  <td class="p-3">{% if can_edit %}<input type="checkbox" name="registros" value="{{ registro.pk }}" class="rounded">{% endif %}</td>
+  <td class="p-3 font-medium">{{ registro.ciudadano.nombre_completo }}</td>
+  <td class="p-3">{{ registro.ciudadano.edad }}</td>
+  <td class="p-3">{{ registro.get_estado_display }}</td>
+  <td class="p-3">{{ registro.observaciones|default:'—' }}</td>
+  <td class="p-3">
+    {% if can_edit %}
+    <div class="flex flex-wrap gap-2">
+      <button type="button" hx-post="{% url 'actualizar_estado_faena' registro.pk %}" hx-include="closest tr" hx-target="#registro-{{ registro.pk }}" hx-swap="outerHTML" hx-vals='{"estado":"ASISTIO"}' class="px-2 py-1 rounded bg-emerald-100 text-emerald-700">✔ Asistió</button>
+      <button type="button" hx-post="{% url 'actualizar_estado_faena' registro.pk %}" hx-target="#registro-{{ registro.pk }}" hx-swap="outerHTML" hx-vals='{"estado":"FALTO"}' class="px-2 py-1 rounded bg-rose-100 text-rose-700">✖ Faltó</button>
+      <button type="button" hx-post="{% url 'actualizar_estado_faena' registro.pk %}" hx-target="#registro-{{ registro.pk }}" hx-swap="outerHTML" hx-vals='{"estado":"JUSTIFICADO"}' class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">🟡 Justificado</button>
+    </div>
+    {% else %}
+      <span class="text-xs text-slate-500">Bloqueado</span>
+    {% endif %}
+  </td>
+</tr>

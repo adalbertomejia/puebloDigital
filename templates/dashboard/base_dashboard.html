@@ -16,7 +16,7 @@
       <nav class="mt-6 space-y-2 text-sm">
         <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 bg-slate-800">Inicio</a>
         <a href="/admin/core/ciudadano/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Ciudadanos</a>
-        <a href="/admin/operacion/faena/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Faenas</a>
+        <a href="{% url 'faenas_operativas' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Faenas operativas</a>
         <a href="/admin/tesoreria/pago/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Pagos</a>
         <a href="/admin/tesoreria/cooperacion/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Cooperaciones</a>
         <a href="/admin/agua/toma/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Agua</a>
@@ -46,7 +46,7 @@
       </header>
 
       <main class="px-4 md:px-6 py-6">
-        {% block content %}{% endblock %}
+        {% if messages %}<div class="space-y-2 mb-4">{% for message in messages %}<div class="rounded-lg px-3 py-2 text-sm {% if message.tags == 'success' %}bg-emerald-100 text-emerald-800{% elif message.tags == 'error' %}bg-rose-100 text-rose-800{% else %}bg-slate-100 text-slate-800{% endif %}">{{ message }}</div>{% endfor %}</div>{% endif %}{% block content %}{% endblock %}
       </main>
     </section>
   </div>

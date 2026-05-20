@@ -1,0 +1,65 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Faena Operativa{% endblock %}
+{% block content %}
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script>document.body.addEventListener('htmx:configRequest', function(event){const c=document.cookie.match(/csrftoken=([^;]+)/); if(c){event.detail.headers['X-CSRFToken']=c[1];}});</script>
+<section class="space-y-5">
+  <div class="bg-white rounded-2xl border p-5">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p class="text-xs uppercase tracking-widest text-slate-500">Faena Operativa</p>
+        <h1 class="text-2xl font-semibold">{{ faena.descripcion }}</h1>
+        <p class="text-slate-500 text-sm">{{ faena.comite.nombre }} · {{ faena.fecha }} · Estado: <strong>{{ faena.get_estado_display }}</strong></p>
+      </div>
+      <div class="flex gap-2">
+        <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'admin:operacion_faena_change' faena.pk %}">Abrir en admin</a>
+        {% if can_edit %}
+          <form method="post" action="{% url 'generar_participantes_faena' faena.pk %}">{% csrf_token %}<button class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Generar participantes</button></form>
+        {% endif %}
+        {% if can_close %}
+          <form method="post" action="{% url 'cerrar_faena' faena.pk %}">{% csrf_token %}<button class="px-3 py-2 rounded-lg bg-rose-600 text-white">Cerrar Faena</button></form>
+        {% endif %}
+      </div>
+    </div>
+    <div class="grid md:grid-cols-5 gap-3 mt-4 text-sm">
+      <div class="bg-slate-50 rounded-xl p-3"><p class="text-slate-500">Participantes</p><p class="text-xl font-bold">{{ resumen.total }}</p></div>
+      <div class="bg-amber-50 rounded-xl p-3"><p class="text-amber-700">Pendientes</p><p class="text-xl font-bold">{{ resumen.pendientes }}</p></div>
+      <div class="bg-emerald-50 rounded-xl p-3"><p class="text-emerald-700">Asistieron</p><p class="text-xl font-bold">{{ resumen.asistieron }}</p></div>
+      <div class="bg-rose-50 rounded-xl p-3"><p class="text-rose-700">Faltaron</p><p class="text-xl font-bold">{{ resumen.faltaron }}</p></div>
+      <div class="bg-yellow-50 rounded-xl p-3"><p class="text-yellow-700">Justificados</p><p class="text-xl font-bold">{{ resumen.justificados }}</p></div>
+    </div>
+  </div>
+
+  <form method="get" class="bg-white rounded-xl border p-4 flex flex-wrap gap-2">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar por nombre o apellido" class="rounded-lg border px-3 py-2 min-w-72">
+    <select name="estado" class="rounded-lg border px-3 py-2">
+      <option value="">Todos</option>
+      {% for value, label in estados.choices %}<option value="{{ value }}" {% if estado_actual == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="rounded-lg bg-indigo-600 text-white px-4">Filtrar</button>
+  </form>
+
+  <form method="post" action="{% url 'accion_masiva_faena' faena.pk %}" class="bg-white rounded-xl border overflow-hidden">
+    {% csrf_token %}
+    <div class="p-3 border-b flex flex-wrap gap-2 items-center">
+      <select name="estado" class="rounded-lg border px-3 py-2">
+        {% for value, label in estados.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <button class="rounded-lg bg-slate-900 text-white px-3 py-2">Aplicar a seleccionados</button>
+      {% if not can_edit %}<p class="text-sm text-rose-600">Faena cerrada: edición bloqueada.</p>{% endif %}
+    </div>
+    <div class="overflow-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50"><tr><th class="p-3"></th><th class="p-3 text-left">Ciudadano</th><th class="p-3 text-left">Edad</th><th class="p-3 text-left">Estado</th><th class="p-3 text-left">Observaciones</th><th class="p-3 text-left">Acciones rápidas</th></tr></thead>
+        <tbody>
+          {% for registro in registros %}
+            {% include 'dashboard/partials/registro_faena_row.html' with registro=registro faena=faena can_edit=can_edit %}
+          {% empty %}
+            <tr><td colspan="6" class="p-6 text-center text-slate-500">No hay participantes para este filtro.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</section>
+{% endblock %}
