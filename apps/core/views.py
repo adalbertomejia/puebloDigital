@@ -110,6 +110,33 @@ def dashboard_operativo(request):
 
 @login_required
 @permission_required("operacion.view_faena", raise_exception=True)
+def faenas_operativas(request):
+    estado = request.GET.get("estado", "")
+    q = request.GET.get("q", "").strip()
+
+    faenas = Faena.objects.select_related("comite").annotate(
+        total_participantes=Count("registros"),
+        pendientes=Count("registros", filter=Q(registros__estado=RegistroFaena.EstadosAsistencia.PENDIENTE)),
+    )
+
+    if estado:
+        faenas = faenas.filter(estado=estado)
+
+    if q:
+        faenas = faenas.filter(Q(descripcion__icontains=q) | Q(comite__nombre__icontains=q))
+
+    faenas = faenas.order_by("-fecha", "-created_at")
+
+    return render(request, "dashboard/faenas_operativas.html", {
+        "faenas": faenas,
+        "estado": estado,
+        "q": q,
+        "estados": Faena.Estados,
+    })
+
+
+@login_required
+@permission_required("operacion.view_faena", raise_exception=True)
 def faena_operativa(request, pk):
     faena = get_object_or_404(Faena.objects.select_related("comite"), pk=pk)
     q = request.GET.get("q", "").strip()

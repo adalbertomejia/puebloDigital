@@ -8,6 +8,7 @@ from apps.core.views import (
     cerrar_faena,
     dashboard_operativo,
     faena_operativa,
+    faenas_operativas,
     home,
     perfil_ciudadano,
 )
@@ -18,6 +19,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('dashboard/', dashboard_operativo, name='dashboard_operativo'),
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
+    path('dashboard/faenas/', faenas_operativas, name='faenas_operativas'),
     path('dashboard/faenas/<int:pk>/', faena_operativa, name='faena_operativa'),
     path('dashboard/faenas/<int:pk>/accion-masiva/', accion_masiva_faena, name='accion_masiva_faena'),
     path('dashboard/faena-registro/<int:pk>/estado/', actualizar_estado_faena, name='actualizar_estado_faena'),
