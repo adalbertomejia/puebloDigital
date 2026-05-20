@@ -1,8 +1,10 @@
 from itertools import chain
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Max, Q, Sum
-from django.shortcuts import get_object_or_404, render
+from django.core.paginator import Paginator
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse
 
@@ -42,7 +44,8 @@ def dashboard_operativo(request):
             | Q(toma__numero_toma__icontains=q)
         )
 
-    ciudadanos = ciudadanos_qs[:12]
+    paginator = Paginator(ciudadanos_qs, 12)
+    ciudadanos_page = paginator.get_page(request.GET.get("page"))
 
     metricas = {
         "total_ciudadanos": Ciudadano.objects.count(),
@@ -89,10 +92,11 @@ def dashboard_operativo(request):
     context = {
         "q": q,
         "metricas": metricas,
-        "ciudadanos": ciudadanos,
+        "ciudadanos": ciudadanos_page,
         "actividad_reciente": actividad_reciente,
         "tarjeta_agua": tarjeta_agua,
         "tarjeta_faena": tarjeta_faena,
+        "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
         "quick_links": {
             "pago_add": reverse("admin:tesoreria_pago_add"),
             "cooperacion_add": reverse("admin:tesoreria_cooperacion_add"),
@@ -104,6 +108,28 @@ def dashboard_operativo(request):
     return render(request, "dashboard/operativo.html", context)
 
 
+
+
+@login_required
+def generar_registros_faena(request, faena_id):
+    if request.method != "POST":
+        return redirect("dashboard_operativo")
+
+    faena = get_object_or_404(Faena, pk=faena_id)
+    ciudadanos_ids = list(Ciudadano.objects.filter(activo=True).values_list("id", flat=True))
+    existentes_ids = set(RegistroFaena.objects.filter(faena=faena, ciudadano_id__in=ciudadanos_ids).values_list("ciudadano_id", flat=True))
+
+    nuevos = [
+        RegistroFaena(faena=faena, ciudadano_id=cid, estatus=RegistroFaena.Estatus.PENDIENTE)
+        for cid in ciudadanos_ids
+        if cid not in existentes_ids
+    ]
+
+    if nuevos:
+        RegistroFaena.objects.bulk_create(nuevos, batch_size=500)
+
+    messages.success(request, f"Se generaron {len(nuevos)} registros pendientes para la faena '{faena.descripcion}'.")
+    return redirect("dashboard_operativo")
 @login_required
 def perfil_ciudadano(request, pk):
     ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma"), pk=pk)
@@ -128,7 +154,8 @@ def perfil_ciudadano(request, pk):
             "registros_faena": registros_faena,
             "resumen": resumen,
             "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),
-            "quick_links": {
+            "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
+        "quick_links": {
                 "pago_add": f"{reverse('admin:tesoreria_pago_add')}?ciudadano={ciudadano.pk}",
                 "cooperacion_add": f"{reverse('admin:tesoreria_cooperacion_add')}?ciudadano={ciudadano.pk}",
                 "registro_faena_add": f"{reverse('admin:operacion_registrofaena_add')}?ciudadano={ciudadano.pk}",
