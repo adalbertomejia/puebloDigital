@@ -2,100 +2,129 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Pueblo Digital MVP</title>
+  <title>Pueblo Digital</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f3f5f8;
-      --surface: #fbfcfe;
-      --text: #2f3640;
-      --muted-text: #4f5a67;
-      --border: #dbe3ed;
-      --code-bg: #ecf1f6;
-      --shadow: 0 6px 20px rgba(28, 39, 54, 0.08);
-      --primary: #3a7de0;
-      --primary-hover: #2f6ecb;
-      --secondary: #758396;
-      --secondary-hover: #667487;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --primary: #0f172a;
+      --primary-hover: #1e293b;
+      --secondary: #ffffff;
+      --secondary-hover: #f8fafc;
+      --shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
     }
 
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #10151d;
-        --surface: #1a2230;
-        --text: #e7edf7;
-        --muted-text: #c3cfdf;
-        --border: #2e3a4d;
-        --code-bg: #111925;
-        --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-      }
-    }
+    * { box-sizing: border-box; }
 
     body {
-      font-family: Arial, sans-serif;
-      margin: 2rem;
-      background: var(--bg);
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 2rem 1rem;
+      font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 62%);
       color: var(--text);
-      line-height: 1.5;
     }
 
     .card {
-      max-width: 900px;
-      margin: 0 auto;
+      width: 100%;
+      max-width: 760px;
       background: var(--surface);
-      padding: 2rem;
-      border-radius: 12px;
       border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 2.5rem;
       box-shadow: var(--shadow);
     }
 
-    .btn {
+    .eyebrow {
       display: inline-block;
-      padding: .8rem 1.2rem;
-      border-radius: 8px;
+      margin-bottom: .9rem;
+      font-size: .78rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    h1 {
+      margin: 0 0 .8rem;
+      font-size: clamp(1.8rem, 3vw, 2.3rem);
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      max-width: 60ch;
+    }
+
+    .actions {
+      margin-top: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .8rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 170px;
+      padding: .8rem 1.1rem;
+      border-radius: 10px;
       text-decoration: none;
-      margin-right: .5rem;
-      transition: background-color .2s ease;
+      font-weight: 600;
+      border: 1px solid transparent;
+      transition: all .2s ease;
+    }
+
+    .btn-primary {
+      background: var(--primary);
       color: #fff;
     }
 
-    .btn-primary { background: var(--primary); }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-secondary { background: var(--secondary); }
-    .btn-secondary:hover { background: var(--secondary-hover); }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
 
-    p, li { color: var(--muted-text); }
-    strong, h1 { color: var(--text); }
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--text);
+      border-color: var(--border);
+    }
 
-    code {
-      background: var(--code-bg);
-      padding: .15rem .35rem;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+    .btn-secondary:hover {
+      background: var(--secondary-hover);
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Pueblo Digital MVP — Admin First</h1>
-    <p>Esta versión <strong>no expone CRUD público</strong>. La operación del sistema está diseñada para realizarse principalmente desde <strong>Django Admin</strong>, con autenticación y roles por comité.</p>
-    <p>Flujo recomendado:</p>
-    <ol>
-      <li>Crear superusuario con <code>python manage.py createsuperuser</code></li>
-      <li>Entrar por <a href="/login/">/login/</a> o directamente <a href="/admin/">/admin/</a></li>
-      <li>Administrar ciudadanos, comités, pagos, cooperaciones, faenas, juntas y tomas desde el panel</li>
-    </ol>
+  <main class="card">
+    <span class="eyebrow">Sistema de gestión comunitaria</span>
+    <h1>Pueblo Digital</h1>
+    <p>
+      Plataforma administrativa para la organización vecinal y operativa de comités.
+      Desde aquí puedes acceder rápidamente a los módulos principales del sistema.
+    </p>
 
-    {% if user.is_authenticated %}
-      <p>Sesión activa como <strong>{{ user.username }}</strong>.</p>
-      <a class="btn btn-primary" href="/dashboard/">Entrar al Dashboard Operativo</a>
-      <a class="btn btn-secondary" href="/admin/">Ir al panel admin</a>
-      <a class="btn btn-secondary" href="/logout/">Cerrar sesión</a>
-    {% else %}
-      <a class="btn btn-primary" href="/login/">Iniciar sesión</a>
-      <a class="btn btn-secondary" href="/admin/">Entrar a admin</a>
-    {% endif %}
-  </div>
+    <div class="actions">
+      {% if user.is_authenticated %}
+        <a class="btn btn-primary" href="/dashboard/">Abrir Dashboard</a>
+        <a class="btn btn-secondary" href="/admin/">Panel Admin</a>
+        <a class="btn btn-secondary" href="/logout/">Cerrar sesión</a>
+      {% else %}
+        <a class="btn btn-primary" href="/login/">Iniciar sesión</a>
+        <a class="btn btn-secondary" href="/admin/">Panel Admin</a>
+        <a class="btn btn-secondary" href="/dashboard/">Ver Dashboard</a>
+      {% endif %}
+    </div>
+  </main>
 </body>
 </html>
