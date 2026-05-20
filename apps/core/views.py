@@ -93,6 +93,13 @@ def dashboard_operativo(request):
         "actividad_reciente": actividad_reciente,
         "tarjeta_agua": tarjeta_agua,
         "tarjeta_faena": tarjeta_faena,
+        "quick_links": {
+            "pago_add": reverse("admin:tesoreria_pago_add"),
+            "cooperacion_add": reverse("admin:tesoreria_cooperacion_add"),
+            "registro_faena_add": reverse("admin:operacion_registrofaena_add"),
+            "faena_changelist": reverse("admin:operacion_faena_changelist"),
+            "ciudadano_changelist": reverse("admin:core_ciudadano_changelist"),
+        },
     }
     return render(request, "dashboard/operativo.html", context)
 
@@ -121,5 +128,10 @@ def perfil_ciudadano(request, pk):
             "registros_faena": registros_faena,
             "resumen": resumen,
             "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),
+            "quick_links": {
+                "pago_add": f"{reverse('admin:tesoreria_pago_add')}?ciudadano={ciudadano.pk}",
+                "cooperacion_add": f"{reverse('admin:tesoreria_cooperacion_add')}?ciudadano={ciudadano.pk}",
+                "registro_faena_add": f"{reverse('admin:operacion_registrofaena_add')}?ciudadano={ciudadano.pk}",
+            },
         },
     )
