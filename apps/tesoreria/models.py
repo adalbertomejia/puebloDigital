@@ -12,9 +12,15 @@ class Pago(TimeStampedModel):
         CUOTA_COMITE = 'CUOTA_COMITE', 'Cuota de comité'
         OTRO = 'OTRO', 'Otro'
 
+    class Estados(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente'
+        PAGADO = 'PAGADO', 'Pagado'
+        CANCELADO = 'CANCELADO', 'Cancelado'
+
     ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='pagos')
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='pagos')
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.CUOTA_COMITE)
+    estado = models.CharField(max_length=20, choices=Estados.choices, default=Estados.PENDIENTE)
     monto = models.DecimalField(max_digits=10, decimal_places=2)
     fecha = models.DateField()
     concepto = models.CharField(max_length=200)
@@ -28,6 +34,10 @@ class Pago(TimeStampedModel):
         verbose_name = '💰 Pago'
         verbose_name_plural = '💰 Pagos'
         ordering = ['-fecha', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['toma', 'anio_periodo', 'tipo'], name='uniq_pago_toma_anio_tipo'),
+            models.UniqueConstraint(fields=['registro_faena', 'tipo'], name='uniq_pago_registro_faena_tipo'),
+        ]
 
     def __str__(self):
         return f"{self.ciudadano.nombre_completo} - {self.get_tipo_display()} - ${self.monto}"

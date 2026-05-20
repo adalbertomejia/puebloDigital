@@ -1,7 +1,12 @@
 from django.contrib import admin
+from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
+from django.db import transaction
 from django.forms.models import BaseInlineFormSet
+from django.utils import timezone
+
+from apps.tesoreria.models import Pago
 
 from .models import (
     Actividad,
@@ -63,7 +68,7 @@ class RegistroFaenaInline(admin.TabularInline):
     show_change_link = True
     fields = (
         "ciudadano",
-        "estatus",
+        "estado",
         "genera_adeudo",
         "monto_adeudo",
         "observaciones",
@@ -105,7 +110,7 @@ class FaenaAdmin(admin.ModelAdmin):
         ("Notas y control", {"fields": ("notas",)}),
         ("Resumen operativo", {"fields": ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")}),
     )
-    actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cancelada")
+    actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cerrada", "marcar_como_cancelada", "generar_participantes", "generar_adeudos_por_faltas")
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -113,7 +118,7 @@ class FaenaAdmin(admin.ModelAdmin):
             _total_registros=Count("registros", distinct=True),
             _total_asistencias=Count(
                 "registros",
-                filter=Q(registros__estatus=RegistroFaena.Estatus.ASISTIO),
+                filter=Q(registros__estado=RegistroFaena.EstadosAsistencia.ASISTIO),
                 distinct=True,
             ),
             _total_adeudos=Count(
@@ -151,15 +156,80 @@ class FaenaAdmin(admin.ModelAdmin):
     def marcar_como_realizada(self, request, queryset):
         queryset.update(estado=Faena.Estados.REALIZADA)
 
+    @admin.action(description="Marcar faenas seleccionadas como Cerradas")
+    def marcar_como_cerrada(self, request, queryset):
+        queryset.update(estado=Faena.Estados.CERRADA)
+
     @admin.action(description="Marcar faenas seleccionadas como Canceladas")
     def marcar_como_cancelada(self, request, queryset):
         queryset.update(estado=Faena.Estados.CANCELADA)
 
+    @admin.action(description="Generar participantes (ciudadanos activos)")
+    def generar_participantes(self, request, queryset):
+        from apps.core.models import Ciudadano
+
+        ciudadanos_ids = list(Ciudadano.objects.filter(activo=True).values_list('id', flat=True))
+        if not ciudadanos_ids:
+            self.message_user(request, "No hay ciudadanos activos para generar participantes.", level=messages.WARNING)
+            return
+
+        total_creados = 0
+        with transaction.atomic():
+            for faena in queryset:
+                existentes = set(
+                    RegistroFaena.objects.filter(faena=faena).values_list('ciudadano_id', flat=True)
+                )
+                nuevos = [
+                    RegistroFaena(faena=faena, ciudadano_id=ciudadano_id, estado=RegistroFaena.EstadosAsistencia.PENDIENTE)
+                    for ciudadano_id in ciudadanos_ids
+                    if ciudadano_id not in existentes
+                ]
+                RegistroFaena.objects.bulk_create(nuevos, ignore_conflicts=True)
+                total_creados += len(nuevos)
+
+        self.message_user(
+            request,
+            f"Generación completada. Se crearon {total_creados} registros nuevos."
+        )
+
+    @admin.action(description="Generar adeudos por faltas")
+    def generar_adeudos_por_faltas(self, request, queryset):
+        faenas = queryset.filter(estado__in=[Faena.Estados.REALIZADA, Faena.Estados.CERRADA])
+        hoy = timezone.localdate()
+        total = 0
+
+        with transaction.atomic():
+            for faena in faenas:
+                faltas = RegistroFaena.objects.filter(
+                    faena=faena,
+                    estado=RegistroFaena.EstadosAsistencia.FALTO,
+                ).select_related('ciudadano')
+
+                nuevos = [
+                    Pago(
+                        ciudadano=registro.ciudadano,
+                        comite=faena.comite,
+                        tipo=Pago.Tipos.DEUDA_FAENA,
+                        estado=Pago.Estados.PENDIENTE,
+                        monto=registro.monto_adeudo,
+                        fecha=hoy,
+                        concepto=f'Adeudo por falta en faena {faena.fecha}',
+                        anio_periodo=faena.fecha.year,
+                        registro_faena=registro,
+                    )
+                    for registro in faltas
+                    if registro.genera_adeudo and registro.monto_adeudo > 0
+                ]
+                Pago.objects.bulk_create(nuevos, ignore_conflicts=True)
+                total += len(nuevos)
+
+        self.message_user(request, f'Se procesaron {total} adeudos por faltas. Duplicados omitidos.')
+
 
 @admin.register(RegistroFaena)
 class RegistroFaenaAdmin(admin.ModelAdmin):
-    list_display = ("faena", "ciudadano", "estatus", "genera_adeudo", "monto_adeudo")
-    list_filter = ("estatus", "genera_adeudo", "faena__comite", "faena__fecha")
+    list_display = ("faena", "ciudadano", "estado", "genera_adeudo", "monto_adeudo")
+    list_filter = ("estado", "genera_adeudo", "faena__comite", "faena__fecha")
     search_fields = (
         "ciudadano__nombre",
         "ciudadano__apellido_paterno",

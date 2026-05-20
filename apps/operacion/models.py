@@ -41,6 +41,7 @@ class Faena(TimeStampedModel):
     class Estados(models.TextChoices):
         PROGRAMADA = 'PROGRAMADA', 'Programada'
         REALIZADA = 'REALIZADA', 'Realizada'
+        CERRADA = 'CERRADA', 'Cerrada'
         CANCELADA = 'CANCELADA', 'Cancelada'
 
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='faenas')
@@ -58,14 +59,15 @@ class Faena(TimeStampedModel):
         return f"{self.comite} - {self.fecha} - {self.descripcion}"
 
 class RegistroFaena(TimeStampedModel):
-    class Estatus(models.TextChoices):
+    class EstadosAsistencia(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente'
         ASISTIO = 'ASISTIO', 'Asistió'
         FALTO = 'FALTO', 'Faltó'
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     faena = models.ForeignKey(Faena, on_delete=models.CASCADE, related_name='registros')
     ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='registros_faena')
-    estatus = models.CharField(max_length=20, choices=Estatus.choices)
+    estado = models.CharField(max_length=20, choices=EstadosAsistencia.choices, default=EstadosAsistencia.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     observaciones = models.TextField(blank=True)
@@ -73,10 +75,12 @@ class RegistroFaena(TimeStampedModel):
     class Meta:
         verbose_name = 'Registro de faena'
         verbose_name_plural = 'Registros de faena'
-        unique_together = ('faena', 'ciudadano')
+        constraints = [
+            models.UniqueConstraint(fields=['faena', 'ciudadano'], name='uniq_faena_ciudadano_registro'),
+        ]
 
     def __str__(self):
-        return f"{self.ciudadano.nombre_completo} - {self.faena} ({self.estatus})"
+        return f"{self.ciudadano.nombre_completo} - {self.faena} ({self.estado})"
 
 class Actividad(TimeStampedModel):
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='actividades')
