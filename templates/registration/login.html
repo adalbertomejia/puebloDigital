@@ -5,12 +5,71 @@
   <title>Iniciar sesión</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; color: #222; }
-    .card { max-width: 420px; margin: 4rem auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
-    input { width: 100%; padding: .7rem; margin: .4rem 0 1rem; border: 1px solid #ccc; border-radius: 8px; }
-    button { width: 100%; padding: .8rem; background: #0d6efd; color: white; border: none; border-radius: 8px; cursor: pointer; }
-    .errorlist { color: #b00020; }
-    a { color: #0d6efd; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f8;
+      --surface: #fbfcfe;
+      --text: #2f3640;
+      --muted-text: #4f5a67;
+      --border: #dbe3ed;
+      --shadow: 0 6px 20px rgba(28, 39, 54, 0.08);
+      --input-bg: #f9fbfd;
+      --primary: #3a7de0;
+      --primary-hover: #2f6ecb;
+      --link: #366fc2;
+      --error: #b14056;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10151d;
+        --surface: #1a2230;
+        --text: #e7edf7;
+        --muted-text: #c3cfdf;
+        --border: #2e3a4d;
+        --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+        --input-bg: #131b28;
+        --link: #89b6ff;
+      }
+    }
+
+    body { font-family: Arial, sans-serif; margin: 2rem; background: var(--bg); color: var(--text); }
+    .card {
+      max-width: 420px;
+      margin: 4rem auto;
+      background: var(--surface);
+      padding: 2rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    input {
+      width: 100%;
+      padding: .7rem;
+      margin: .4rem 0 1rem;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+      border-radius: 8px;
+    }
+
+    button {
+      width: 100%;
+      padding: .8rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color .2s ease;
+    }
+
+    button:hover { background: var(--primary-hover); }
+    .errorlist { color: var(--error); }
+    a { color: var(--link); }
+    p, label { color: var(--muted-text); }
+    h1 { color: var(--text); }
   </style>
 </head>
 <body>
