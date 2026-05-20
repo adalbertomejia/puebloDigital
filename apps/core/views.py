@@ -1,10 +1,14 @@
 from itertools import chain
 
-from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
+from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
-from django.shortcuts import get_object_or_404, render
-from django.utils import timezone
+from django.http import HttpResponseBadRequest
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.agua.models import Toma
 from apps.operacion.models import Faena, RegistroFaena
@@ -102,6 +106,100 @@ def dashboard_operativo(request):
         },
     }
     return render(request, "dashboard/operativo.html", context)
+
+
+@login_required
+@permission_required("operacion.view_faena", raise_exception=True)
+def faena_operativa(request, pk):
+    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=pk)
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", "")
+
+    registros = RegistroFaena.objects.select_related("ciudadano", "faena").filter(faena=faena)
+    if q:
+        registros = registros.filter(
+            Q(ciudadano__nombre__icontains=q)
+            | Q(ciudadano__apellido_paterno__icontains=q)
+            | Q(ciudadano__apellido_materno__icontains=q)
+        )
+    if estado:
+        registros = registros.filter(estado=estado)
+
+    resumen = faena.registros.aggregate(
+        total=Count("id"),
+        pendientes=Count("id", filter=Q(estado=RegistroFaena.EstadosAsistencia.PENDIENTE)),
+        asistieron=Count("id", filter=Q(estado=RegistroFaena.EstadosAsistencia.ASISTIO)),
+        faltaron=Count("id", filter=Q(estado=RegistroFaena.EstadosAsistencia.FALTO)),
+        justificados=Count("id", filter=Q(estado=RegistroFaena.EstadosAsistencia.JUSTIFICADO)),
+    )
+    can_edit = request.user.has_perm("operacion.change_registrofaena") and faena.estado != Faena.Estados.CERRADA
+    return render(request, "dashboard/faena_operativa.html", {
+        "faena": faena,
+        "registros": registros.order_by("ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"),
+        "resumen": resumen,
+        "estado_actual": estado,
+        "q": q,
+        "estados": RegistroFaena.EstadosAsistencia,
+        "can_edit": can_edit,
+        "can_close": request.user.has_perm("operacion.change_faena") and faena.estado != Faena.Estados.CERRADA,
+    })
+
+
+@login_required
+@permission_required("operacion.change_registrofaena", raise_exception=True)
+@require_POST
+def actualizar_estado_faena(request, pk):
+    registro = get_object_or_404(RegistroFaena.objects.select_related("faena", "ciudadano"), pk=pk)
+    if registro.faena.estado == Faena.Estados.CERRADA:
+        return HttpResponseBadRequest("La faena está cerrada.")
+    nuevo_estado = request.POST.get("estado")
+    validos = {item[0] for item in RegistroFaena.EstadosAsistencia.choices}
+    if nuevo_estado not in validos:
+        return HttpResponseBadRequest("Estado inválido.")
+
+    registro.estado = nuevo_estado
+    registro.save(update_fields=["estado", "updated_at"])
+
+    if request.headers.get("HX-Request"):
+        return render(request, "dashboard/partials/registro_faena_row.html", {
+            "registro": registro,
+            "faena": registro.faena,
+            "can_edit": True,
+        })
+    return redirect("faena_operativa", pk=registro.faena_id)
+
+
+@login_required
+@permission_required("operacion.change_registrofaena", raise_exception=True)
+@require_POST
+def accion_masiva_faena(request, pk):
+    faena = get_object_or_404(Faena, pk=pk)
+    if faena.estado == Faena.Estados.CERRADA:
+        messages.error(request, "La faena está cerrada. No se pueden aplicar acciones masivas.")
+        return redirect("faena_operativa", pk=pk)
+
+    seleccionados = request.POST.getlist("registros")
+    estado = request.POST.get("estado")
+    if not seleccionados or estado not in {item[0] for item in RegistroFaena.EstadosAsistencia.choices}:
+        messages.warning(request, "Selecciona registros y una acción válida.")
+        return redirect("faena_operativa", pk=pk)
+
+    with transaction.atomic():
+        actualizados = RegistroFaena.objects.filter(faena=faena, id__in=seleccionados).update(estado=estado)
+    messages.success(request, f"Se actualizaron {actualizados} participantes.")
+    return redirect("faena_operativa", pk=pk)
+
+
+@login_required
+@permission_required("operacion.change_faena", raise_exception=True)
+@require_POST
+def cerrar_faena(request, pk):
+    faena = get_object_or_404(Faena, pk=pk)
+    if faena.estado != Faena.Estados.CERRADA:
+        faena.estado = Faena.Estados.CERRADA
+        faena.save(update_fields=["estado", "updated_at"])
+        messages.success(request, "Faena cerrada correctamente. El historial quedó congelado.")
+    return redirect("faena_operativa", pk=pk)
 
 
 @login_required
