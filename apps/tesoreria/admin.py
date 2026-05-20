@@ -4,8 +4,8 @@ from .models import Pago, Cooperacion
 
 @admin.register(Pago)
 class PagoAdmin(admin.ModelAdmin):
-    list_display = ('fecha', 'ciudadano', 'comite', 'tipo', 'monto', 'anio_periodo')
-    list_filter = ('tipo', 'comite', 'fecha')
+    list_display = ('fecha', 'ciudadano', 'comite', 'tipo', 'estado', 'monto', 'anio_periodo')
+    list_filter = ('tipo', 'estado', 'comite', 'fecha')
     search_fields = ('ciudadano__nombre', 'ciudadano__apellido_paterno', 'concepto', 'comprobante')
     autocomplete_fields = ('ciudadano', 'comite', 'registro_faena', 'toma')
 

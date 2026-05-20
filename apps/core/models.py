@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Creado')
@@ -33,3 +35,18 @@ class Ciudadano(TimeStampedModel):
 
     def __str__(self):
         return f"{self.nombre_completo} ({self.edad} años)"
+
+    def clean(self):
+        super().clean()
+        if self.fecha_nacimiento:
+            today = timezone.localdate()
+            if self.fecha_nacimiento > today:
+                raise ValidationError({"fecha_nacimiento": "La fecha de nacimiento no puede ser futura."})
+
+            self.edad = today.year - self.fecha_nacimiento.year - (
+                (today.month, today.day) < (self.fecha_nacimiento.month, self.fecha_nacimiento.day)
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)

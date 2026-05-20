@@ -50,7 +50,7 @@ class CooperacionInline(admin.TabularInline):
 class RegistroFaenaInline(admin.TabularInline):
     model = RegistroFaena
     extra = 0
-    fields = ("faena", "estatus", "genera_adeudo", "monto_adeudo", "observaciones")
+    fields = ("faena", "estado", "genera_adeudo", "monto_adeudo", "observaciones")
     readonly_fields = fields
     show_change_link = True
     can_delete = False
@@ -91,7 +91,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "telefono",
         "direccion",
     )
-    list_filter = ("activo", "edad", "created_at", "registros_faena__estatus", "toma__estado")
+    list_filter = ("activo", "edad", "created_at", "registros_faena__estado", "toma__estado")
     ordering = ("apellido_paterno", "apellido_materno", "nombre")
     list_per_page = 50
     save_on_top = True
