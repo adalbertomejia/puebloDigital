@@ -24,8 +24,15 @@ class Junta(TimeStampedModel):
         return f"{self.comite} - {self.fecha} - {self.tema}"
 
 class AsistenciaJunta(TimeStampedModel):
+    class Estatus(models.TextChoices):
+        PENDIENTE = 'PENDIENTE', 'Pendiente'
+        ASISTIO = 'ASISTIO', 'Asistió'
+        FALTO = 'FALTO', 'Faltó'
+        JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
+
     junta = models.ForeignKey(Junta, on_delete=models.CASCADE, related_name='asistencias')
     ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='asistencias_junta')
+    estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     asistio = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
 
@@ -35,7 +42,7 @@ class AsistenciaJunta(TimeStampedModel):
         unique_together = ('junta', 'ciudadano')
 
     def __str__(self):
-        return f"{self.ciudadano.nombre_completo} - {self.junta}"
+        return f"{self.ciudadano.nombre_completo} - {self.junta} ({self.estatus})"
 
 class Faena(TimeStampedModel):
     class Estados(models.TextChoices):

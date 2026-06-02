@@ -2,14 +2,14 @@ from itertools import chain
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Max, Q, Sum
 from django.core.paginator import Paginator
+from django.db.models import Count, Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse
 
 from apps.agua.models import Toma
-from apps.operacion.models import Faena, RegistroFaena
+from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
 from .models import Ciudadano
@@ -60,6 +60,11 @@ def dashboard_operativo(request):
         Cooperacion.objects.select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5]
     )
     faenas_recientes = list(Faena.objects.select_related("comite").order_by("-fecha", "-created_at")[:5])
+    juntas_programadas = (
+        Junta.objects.select_related("comite")
+        .filter(fecha__gte=timezone.localdate())
+        .order_by("fecha")[:10]
+    )
 
     actividad_reciente = sorted(
         chain(
@@ -97,6 +102,7 @@ def dashboard_operativo(request):
         "tarjeta_agua": tarjeta_agua,
         "tarjeta_faena": tarjeta_faena,
         "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
+        "juntas_programadas": juntas_programadas,
         "quick_links": {
             "pago_add": reverse("admin:tesoreria_pago_add"),
             "cooperacion_add": reverse("admin:tesoreria_cooperacion_add"),
@@ -106,8 +112,6 @@ def dashboard_operativo(request):
         },
     }
     return render(request, "dashboard/operativo.html", context)
-
-
 
 
 @login_required
@@ -130,6 +134,34 @@ def generar_registros_faena(request, faena_id):
 
     messages.success(request, f"Se generaron {len(nuevos)} registros pendientes para la faena '{faena.descripcion}'.")
     return redirect("dashboard_operativo")
+
+
+@login_required
+def generar_registros_junta(request, junta_id):
+    if request.method != "POST":
+        return redirect("dashboard_operativo")
+
+    junta = get_object_or_404(Junta, pk=junta_id)
+    ciudadanos_ids = list(Ciudadano.objects.filter(activo=True).values_list("id", flat=True))
+    existentes_ids = set(
+        AsistenciaJunta.objects.filter(junta=junta, ciudadano_id__in=ciudadanos_ids).values_list(
+            "ciudadano_id", flat=True
+        )
+    )
+
+    nuevos = [
+        AsistenciaJunta(junta=junta, ciudadano_id=cid, estatus=AsistenciaJunta.Estatus.PENDIENTE, asistio=False)
+        for cid in ciudadanos_ids
+        if cid not in existentes_ids
+    ]
+
+    if nuevos:
+        AsistenciaJunta.objects.bulk_create(nuevos, batch_size=500)
+
+    messages.success(request, f"Se generaron {len(nuevos)} registros pendientes para la junta '{junta.tema}'.")
+    return redirect("dashboard_operativo")
+
+
 @login_required
 def perfil_ciudadano(request, pk):
     ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma"), pk=pk)
