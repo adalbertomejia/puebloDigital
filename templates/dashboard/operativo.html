@@ -92,6 +92,21 @@
       </div>
     </article>
     <article class="bg-white rounded-xl border p-4">
+      <h4 class="font-semibold mb-2">Acción masiva: Juntas</h4>
+      <p class="text-sm text-slate-500 mb-2">Genera registros pendientes para todos los ciudadanos activos.</p>
+      <div class="space-y-2">
+        {% for junta in juntas_programadas %}
+          <form method="post" action="{% url 'generar_registros_junta' junta.id %}" class="flex items-center justify-between gap-2">
+            {% csrf_token %}
+            <span class="text-sm">{{ junta.fecha }} · {{ junta.tema }}</span>
+            <button class="rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-sm">Generar</button>
+          </form>
+        {% empty %}
+          <p class="text-sm text-slate-500">No hay juntas programadas.</p>
+        {% endfor %}
+      </div>
+    </article>
+    <article class="bg-white rounded-xl border p-4">
       <h4 class="font-semibold mb-2">Agua</h4>
       <p class="text-sm">Tomas pendientes/suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p>
       <p class="text-sm">Ciudadanos con pagos de servicio registrados: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p>

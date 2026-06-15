@@ -6,7 +6,6 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0003_ciudadano_edad_from_fecha_nacimiento'),
         ('core', '0003_rename_core_ciudad_edad_362f20_idx_core_ciudad_edad_1bf570_idx'),
     ]
 

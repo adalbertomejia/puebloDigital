@@ -23,12 +23,31 @@ class AsistenciaJuntaInline(admin.TabularInline):
 
 @admin.register(Junta)
 class JuntaAdmin(admin.ModelAdmin):
-    list_display = ("fecha", "comite", "tipo", "tema")
+    list_display = ("fecha", "comite", "tipo", "tema", "total_registros", "total_asistencias")
     list_filter = ("tipo", "comite")
     search_fields = ("tema", "comite__nombre")
     autocomplete_fields = ("comite",)
     date_hierarchy = "fecha"
     inlines = [AsistenciaJuntaInline]
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.annotate(
+            _total_registros=Count("asistencias", distinct=True),
+            _total_asistencias=Count(
+                "asistencias",
+                filter=Q(asistencias__asistio=True),
+                distinct=True,
+            ),
+        )
+
+    @admin.display(ordering="_total_registros", description="Registros")
+    def total_registros(self, obj):
+        return obj._total_registros
+
+    @admin.display(ordering="_total_asistencias", description="Asistencias")
+    def total_asistencias(self, obj):
+        return obj._total_asistencias
 
 
 class RegistroFaenaInlineFormSet(BaseInlineFormSet):
@@ -167,6 +186,19 @@ class RegistroFaenaAdmin(admin.ModelAdmin):
         "faena__descripcion",
     )
     autocomplete_fields = ("faena", "ciudadano")
+
+
+@admin.register(AsistenciaJunta)
+class AsistenciaJuntaAdmin(admin.ModelAdmin):
+    list_display = ("junta", "ciudadano", "asistio")
+    list_filter = ("asistio", "junta__comite", "junta__fecha")
+    search_fields = (
+        "ciudadano__nombre",
+        "ciudadano__apellido_paterno",
+        "ciudadano__apellido_materno",
+        "junta__tema",
+    )
+    autocomplete_fields = ("junta", "ciudadano")
 
 
 class ActividadArchivoInline(admin.TabularInline):
