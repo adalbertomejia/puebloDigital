@@ -104,10 +104,12 @@ def dashboard_operativo(request):
         "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
         "juntas_programadas": juntas_programadas,
         "quick_links": {
-            "pago_add": reverse("admin:tesoreria_pago_add"),
-            "cooperacion_add": reverse("admin:tesoreria_cooperacion_add"),
             "registro_faena_add": reverse("admin:operacion_registrofaena_add"),
+            "asistencia_junta_add": reverse("admin:operacion_asistenciajunta_add"),
+            "faena_add": reverse("admin:operacion_faena_add"),
+            "junta_add": reverse("admin:operacion_junta_add"),
             "faena_changelist": reverse("admin:operacion_faena_changelist"),
+            "junta_changelist": reverse("admin:operacion_junta_changelist"),
             "ciudadano_changelist": reverse("admin:core_ciudadano_changelist"),
         },
     }

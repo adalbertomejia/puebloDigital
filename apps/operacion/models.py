@@ -16,8 +16,8 @@ class Junta(TimeStampedModel):
     notas = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = '🤝 Junta'
-        verbose_name_plural = '🤝 Juntas'
+        verbose_name = '\U0001F465 Junta'
+        verbose_name_plural = '\U0001F465 Juntas'
         ordering = ['-fecha']
 
     def __str__(self):
