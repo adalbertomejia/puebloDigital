@@ -162,6 +162,130 @@ def generar_registros_junta(request, junta_id):
     return redirect("dashboard_operativo")
 
 
+def _attendance_queryset(model, relation_name, pending_status):
+    """Annotate event querysets with operational attendance metrics."""
+    return model.objects.select_related("comite").annotate(
+        total_participantes=Count(relation_name, distinct=True),
+        asistencias_registradas=Count(
+            relation_name,
+            filter=~Q(**{f"{relation_name}__estatus": pending_status}),
+            distinct=True,
+        ),
+        pendientes=Count(
+            relation_name,
+            filter=Q(**{f"{relation_name}__estatus": pending_status}),
+            distinct=True,
+        ),
+    )
+
+
+def _decorate_attendance_events(events, description_attr, admin_url_name, capture_url_name, detail_url_name):
+    today = timezone.localdate()
+    decorated = []
+    for event in events:
+        total = event.total_participantes or 0
+        registradas = event.asistencias_registradas or 0
+        pendientes = event.pendientes or 0
+        if total == 0:
+            estado_operacional = "PROGRAMADA"
+            priority = 1 if event.fecha >= today else 4
+        elif pendientes:
+            estado_operacional = "REGISTROS_GENERADOS"
+            priority = 0
+        elif event.fecha >= today:
+            estado_operacional = "EN_CAPTURA"
+            priority = 2
+        else:
+            estado_operacional = "COMPLETADA"
+            priority = 3
+
+        event.descripcion_operativa = getattr(event, description_attr)
+        event.estado_operacional = estado_operacional
+        event.porcentaje_asistencia = round((registradas / total) * 100) if total else 0
+        event.operational_priority = priority
+        event.admin_change_url = reverse(admin_url_name, args=[event.pk])
+        event.capture_url = reverse(capture_url_name)
+        event.detail_url = reverse(detail_url_name, args=[event.pk])
+        decorated.append(event)
+
+    return sorted(decorated, key=lambda item: (item.operational_priority, item.fecha))
+
+
+def _attendance_summary(faenas, juntas):
+    return {
+        "faenas_activas": sum(1 for event in faenas if event.estado_operacional != "COMPLETADA"),
+        "juntas_activas": sum(1 for event in juntas if event.estado_operacional != "COMPLETADA"),
+        "eventos_pendientes": sum(1 for event in [*faenas, *juntas] if event.pendientes > 0),
+        "asistencias_pendientes": sum(event.pendientes for event in [*faenas, *juntas]),
+    }
+
+
+@login_required
+def control_asistencias(request):
+    faenas = _decorate_attendance_events(
+        _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
+        "descripcion",
+        "admin:operacion_faena_change",
+        "admin:operacion_registrofaena_changelist",
+        "control_asistencias_faena_detalle",
+    )
+    juntas = _decorate_attendance_events(
+        _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
+        "tema",
+        "admin:operacion_junta_change",
+        "admin:operacion_asistenciajunta_changelist",
+        "control_asistencias_junta_detalle",
+    )
+
+    return render(
+        request,
+        "dashboard/control_asistencias.html",
+        {
+            "resumen": _attendance_summary(faenas, juntas),
+            "faenas": faenas,
+            "juntas": juntas,
+        },
+    )
+
+
+def _event_detail_context(event, registros, event_type, description):
+    total = registros.count()
+    registradas = registros.exclude(estatus="PENDIENTE").count()
+    pendientes = registros.filter(estatus="PENDIENTE").count()
+    porcentaje = round((registradas / total) * 100) if total else 0
+    return {
+        "event": event,
+        "event_type": event_type,
+        "description": description,
+        "metricas": {
+            "total_participantes": total,
+            "asistencias_registradas": registradas,
+            "pendientes": pendientes,
+            "porcentaje_asistencia": porcentaje,
+        },
+        "estado_operacional": "PROGRAMADA" if total == 0 else ("REGISTROS_GENERADOS" if pendientes else "COMPLETADA"),
+        "participantes": registros.select_related("ciudadano").order_by("estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre")[:200],
+    }
+
+
+@login_required
+def control_asistencias_faena_detalle(request, faena_id):
+    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
+    context = _event_detail_context(faena, faena.registros.all(), "Faena", faena.descripcion)
+    context["admin_change_url"] = reverse("admin:operacion_faena_change", args=[faena.pk])
+    context["capture_url"] = reverse("admin:operacion_registrofaena_changelist")
+    return render(request, "dashboard/control_asistencias_detalle.html", context)
+
+
+@login_required
+def control_asistencias_junta_detalle(request, junta_id):
+    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
+    context["admin_change_url"] = reverse("admin:operacion_junta_change", args=[junta.pk])
+    context["capture_url"] = reverse("admin:operacion_asistenciajunta_changelist")
+    return render(request, "dashboard/control_asistencias_detalle.html", context)
+
+
 @login_required
 def perfil_ciudadano(request, pk):
     ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma"), pk=pk)
