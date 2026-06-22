@@ -3,30 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Dashboard Operativo{% endblock %}</title>
+  <title>{% block title %}Panel de Gestión{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
   <div class="min-h-screen lg:flex">
     <aside class="w-full lg:w-72 bg-slate-950 text-slate-100 px-4 py-5 lg:py-6">
       <p class="text-xs uppercase tracking-[.2em] text-indigo-300">Pueblo Digital</p>
-      <h1 class="text-xl font-semibold mt-1">Centro Operativo</h1>
-      <p class="text-sm text-slate-400 mt-1">UX moderna para operación diaria.</p>
+      <h1 class="text-xl font-semibold mt-1">Centro de Gestión Comunitaria</h1>
+      <p class="text-sm text-slate-400 mt-1">Información y operación diaria de la delegación.</p>
 
       <nav class="mt-6 space-y-2 text-sm">
         <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 bg-slate-800">Inicio</a>
         <a href="/admin/core/ciudadano/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Ciudadanos</a>
         <a href="{% url 'control_asistencias' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Control de Asistencias</a>
         <a href="/admin/operacion/faena/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Faenas</a>
-        <a href="/admin/tesoreria/pago/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Pagos</a>
-        <a href="/admin/tesoreria/cooperacion/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Cooperaciones</a>
         <a href="/admin/agua/toma/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Agua</a>
-        <a href="/admin/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Reportes / Admin</a>
+        <a href="/admin/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Administración</a>
         <a href="#actividad-reciente" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Actividad reciente</a>
       </nav>
 
       <div class="mt-8 border-t border-slate-800 pt-4 space-y-2 text-sm">
-        <a href="/admin/" class="block rounded-lg px-3 py-2 bg-indigo-500 text-white">Operaciones avanzadas</a>
+        <a href="/admin/" class="block rounded-lg px-3 py-2 bg-indigo-500 text-white">Administración</a>
         <a href="/" class="block rounded-lg px-3 py-2 bg-slate-800">Volver a inicio</a>
       </div>
     </aside>
@@ -35,13 +33,13 @@
       <header class="bg-white border-b sticky top-0 z-10">
         <div class="px-4 py-3 md:px-6 flex flex-wrap gap-3 items-center justify-between">
           <div>
-            <p class="text-xs uppercase tracking-widest text-slate-500">Dashboard híbrido</p>
-            <h2 class="font-semibold text-lg">Operación amigable para secretaría</h2>
+            <p class="text-xs uppercase tracking-widest text-slate-500">Inicio</p>
+            <h2 class="font-semibold text-lg">Panel de Gestión</h2>
           </div>
           <nav class="flex items-center gap-2 text-sm">
-            <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Dashboard</a>
+            <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Inicio</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'control_asistencias' %}">Asistencias</a>
-            <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Admin</a>
+            <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Administración</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="/logout/">Salir</a>
           </nav>
         </div>

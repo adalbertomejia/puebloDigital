@@ -1,7 +1,7 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Expediente {{ ciudadano.nombre_completo }}{% endblock %}
 {% block content %}
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Dashboard</a> / <span>{{ ciudadano.nombre_completo }}</span></nav>
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>{{ ciudadano.nombre_completo }}</span></nav>
 
 <section class="bg-white border rounded-2xl p-5 mb-6">
   <div class="flex flex-wrap items-center justify-between gap-3">
@@ -13,7 +13,7 @@
       </div>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
-      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Editar en Admin</a>
+      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Editar en Administración</a>
       <a href="{{ quick_links.pago_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar pago</a>
       <a href="{{ quick_links.cooperacion_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar cooperación</a>
       <a href="{{ quick_links.registro_faena_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar asistencia</a>
