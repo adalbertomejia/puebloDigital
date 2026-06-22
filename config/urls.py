@@ -2,7 +2,16 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
-from apps.core.views import dashboard_operativo, generar_registros_faena, generar_registros_junta, home, perfil_ciudadano
+from apps.core.views import (
+    control_asistencias,
+    control_asistencias_faena_detalle,
+    control_asistencias_junta_detalle,
+    dashboard_operativo,
+    generar_registros_faena,
+    generar_registros_junta,
+    home,
+    perfil_ciudadano,
+)
 
 urlpatterns = [
     path('', home, name='home'),
@@ -10,6 +19,9 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('dashboard/', dashboard_operativo, name='dashboard_operativo'),
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
+    path('control-asistencias/', control_asistencias, name='control_asistencias'),
+    path('control-asistencias/faena/<int:faena_id>/', control_asistencias_faena_detalle, name='control_asistencias_faena_detalle'),
+    path('control-asistencias/junta/<int:junta_id>/', control_asistencias_junta_detalle, name='control_asistencias_junta_detalle'),
     path('dashboard/faena/<int:faena_id>/generar-registros/', generar_registros_faena, name='generar_registros_faena'),
     path('dashboard/junta/<int:junta_id>/generar-registros/', generar_registros_junta, name='generar_registros_junta'),
     path('admin/', admin.site.urls),
