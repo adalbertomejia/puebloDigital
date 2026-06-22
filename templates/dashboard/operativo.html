@@ -1,5 +1,5 @@
 {% extends 'dashboard/base_dashboard.html' %}
-{% block title %}Dashboard Operativo{% endblock %}
+{% block title %}Panel de Gestión{% endblock %}
 {% block content %}
 {% if messages %}
   <div class="space-y-2 mb-4">
@@ -11,7 +11,7 @@
 <section class="grid xl:grid-cols-4 gap-4 mb-6">
   <article class="xl:col-span-3 bg-white rounded-2xl border p-4 md:p-5">
     <h3 class="font-semibold text-lg">Buscador global de ciudadanos</h3>
-    <p class="text-sm text-slate-500 mb-3">Acceso rápido a expediente, pagos y operaciones administrativas.</p>
+    <p class="text-sm text-slate-500 mb-3">Acceso rápido a expediente y operaciones comunitarias.</p>
     <form method="get" class="flex flex-wrap gap-2">
       <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-2">
       <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Buscar</button>
@@ -20,11 +20,13 @@
   <article class="bg-white rounded-2xl border p-4 md:p-5">
     <h4 class="font-semibold mb-2">Acciones rápidas</h4>
     <div class="space-y-2 text-sm">
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.pago_add }}">+ Registrar pago</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.cooperacion_add }}">+ Registrar cooperación</a>
       <a class="block rounded-lg bg-indigo-50 text-indigo-700 px-3 py-2" href="{% url 'control_asistencias' %}">Abrir Control de Asistencias</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.registro_faena_add }}">+ Registrar asistencia</a>
       <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.faena_changelist }}">Ver próximas faenas</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.junta_changelist }}">Ver próximas juntas</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.registro_faena_add }}">+ Registro individual de asistencia (Faena)</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.asistencia_junta_add }}">+ Registro individual de asistencia (Junta)</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.faena_changelist }}">Gestionar Faenas</a>
+      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.junta_changelist }}">Gestionar Juntas</a>
     </div>
   </article>
 </section>
@@ -57,9 +59,7 @@
         <div class="mt-3 flex flex-wrap gap-2 text-sm">
           <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
           <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
-          <a href="/admin/tesoreria/pago/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar pago</a>
-          <a href="/admin/tesoreria/cooperacion/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar cooperación</a>
-          <a href="/admin/operacion/registrofaena/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar asistencia</a>
+          <a href="/admin/operacion/registrofaena/add/?ciudadano={{ c.pk }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar asistencia (Faena)</a>
         </div>
       </article>
     {% empty %}
