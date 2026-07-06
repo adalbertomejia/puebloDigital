@@ -3,6 +3,7 @@ from itertools import chain
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -104,12 +105,10 @@ def dashboard_operativo(request):
         "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
         "juntas_programadas": juntas_programadas,
         "quick_links": {
-            "registro_faena_add": reverse("admin:operacion_registrofaena_add"),
-            "asistencia_junta_add": reverse("admin:operacion_asistenciajunta_add"),
+            "captura_faenas": f"{reverse('control_asistencias')}?tipo=faenas#faenas",
+            "captura_juntas": f"{reverse('control_asistencias')}?tipo=juntas#juntas",
             "faena_add": reverse("admin:operacion_faena_add"),
             "junta_add": reverse("admin:operacion_junta_add"),
-            "faena_changelist": reverse("admin:operacion_faena_changelist"),
-            "junta_changelist": reverse("admin:operacion_junta_changelist"),
             "ciudadano_changelist": reverse("admin:core_ciudadano_changelist"),
         },
     }
@@ -206,7 +205,7 @@ def _decorate_attendance_events(events, description_attr, admin_url_name, captur
         event.porcentaje_asistencia = round((registradas / total) * 100) if total else 0
         event.operational_priority = priority
         event.admin_change_url = reverse(admin_url_name, args=[event.pk])
-        event.capture_url = reverse(capture_url_name)
+        event.capture_url = reverse(capture_url_name, args=[event.pk])
         event.detail_url = reverse(detail_url_name, args=[event.pk])
         decorated.append(event)
 
@@ -228,14 +227,14 @@ def control_asistencias(request):
         _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
         "descripcion",
         "admin:operacion_faena_change",
-        "admin:operacion_registrofaena_changelist",
+        "captura_asistencia_faena",
         "control_asistencias_faena_detalle",
     )
     juntas = _decorate_attendance_events(
         _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
         "tema",
         "admin:operacion_junta_change",
-        "admin:operacion_asistenciajunta_changelist",
+        "captura_asistencia_junta",
         "control_asistencias_junta_detalle",
     )
 
@@ -246,6 +245,7 @@ def control_asistencias(request):
             "resumen": _attendance_summary(faenas, juntas),
             "faenas": faenas,
             "juntas": juntas,
+            "tipo_activo": request.GET.get("tipo", ""),
         },
     )
 
@@ -275,7 +275,7 @@ def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
     context = _event_detail_context(faena, faena.registros.all(), "Faena", faena.descripcion)
     context["admin_change_url"] = reverse("admin:operacion_faena_change", args=[faena.pk])
-    context["capture_url"] = reverse("admin:operacion_registrofaena_changelist")
+    context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
 
@@ -284,8 +284,116 @@ def control_asistencias_junta_detalle(request, junta_id):
     junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
     context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
     context["admin_change_url"] = reverse("admin:operacion_junta_change", args=[junta.pk])
-    context["capture_url"] = reverse("admin:operacion_asistenciajunta_changelist")
+    context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
+
+
+def _capture_config(event_kind):
+    configs = {
+        "faena": {
+            "event_model": Faena,
+            "relation": "registros",
+            "event_type": "Faena",
+            "description_attr": "descripcion",
+            "status_choices": RegistroFaena.Estatus.choices,
+            "detail_url": "control_asistencias_faena_detalle",
+            "admin_change_url": "admin:operacion_faena_change",
+            "capture_url": "captura_asistencia_faena",
+        },
+        "junta": {
+            "event_model": Junta,
+            "relation": "asistencias",
+            "event_type": "Junta",
+            "description_attr": "tema",
+            "status_choices": AsistenciaJunta.Estatus.choices,
+            "detail_url": "control_asistencias_junta_detalle",
+            "admin_change_url": "admin:operacion_junta_change",
+            "capture_url": "captura_asistencia_junta",
+        },
+    }
+    return configs[event_kind]
+
+
+def _update_attendance_records(request, registros, config):
+    updated = 0
+    valid_statuses = {value for value, _label in config["status_choices"]}
+    for registro in registros:
+        prefix = f"registro_{registro.pk}"
+        estatus = request.POST.get(f"{prefix}_estatus")
+        if estatus not in valid_statuses:
+            continue
+
+        changed = False
+        if registro.estatus != estatus:
+            registro.estatus = estatus
+            changed = True
+
+        observaciones = request.POST.get(f"{prefix}_observaciones", "").strip()
+        if registro.observaciones != observaciones:
+            registro.observaciones = observaciones
+            changed = True
+
+        if isinstance(registro, RegistroFaena):
+            genera_adeudo = request.POST.get(f"{prefix}_genera_adeudo") == "on"
+            monto_raw = request.POST.get(f"{prefix}_monto_adeudo") or "0"
+            if registro.genera_adeudo != genera_adeudo:
+                registro.genera_adeudo = genera_adeudo
+                changed = True
+            if str(registro.monto_adeudo) != monto_raw:
+                registro.monto_adeudo = monto_raw
+                changed = True
+        elif isinstance(registro, AsistenciaJunta):
+            asistio = estatus == AsistenciaJunta.Estatus.ASISTIO
+            if registro.asistio != asistio:
+                registro.asistio = asistio
+                changed = True
+
+        if changed:
+            registro.save()
+            updated += 1
+    return updated
+
+
+def _captura_asistencia(request, event_kind, event_id):
+    config = _capture_config(event_kind)
+    event = get_object_or_404(config["event_model"].objects.select_related("comite"), pk=event_id)
+    registros_qs = getattr(event, config["relation"]).select_related("ciudadano").order_by(
+        "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
+    )
+
+    if request.method == "POST":
+        with transaction.atomic():
+            registros = list(registros_qs.select_for_update())
+            updated = _update_attendance_records(request, registros, config)
+        messages.success(request, f"Se guardaron {updated} cambios de asistencia para {config['event_type'].lower()}.")
+        return redirect(config["capture_url"], event.pk)
+
+    context = _event_detail_context(
+        event,
+        getattr(event, config["relation"]).all(),
+        config["event_type"],
+        getattr(event, config["description_attr"]),
+    )
+    context.update(
+        {
+            "participantes": registros_qs,
+            "status_choices": config["status_choices"],
+            "detail_url": reverse(config["detail_url"], args=[event.pk]),
+            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
+            "capture_url": reverse(config["capture_url"], args=[event.pk]),
+        }
+    )
+    return render(request, "dashboard/captura_asistencia.html", context)
+
+
+@login_required
+def captura_asistencia_faena(request, faena_id):
+    return _captura_asistencia(request, "faena", faena_id)
+
+
+@login_required
+def captura_asistencia_junta(request, junta_id):
+    return _captura_asistencia(request, "junta", junta_id)
 
 
 @login_required
@@ -313,10 +421,9 @@ def perfil_ciudadano(request, pk):
             "resumen": resumen,
             "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),
             "faenas_programadas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:10],
-        "quick_links": {
+            "quick_links": {
                 "pago_add": f"{reverse('admin:tesoreria_pago_add')}?ciudadano={ciudadano.pk}",
                 "cooperacion_add": f"{reverse('admin:tesoreria_cooperacion_add')}?ciudadano={ciudadano.pk}",
-                "registro_faena_add": f"{reverse('admin:operacion_registrofaena_add')}?ciudadano={ciudadano.pk}",
             },
         },
     )
