@@ -19,6 +19,6 @@
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias pendientes</p><p class="text-2xl font-bold">{{ resumen.asistencias_pendientes }}</p></article>
 </section>
 
-{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas empty_message='No hay faenas para seguimiento operacional.' %}
-{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas empty_message='No hay juntas para seguimiento operacional.' %}
+<div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas empty_message='No hay faenas para seguimiento operacional.' %}</div>
+<div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas empty_message='No hay juntas para seguimiento operacional.' %}</div>
 {% endblock %}

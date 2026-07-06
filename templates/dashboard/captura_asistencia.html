@@ -1,0 +1,86 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Captura de asistencia - {{ event_type }}{% endblock %}
+{% block content %}
+<nav class="text-sm mb-4 text-slate-500">
+  <a href="{% url 'control_asistencias' %}">Control de Asistencias</a> /
+  <a href="{{ detail_url }}">{{ event_type }}</a> /
+  <span>Captura</span>
+</nav>
+
+{% if messages %}
+  <div class="space-y-2 mb-4">
+    {% for message in messages %}
+      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<section class="bg-white rounded-2xl border p-4 md:p-5 mb-6">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">Vista Operativa de Captura · {{ event_type }}</p>
+      <h3 class="text-2xl font-bold">{{ description }}</h3>
+      <p class="text-slate-500">{{ event.fecha }} · {{ event.comite.nombre }}{% if event.lugar %} · {{ event.lugar }}{% endif %}</p>
+      {% if event.notas %}<p class="mt-2 text-sm text-slate-600">{{ event.notas }}</p>{% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <a href="{{ detail_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Ver detalle</a>
+      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-100">Editar evento</a>
+    </div>
+  </div>
+</section>
+
+<section class="grid md:grid-cols-4 gap-4 mb-6">
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total participantes</p><p class="text-2xl font-bold">{{ metricas.total_participantes }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias registradas</p><p class="text-2xl font-bold">{{ metricas.asistencias_registradas }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pendientes</p><p class="text-2xl font-bold">{{ metricas.pendientes }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Avance</p><p class="text-2xl font-bold">{{ metricas.porcentaje_asistencia }}%</p></article>
+</section>
+
+<form method="post" class="bg-white rounded-2xl border p-4 md:p-5">
+  {% csrf_token %}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h4 class="font-semibold text-lg">Registros de asistencia</h4>
+      <p class="text-sm text-slate-500">Actualiza el estatus de todos los participantes generados para este evento sin crear registros nuevos.</p>
+    </div>
+    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Guardar cambios</button>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="text-left text-slate-500 border-b">
+        <tr>
+          <th class="py-2 pr-3">Ciudadano</th>
+          <th class="py-2 pr-3">Estatus</th>
+          {% if event_type == 'Faena' %}<th class="py-2 pr-3">Adeudo</th><th class="py-2 pr-3">Monto</th>{% endif %}
+          <th class="py-2 pr-3">Observaciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for registro in participantes %}
+          <tr>
+            <td class="py-2 pr-3 font-medium">{{ registro.ciudadano.nombre_completo }}</td>
+            <td class="py-2 pr-3">
+              <select name="registro_{{ registro.pk }}_estatus" class="rounded-lg border px-2 py-1">
+                {% for value, label in status_choices %}
+                  <option value="{{ value }}" {% if registro.estatus == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            {% if event_type == 'Faena' %}
+              <td class="py-2 pr-3 text-center"><input type="checkbox" name="registro_{{ registro.pk }}_genera_adeudo" {% if registro.genera_adeudo %}checked{% endif %}></td>
+              <td class="py-2 pr-3"><input type="number" step="0.01" min="0" name="registro_{{ registro.pk }}_monto_adeudo" value="{{ registro.monto_adeudo }}" class="w-28 rounded-lg border px-2 py-1"></td>
+            {% endif %}
+            <td class="py-2 pr-3"><input type="text" name="registro_{{ registro.pk }}_observaciones" value="{{ registro.observaciones }}" class="w-full min-w-48 rounded-lg border px-2 py-1" placeholder="Observaciones"></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="py-4 text-slate-500">Este evento aún no tiene registros generados. Usa la acción masiva antes de capturar asistencia.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-4 flex justify-end">
+    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Guardar cambios</button>
+  </div>
+</form>
+{% endblock %}
