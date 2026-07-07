@@ -17,14 +17,11 @@
         <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 bg-slate-800">Inicio</a>
         <a href="{% url 'padron_ciudadanos' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Ciudadanos</a>
         <a href="{% url 'control_asistencias' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Control de Asistencias</a>
-        <a href="/admin/operacion/faena/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Faenas</a>
         <a href="/admin/agua/toma/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Agua</a>
-        <a href="/admin/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Administración</a>
         <a href="#actividad-reciente" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Actividad reciente</a>
       </nav>
 
       <div class="mt-8 border-t border-slate-800 pt-4 space-y-2 text-sm">
-        <a href="/admin/" class="block rounded-lg px-3 py-2 bg-indigo-500 text-white">Administración</a>
         <a href="/" class="block rounded-lg px-3 py-2 bg-slate-800">Volver a inicio</a>
       </div>
     </aside>
@@ -38,10 +35,14 @@
           </div>
           <nav class="flex items-center gap-2 text-sm">
             <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Inicio</a>
-            <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'control_asistencias' %}">Asistencias</a>
-            <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'padron_ciudadanos' %}">Ciudadanos</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Administración</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="/logout/">Salir</a>
+            <span class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700">
+              <span class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-white" aria-hidden="true">
+                {{ request.user.get_username|first|upper }}
+              </span>
+              <span class="font-medium">{{ request.user.get_full_name|default:request.user.get_username }}</span>
+            </span>
           </nav>
         </div>
       </header>
