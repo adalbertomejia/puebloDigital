@@ -13,6 +13,7 @@ from apps.agua.models import Toma
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
+from .forms import FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano
 
 
@@ -107,12 +108,59 @@ def dashboard_operativo(request):
         "quick_links": {
             "captura_faenas": f"{reverse('control_asistencias')}?tipo=faenas#faenas",
             "captura_juntas": f"{reverse('control_asistencias')}?tipo=juntas#juntas",
-            "faena_add": reverse("admin:operacion_faena_add"),
-            "junta_add": reverse("admin:operacion_junta_add"),
+            "faena_add": reverse("crear_faena_operativa"),
+            "junta_add": reverse("crear_junta_operativa"),
             "ciudadano_changelist": reverse("admin:core_ciudadano_changelist"),
         },
     }
     return render(request, "dashboard/operativo.html", context)
+
+
+def _crear_evento_operativo(request, form_class, event_label, description, detail_url_name):
+    if request.method == "POST":
+        form = form_class(request.POST)
+        if form.is_valid():
+            event = form.save()
+            messages.success(request, f"Se creó correctamente la {event_label.lower()}.")
+            return redirect(detail_url_name, event.pk)
+        messages.error(request, "Revisa los campos marcados antes de guardar.")
+    else:
+        form = form_class()
+
+    return render(
+        request,
+        "dashboard/evento_form.html",
+        {
+            "form": form,
+            "event_label": event_label,
+            "title": f"Crear nueva {event_label.lower()}",
+            "description": description,
+            "submit_label": f"Guardar {event_label.lower()}",
+            "cancel_url": reverse("dashboard_operativo"),
+        },
+    )
+
+
+@login_required
+def crear_faena_operativa(request):
+    return _crear_evento_operativo(
+        request,
+        FaenaOperativaForm,
+        "Faena",
+        "Registra una faena comunitaria y continúa el seguimiento desde Control de Asistencias.",
+        "control_asistencias_faena_detalle",
+    )
+
+
+@login_required
+def crear_junta_operativa(request):
+    return _crear_evento_operativo(
+        request,
+        JuntaOperativaForm,
+        "Junta",
+        "Programa una junta comunitaria con la información necesaria para su seguimiento operativo.",
+        "control_asistencias_junta_detalle",
+    )
 
 
 @login_required
