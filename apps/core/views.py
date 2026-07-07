@@ -14,7 +14,7 @@ from apps.agua.models import Toma
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
-from .forms import FaenaOperativaForm, JuntaOperativaForm
+from .forms import CiudadanoOperativoForm, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano
 
 
@@ -90,9 +90,34 @@ def padron_ciudadanos(request):
             "sin_toma": Ciudadano.objects.filter(toma__isnull=True).count(),
             "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
         },
-        "admin_add_url": reverse("admin:core_ciudadano_add"),
+        "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
     }
     return render(request, "dashboard/padron_ciudadanos.html", context)
+
+
+@login_required
+def crear_ciudadano_operativo(request):
+    if request.method == "POST":
+        form = CiudadanoOperativoForm(request.POST)
+        if form.is_valid():
+            ciudadano = form.save()
+            messages.success(request, f"Se registró correctamente a {ciudadano.nombre_completo}.")
+            return redirect("perfil_ciudadano", ciudadano.pk)
+        messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
+    else:
+        form = CiudadanoOperativoForm()
+
+    return render(
+        request,
+        "dashboard/ciudadano_form.html",
+        {
+            "form": form,
+            "title": "Agregar ciudadano",
+            "description": "Registra a una persona en el padrón para dar seguimiento a su expediente, faenas, juntas y servicios comunitarios.",
+            "submit_label": "Guardar ciudadano",
+            "cancel_url": reverse("padron_ciudadanos"),
+        },
+    )
 
 
 def _pdf_escape(value):

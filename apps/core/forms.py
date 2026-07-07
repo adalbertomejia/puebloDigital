@@ -2,6 +2,8 @@ from django import forms
 
 from apps.operacion.models import Faena, Junta
 
+from .models import Ciudadano
+
 
 class DashboardFormMixin:
     """Apply consistent dashboard styling to operational forms."""
@@ -75,3 +77,48 @@ class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._apply_dashboard_widgets()
+
+
+class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
+    class Meta:
+        model = Ciudadano
+        fields = [
+            "nombre",
+            "apellido_paterno",
+            "apellido_materno",
+            "edad",
+            "fecha_nacimiento",
+            "telefono",
+            "direccion",
+            "activo",
+            "observaciones",
+        ]
+        widgets = {
+            "fecha_nacimiento": forms.DateInput(attrs={"type": "date"}),
+            "direccion": forms.Textarea(attrs={"rows": 3}),
+            "observaciones": forms.Textarea(attrs={"rows": 3}),
+        }
+        labels = {
+            "nombre": "Nombre",
+            "apellido_paterno": "Apellido paterno",
+            "apellido_materno": "Apellido materno",
+            "edad": "Edad",
+            "fecha_nacimiento": "Fecha de nacimiento",
+            "telefono": "Teléfono",
+            "direccion": "Domicilio o referencia",
+            "activo": "Ciudadano activo",
+            "observaciones": "Observaciones",
+        }
+        help_texts = {
+            "edad": "Dato requerido para identificar correctamente a la persona.",
+            "fecha_nacimiento": "Opcional; úsala si la secretaría cuenta con la fecha exacta.",
+            "telefono": "Opcional; puede ser teléfono fijo o celular.",
+            "direccion": "Agrega domicilio, barrio, referencia o ubicación conocida.",
+            "activo": "Mantén esta opción marcada para incluirlo en la operación diaria.",
+            "observaciones": "Notas internas relevantes para el expediente ciudadano.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_dashboard_widgets()
+        self.fields["activo"].widget.attrs["class"] = "h-4 w-4 rounded border-slate-300 text-indigo-600"
