@@ -3,6 +3,7 @@ from itertools import chain
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.http import HttpResponse
 from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -15,6 +16,152 @@ from apps.tesoreria.models import Cooperacion, Pago
 
 from .forms import FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano
+
+
+def _ciudadanos_operativos_queryset():
+    return Ciudadano.objects.select_related("toma").annotate(
+        ultimo_pago_fecha=Max("pagos__fecha"),
+        adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
+    )
+
+
+def _filtrar_ciudadanos_operativos(queryset, params):
+    q = params.get("q", "").strip()
+    estado = params.get("estado", "todos")
+    toma = params.get("toma", "todos")
+    adeudo = params.get("adeudo", "todos")
+
+    if q:
+        search_filter = (
+            Q(nombre__icontains=q)
+            | Q(apellido_paterno__icontains=q)
+            | Q(apellido_materno__icontains=q)
+            | Q(telefono__icontains=q)
+            | Q(toma__numero_toma__icontains=q)
+        )
+        if q.isdigit():
+            search_filter |= Q(id=int(q))
+        queryset = queryset.filter(search_filter)
+
+    if estado == "activos":
+        queryset = queryset.filter(activo=True)
+    elif estado == "inactivos":
+        queryset = queryset.filter(activo=False)
+
+    if toma == "con_toma":
+        queryset = queryset.filter(toma__isnull=False)
+    elif toma == "sin_toma":
+        queryset = queryset.filter(toma__isnull=True)
+
+    if adeudo == "con_adeudo":
+        queryset = queryset.filter(adeudos_faena__gt=0)
+    elif adeudo == "sin_adeudo":
+        queryset = queryset.filter(adeudos_faena=0)
+
+    ordering = params.get("orden", "nombre")
+    orderings = {
+        "nombre": ["apellido_paterno", "apellido_materno", "nombre"],
+        "estado": ["-activo", "apellido_paterno", "apellido_materno", "nombre"],
+        "adeudos_faena": ["-adeudos_faena", "apellido_paterno", "apellido_materno", "nombre"],
+        "registro": ["-created_at", "apellido_paterno", "apellido_materno", "nombre"],
+    }
+    return queryset.order_by(*orderings.get(ordering, orderings["nombre"]))
+
+
+@login_required
+def padron_ciudadanos(request):
+    ciudadanos_qs = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    paginator = Paginator(ciudadanos_qs, 20)
+    ciudadanos_page = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        "ciudadanos": ciudadanos_page,
+        "filtros": {
+            "q": request.GET.get("q", "").strip(),
+            "estado": request.GET.get("estado", "todos"),
+            "toma": request.GET.get("toma", "todos"),
+            "adeudo": request.GET.get("adeudo", "todos"),
+            "orden": request.GET.get("orden", "nombre"),
+        },
+        "metricas": {
+            "total": Ciudadano.objects.count(),
+            "activos": Ciudadano.objects.filter(activo=True).count(),
+            "inactivos": Ciudadano.objects.filter(activo=False).count(),
+            "sin_toma": Ciudadano.objects.filter(toma__isnull=True).count(),
+            "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
+        },
+        "admin_add_url": reverse("admin:core_ciudadano_add"),
+    }
+    return render(request, "dashboard/padron_ciudadanos.html", context)
+
+
+def _pdf_escape(value):
+    return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _build_simple_pdf(lines):
+    pages = []
+    max_lines = 42
+    for start in range(0, len(lines), max_lines):
+        chunk = lines[start:start + max_lines]
+        y = 780
+        content = ["BT", "/F1 11 Tf"]
+        for line in chunk:
+            content.append(f"1 0 0 1 50 {y} Tm ({_pdf_escape(line)}) Tj")
+            y -= 17
+        content.append("ET")
+        pages.append("\n".join(content).encode("latin-1", "replace"))
+
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>"]
+    kids = []
+    content_object_ids = []
+    next_id = 3
+    for _page in pages:
+        kids.append(f"{next_id} 0 R".encode())
+        content_object_ids.append(next_id + 1)
+        next_id += 2
+    objects.append(b"<< /Type /Pages /Kids [" + b" ".join(kids) + b"] /Count " + str(len(pages)).encode() + b" >>")
+    for page_content, content_id in zip(pages, content_object_ids):
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {next_id} 0 R >> >> /Contents {content_id} 0 R >>".encode())
+        objects.append(b"<< /Length " + str(len(page_content)).encode() + b" >>\nstream\n" + page_content + b"\nendstream")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for idx, obj in enumerate(objects, 1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{idx} 0 obj\n".encode() + obj + b"\nendobj\n")
+    xref = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode())
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode())
+    pdf.extend(f"trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
+    return bytes(pdf)
+
+
+@login_required
+def descargar_padron_activo_pdf(request):
+    ciudadanos = _ciudadanos_operativos_queryset().filter(activo=True).order_by("apellido_paterno", "apellido_materno", "nombre")
+    generado = timezone.localtime().strftime("%d/%m/%Y %H:%M")
+    lines = [
+        "Pueblo Digital",
+        "Centro de Gestión Comunitaria",
+        "Padrón de Ciudadanos Activos",
+        f"Fecha de generación: {generado}",
+        "",
+        "Nombre | Teléfono | Toma de agua | Estado",
+        "-" * 95,
+    ]
+    for ciudadano in ciudadanos:
+        toma = getattr(ciudadano, "toma", None)
+        lines.append(
+            f"{ciudadano.nombre_completo} | {ciudadano.telefono or 'Sin teléfono'} | "
+            f"{toma.numero_toma if toma else 'Sin toma'} | Activo"
+        )
+
+    response = HttpResponse(_build_simple_pdf(lines), content_type="application/pdf")
+    response["Content-Disposition"] = 'attachment; filename="padron-ciudadanos-activos.pdf"'
+    return response
 
 
 @login_required
