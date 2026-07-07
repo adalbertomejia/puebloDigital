@@ -15,7 +15,7 @@
 
       <nav class="mt-6 space-y-2 text-sm">
         <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 bg-slate-800">Inicio</a>
-        <a href="/admin/core/ciudadano/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Ciudadanos</a>
+        <a href="{% url 'padron_ciudadanos' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Ciudadanos</a>
         <a href="{% url 'control_asistencias' %}" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Control de Asistencias</a>
         <a href="/admin/operacion/faena/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Faenas</a>
         <a href="/admin/agua/toma/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Agua</a>
@@ -39,6 +39,7 @@
           <nav class="flex items-center gap-2 text-sm">
             <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Inicio</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'control_asistencias' %}">Asistencias</a>
+            <a class="px-3 py-2 rounded-lg bg-slate-200" href="{% url 'padron_ciudadanos' %}">Ciudadanos</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Administración</a>
             <a class="px-3 py-2 rounded-lg bg-slate-200" href="/logout/">Salir</a>
           </nav>

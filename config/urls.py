@@ -11,9 +11,11 @@ from apps.core.views import (
     crear_faena_operativa,
     crear_junta_operativa,
     dashboard_operativo,
+    descargar_padron_activo_pdf,
     generar_registros_faena,
     generar_registros_junta,
     home,
+    padron_ciudadanos,
     perfil_ciudadano,
 )
 
@@ -22,6 +24,8 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('dashboard/', dashboard_operativo, name='dashboard_operativo'),
+    path('ciudadanos/', padron_ciudadanos, name='padron_ciudadanos'),
+    path('ciudadanos/padron-activo.pdf', descargar_padron_activo_pdf, name='descargar_padron_activo_pdf'),
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
     path('operacion/faenas/nueva/', crear_faena_operativa, name='crear_faena_operativa'),

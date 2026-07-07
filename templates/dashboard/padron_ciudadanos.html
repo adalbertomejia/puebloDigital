@@ -1,0 +1,105 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Padrón de Ciudadanos{% endblock %}
+{% block content %}
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>Padrón de ciudadanos</span></nav>
+
+<section class="bg-white border rounded-2xl p-5 mb-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <p class="text-xs uppercase tracking-widest text-indigo-600 font-semibold">Padrón operativo</p>
+      <h2 class="text-2xl font-bold mt-1">Ciudadanos</h2>
+      <p class="text-slate-500 mt-1">Consulta, filtra y abre expedientes sin depender del listado técnico de administración.</p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <a href="{% url 'descargar_padron_activo_pdf' %}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Descargar padrón activo PDF</a>
+      <a href="{{ admin_add_url }}" class="px-4 py-2 rounded-lg bg-slate-200">Agregar ciudadano</a>
+    </div>
+  </div>
+</section>
+
+<section class="grid md:grid-cols-5 gap-4 mb-6">
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total</p><p class="text-2xl font-bold">{{ metricas.total }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Activos</p><p class="text-2xl font-bold text-emerald-700">{{ metricas.activos }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Inactivos</p><p class="text-2xl font-bold text-rose-700">{{ metricas.inactivos }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Sin toma</p><p class="text-2xl font-bold">{{ metricas.sin_toma }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Con adeudo faena</p><p class="text-2xl font-bold">{{ metricas.con_adeudo }}</p></article>
+</section>
+
+<section class="bg-white rounded-2xl border p-4 mb-6">
+  <form method="get" class="grid lg:grid-cols-6 gap-3 items-end">
+    <label class="lg:col-span-2 text-sm font-medium">Búsqueda general
+      <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre, teléfono, toma o identificador" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+    </label>
+    <label class="text-sm font-medium">Estado
+      <select name="estado" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+        <option value="todos" {% if filtros.estado == 'todos' %}selected{% endif %}>Todos</option>
+        <option value="activos" {% if filtros.estado == 'activos' %}selected{% endif %}>Activos</option>
+        <option value="inactivos" {% if filtros.estado == 'inactivos' %}selected{% endif %}>Inactivos</option>
+      </select>
+    </label>
+    <label class="text-sm font-medium">Toma de agua
+      <select name="toma" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+        <option value="todos" {% if filtros.toma == 'todos' %}selected{% endif %}>Todos</option>
+        <option value="con_toma" {% if filtros.toma == 'con_toma' %}selected{% endif %}>Con toma</option>
+        <option value="sin_toma" {% if filtros.toma == 'sin_toma' %}selected{% endif %}>Sin toma</option>
+      </select>
+    </label>
+    <label class="text-sm font-medium">Adeudos de faena
+      <select name="adeudo" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+        <option value="todos" {% if filtros.adeudo == 'todos' %}selected{% endif %}>Todos</option>
+        <option value="con_adeudo" {% if filtros.adeudo == 'con_adeudo' %}selected{% endif %}>Con adeudo</option>
+        <option value="sin_adeudo" {% if filtros.adeudo == 'sin_adeudo' %}selected{% endif %}>Sin adeudo</option>
+      </select>
+    </label>
+    <label class="text-sm font-medium">Ordenar por
+      <select name="orden" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+        <option value="nombre" {% if filtros.orden == 'nombre' %}selected{% endif %}>Nombre</option>
+        <option value="estado" {% if filtros.orden == 'estado' %}selected{% endif %}>Estado</option>
+        <option value="adeudos_faena" {% if filtros.orden == 'adeudos_faena' %}selected{% endif %}>Adeudos de faena</option>
+        <option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Fecha de registro</option>
+      </select>
+    </label>
+    <div class="lg:col-span-6 flex flex-wrap gap-2">
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar filtros</button>
+      <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'padron_ciudadanos' %}">Limpiar</a>
+    </div>
+  </form>
+</section>
+
+<section class="space-y-3">
+  {% for c in ciudadanos %}
+    <article class="bg-white rounded-xl border p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
+          <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }} · ID {{ c.id }}</p>
+        </div>
+        <span class="text-xs px-3 py-1 rounded-full font-medium {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
+      </div>
+      <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm">
+        <p><span class="block text-xs text-slate-500">Toma de agua</span><strong>{{ c.toma.numero_toma|default:'Sin toma' }}</strong></p>
+        <p><span class="block text-xs text-slate-500">Último pago</span><strong>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</strong></p>
+        <p><span class="block text-xs text-slate-500">Adeudos de faena</span><strong>{{ c.adeudos_faena }}</strong></p>
+        <p><span class="block text-xs text-slate-500">Registro</span><strong>{{ c.created_at|date:'d/m/Y' }}</strong></p>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-2 text-sm">
+        <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
+        <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
+        <a href="{% url 'control_asistencias' %}" class="px-3 py-2 rounded-lg bg-slate-100">Registrar asistencia de faena</a>
+      </div>
+    </article>
+  {% empty %}
+    <article class="bg-white rounded-xl border p-6 text-slate-500">No se encontraron ciudadanos con los filtros seleccionados.</article>
+  {% endfor %}
+</section>
+
+{% if ciudadanos.paginator.num_pages > 1 %}
+  <nav class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
+    <span class="text-slate-500">Página {{ ciudadanos.number }} de {{ ciudadanos.paginator.num_pages }}</span>
+    <div class="flex gap-2">
+      {% if ciudadanos.has_previous %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.previous_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Anterior</a>{% endif %}
+      {% if ciudadanos.has_next %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.next_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Siguiente</a>{% endif %}
+    </div>
+  </nav>
+{% endif %}
+{% endblock %}
