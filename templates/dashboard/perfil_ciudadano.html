@@ -1,6 +1,14 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Expediente {{ ciudadano.nombre_completo }}{% endblock %}
 {% block content %}
+{% if messages %}
+  <div class="space-y-2 mb-4">
+    {% for message in messages %}
+      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% elif message.tags == "error" %}bg-rose-50 border-rose-300 text-rose-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
 <nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>{{ ciudadano.nombre_completo }}</span></nav>
 
 <section class="bg-white border rounded-2xl p-5 mb-6">

@@ -1,0 +1,64 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% if messages %}
+  <div class="space-y-2 mb-4">
+    {% for message in messages %}
+      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% elif message.tags == "error" %}bg-rose-50 border-rose-300 text-rose-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'padron_ciudadanos' %}">Padrón de ciudadanos</a> / <span>Agregar ciudadano</span></nav>
+
+<section class="max-w-4xl mx-auto space-y-4">
+  <div class="bg-white rounded-2xl border p-4 md:p-6">
+    <p class="text-xs uppercase tracking-[.2em] text-indigo-600">Padrón operativo</p>
+    <div class="mt-2 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="text-2xl font-semibold text-slate-900">{{ title }}</h3>
+        <p class="text-sm text-slate-500 mt-1">{{ description }}</p>
+      </div>
+      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">Volver al padrón</a>
+    </div>
+  </div>
+
+  <form method="post" class="bg-white rounded-2xl border p-4 md:p-6 space-y-5" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        {{ form.non_field_errors }}
+      </div>
+    {% endif %}
+
+    <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3 text-sm text-indigo-900">
+      Los campos marcados con <span class="font-semibold text-rose-600">*</span> son obligatorios. Después de guardar se abrirá el expediente del ciudadano registrado.
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4">
+      {% for field in form %}
+        <div class="{% if field.name == 'direccion' or field.name == 'observaciones' %}md:col-span-2{% endif %}{% if field.name == 'activo' %} flex items-start gap-3 rounded-lg border bg-slate-50 p-3{% endif %}">
+          {% if field.name == 'activo' %}
+            <div class="pt-1">{{ field }}</div>
+            <div>
+              <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-slate-700">{{ field.label }}{% if field.field.required %} <span class="text-rose-600">*</span>{% endif %}</label>
+              {% if field.help_text %}<p class="mt-1 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+              {% for error in field.errors %}<p class="mt-1 text-sm text-rose-700">{{ error }}</p>{% endfor %}
+            </div>
+          {% else %}
+            <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-slate-700 mb-1">{{ field.label }}{% if field.field.required %} <span class="text-rose-600">*</span>{% endif %}</label>
+            {{ field }}
+            {% if field.help_text %}<p class="mt-1 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+            {% for error in field.errors %}<p class="mt-1 text-sm text-rose-700">{{ error }}</p>{% endfor %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</a>
+      <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ submit_label }}</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
