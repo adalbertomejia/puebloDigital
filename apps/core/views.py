@@ -189,6 +189,77 @@ def descargar_padron_activo_pdf(request):
     return response
 
 
+def _filtrar_tomas_operativas(queryset, params):
+    q = params.get("q", "").strip()
+    estado = params.get("estado", "todas")
+    asociacion = params.get("asociacion", "todas")
+
+    if q:
+        queryset = queryset.filter(
+            Q(numero_toma__icontains=q)
+            | Q(ciudadano__nombre__icontains=q)
+            | Q(ciudadano__apellido_paterno__icontains=q)
+            | Q(ciudadano__apellido_materno__icontains=q)
+        )
+
+    if estado == "activas":
+        queryset = queryset.filter(estado=Toma.Estados.ACTIVA)
+    elif estado == "suspendidas":
+        queryset = queryset.filter(estado=Toma.Estados.SUSPENDIDA)
+
+    if asociacion == "con_ciudadano":
+        queryset = queryset.filter(ciudadano__isnull=False)
+    elif asociacion == "sin_ciudadano":
+        queryset = queryset.filter(ciudadano__isnull=True)
+
+    return queryset.order_by("estado", "numero_toma")
+
+
+@login_required
+def control_agua(request):
+    tomas_base = Toma.objects.select_related("ciudadano")
+    tomas_qs = _filtrar_tomas_operativas(tomas_base, request.GET)
+    paginator = Paginator(tomas_qs, 20)
+    tomas_page = paginator.get_page(request.GET.get("page"))
+
+    total_tomas = Toma.objects.count()
+    tomas_activas = Toma.objects.filter(estado=Toma.Estados.ACTIVA).count()
+    tomas_suspendidas = Toma.objects.filter(estado=Toma.Estados.SUSPENDIDA).count()
+    tomas_canceladas = Toma.objects.filter(estado=Toma.Estados.CANCELADA).count()
+    tomas_sin_ciudadano = Toma.objects.filter(ciudadano__isnull=True).count()
+    costo_anual_total = Toma.objects.aggregate(total=Sum("costo_anual"))["total"] or 0
+
+    revision_qs = (
+        Toma.objects.select_related("ciudadano")
+        .filter(Q(ciudadano__isnull=True) | Q(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]) | Q(ubicacion=""))
+        .order_by("estado", "numero_toma")[:8]
+    )
+
+    context = {
+        "tomas": tomas_page,
+        "filtros": {
+            "q": request.GET.get("q", "").strip(),
+            "estado": request.GET.get("estado", "todas"),
+            "asociacion": request.GET.get("asociacion", "todas"),
+        },
+        "metricas": {
+            "total_tomas": total_tomas,
+            "tomas_activas": tomas_activas,
+            "tomas_suspendidas": tomas_suspendidas,
+            "tomas_canceladas": tomas_canceladas,
+            "tomas_sin_ciudadano": tomas_sin_ciudadano,
+            "costo_anual_total": costo_anual_total,
+        },
+        "distribucion": {
+            "activas": round((tomas_activas / total_tomas) * 100) if total_tomas else 0,
+            "suspendidas": round((tomas_suspendidas / total_tomas) * 100) if total_tomas else 0,
+            "sin_ciudadano": round((tomas_sin_ciudadano / total_tomas) * 100) if total_tomas else 0,
+            "canceladas": round((tomas_canceladas / total_tomas) * 100) if total_tomas else 0,
+        },
+        "tomas_revision": revision_qs,
+    }
+    return render(request, "dashboard/control_agua.html", context)
+
 @login_required
 def home(request):
     return render(request, "home.html")

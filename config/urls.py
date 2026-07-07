@@ -4,6 +4,7 @@ from django.urls import path
 
 from apps.core.views import (
     control_asistencias,
+    control_agua,
     control_asistencias_faena_detalle,
     control_asistencias_junta_detalle,
     captura_asistencia_faena,
@@ -30,6 +31,7 @@ urlpatterns = [
     path('ciudadanos/padron-activo.pdf', descargar_padron_activo_pdf, name='descargar_padron_activo_pdf'),
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
+    path('agua/', control_agua, name='control_agua'),
     path('operacion/faenas/nueva/', crear_faena_operativa, name='crear_faena_operativa'),
     path('operacion/juntas/nueva/', crear_junta_operativa, name='crear_junta_operativa'),
     path('control-asistencias/faena/<int:faena_id>/', control_asistencias_faena_detalle, name='control_asistencias_faena_detalle'),
