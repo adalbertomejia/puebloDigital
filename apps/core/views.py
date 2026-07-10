@@ -370,29 +370,45 @@ def dashboard_operativo(request):
     return render(request, "dashboard/operativo.html", context)
 
 
-def _crear_evento_operativo(request, form_class, event_label, description, detail_url_name):
+def _evento_operativo_form_view(
+    request,
+    form_class,
+    event_label,
+    description,
+    detail_url_name,
+    *,
+    instance=None,
+):
+    is_edit = instance is not None
     if request.method == "POST":
-        form = form_class(request.POST)
+        form = form_class(request.POST, instance=instance)
         if form.is_valid():
             event = form.save()
-            messages.success(request, f"Se creó correctamente la {event_label.lower()}.")
+            action = "actualizó" if is_edit else "creó"
+            messages.success(request, f"Se {action} correctamente la {event_label.lower()}.")
             return redirect(detail_url_name, event.pk)
         messages.error(request, "Revisa los campos marcados antes de guardar.")
     else:
-        form = form_class()
+        form = form_class(instance=instance)
 
+    cancel_url = reverse(detail_url_name, args=[instance.pk]) if is_edit else reverse("dashboard_operativo")
     return render(
         request,
         "dashboard/evento_form.html",
         {
             "form": form,
             "event_label": event_label,
-            "title": f"Crear nueva {event_label.lower()}",
+            "title": f"Editar {event_label.lower()}" if is_edit else f"Crear nueva {event_label.lower()}",
             "description": description,
-            "submit_label": f"Guardar {event_label.lower()}",
-            "cancel_url": reverse("dashboard_operativo"),
+            "submit_label": f"Guardar cambios" if is_edit else f"Guardar {event_label.lower()}",
+            "cancel_url": cancel_url,
+            "cancel_label": "Volver al detalle" if is_edit else "Volver al dashboard",
         },
     )
+
+
+def _crear_evento_operativo(request, form_class, event_label, description, detail_url_name):
+    return _evento_operativo_form_view(request, form_class, event_label, description, detail_url_name)
 
 
 @login_required
@@ -414,6 +430,32 @@ def crear_junta_operativa(request):
         "Junta",
         "Programa una junta comunitaria con la información necesaria para su seguimiento operativo.",
         "control_asistencias_junta_detalle",
+    )
+
+
+@login_required
+def editar_faena_operativa(request, faena_id):
+    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
+    return _evento_operativo_form_view(
+        request,
+        FaenaOperativaForm,
+        "Faena",
+        "Actualiza la información operativa de la faena sin salir del flujo de Control de Asistencias.",
+        "control_asistencias_faena_detalle",
+        instance=faena,
+    )
+
+
+@login_required
+def editar_junta_operativa(request, junta_id):
+    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    return _evento_operativo_form_view(
+        request,
+        JuntaOperativaForm,
+        "Junta",
+        "Actualiza la información operativa de la junta sin salir del flujo de Control de Asistencias.",
+        "control_asistencias_junta_detalle",
+        instance=junta,
     )
 
 
@@ -559,14 +601,14 @@ def control_asistencias(request):
     faenas = _decorate_attendance_events(
         _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
         "descripcion",
-        "admin:operacion_faena_change",
+        "editar_faena_operativa",
         "captura_asistencia_faena",
         "control_asistencias_faena_detalle",
     )
     juntas = _decorate_attendance_events(
         _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
         "tema",
-        "admin:operacion_junta_change",
+        "editar_junta_operativa",
         "captura_asistencia_junta",
         "control_asistencias_junta_detalle",
     )
@@ -612,7 +654,7 @@ def _event_detail_context(event, registros, event_type, description):
 def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
     context = _event_detail_context(faena, faena.registros.all(), "Faena", faena.descripcion)
-    context["admin_change_url"] = reverse("admin:operacion_faena_change", args=[faena.pk])
+    context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk])
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
@@ -622,7 +664,7 @@ def control_asistencias_faena_detalle(request, faena_id):
 def control_asistencias_junta_detalle(request, junta_id):
     junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
     context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
-    context["admin_change_url"] = reverse("admin:operacion_junta_change", args=[junta.pk])
+    context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk])
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
@@ -637,7 +679,7 @@ def _capture_config(event_kind):
             "description_attr": "descripcion",
             "status_choices": RegistroFaena.Estatus.choices,
             "detail_url": "control_asistencias_faena_detalle",
-            "admin_change_url": "admin:operacion_faena_change",
+            "admin_change_url": "editar_faena_operativa",
             "capture_url": "captura_asistencia_faena",
         },
         "junta": {
@@ -647,7 +689,7 @@ def _capture_config(event_kind):
             "description_attr": "tema",
             "status_choices": AsistenciaJunta.Estatus.choices,
             "detail_url": "control_asistencias_junta_detalle",
-            "admin_change_url": "admin:operacion_junta_change",
+            "admin_change_url": "editar_junta_operativa",
             "capture_url": "captura_asistencia_junta",
         },
     }
