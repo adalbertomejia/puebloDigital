@@ -1,0 +1,19 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Editar estado de {{ event_type }}{% endblock %}
+{% block content %}
+<nav class="text-sm mb-4 text-slate-500"><a href="{{ cancel_url }}">{{ event_type }}</a> / <span>Editar estado</span></nav>
+<section class="bg-white rounded-2xl border p-4 md:p-5 max-w-2xl">
+  <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">Editar estado · {{ event_type }}</p>
+  <h3 class="text-2xl font-bold mb-1">{{ description }}</h3>
+  <p class="text-slate-500 mb-4">Estado actual: <strong>{{ event.get_estado_display }}</strong></p>
+  {% if messages %}{% for message in messages %}<div class="mb-3 rounded-lg border px-3 py-2 text-sm bg-rose-50 border-rose-200 text-rose-800">{{ message }}</div>{% endfor %}{% endif %}
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+    <div>{{ form.estado.label_tag }}{{ form.estado }}{% for error in form.estado.errors %}<p class="text-sm text-rose-600">{{ error }}</p>{% endfor %}</div>
+    <div class="flex flex-wrap gap-2">
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Guardar estado</button>
+      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-200 px-4 py-2">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

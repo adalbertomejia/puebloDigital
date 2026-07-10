@@ -3,6 +3,11 @@ from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
 
 class Junta(TimeStampedModel):
+    class Estados(models.TextChoices):
+        PROGRAMADA = 'PROGRAMADA', 'Programada'
+        REALIZADA = 'REALIZADA', 'Realizada'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+
     class Tipos(models.TextChoices):
         ORDINARIA = 'ORDINARIA', 'Ordinaria'
         EXTRAORDINARIA = 'EXTRAORDINARIA', 'Extraordinaria'
@@ -13,6 +18,7 @@ class Junta(TimeStampedModel):
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.ORDINARIA)
     lugar = models.CharField(max_length=150, blank=True)
     tema = models.CharField(max_length=200)
+    estado = models.CharField(max_length=20, choices=Estados.choices, default=Estados.PROGRAMADA)
     notas = models.TextField(blank=True)
 
     class Meta:
@@ -33,6 +39,8 @@ class AsistenciaJunta(TimeStampedModel):
     junta = models.ForeignKey(Junta, on_delete=models.CASCADE, related_name='asistencias')
     ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='asistencias_junta')
     estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
+    genera_adeudo = models.BooleanField(default=False)
+    monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     asistio = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
 

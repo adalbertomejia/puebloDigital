@@ -55,7 +55,7 @@ class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
 class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Junta
-        fields = ["comite", "fecha", "tipo", "lugar", "tema", "notas"]
+        fields = ["comite", "fecha", "tipo", "lugar", "tema", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
@@ -66,6 +66,7 @@ class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
             "tipo": "Tipo de junta",
             "lugar": "Lugar",
             "tema": "Tema principal",
+            "estado": "Estado",
             "notas": "Notas operativas",
         }
         help_texts = {
