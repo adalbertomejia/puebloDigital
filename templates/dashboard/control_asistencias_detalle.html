@@ -8,10 +8,11 @@
       <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">{{ event_type }}</p>
       <h3 class="text-2xl font-bold">{{ description }}</h3>
       <p class="text-slate-500">{{ event.fecha }} · {{ event.comite.nombre }}{% if event.lugar %} · {{ event.lugar }}{% endif %}</p>
-      <span class="inline-block mt-3 text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">{{ estado_operacional }}</span>
+      <span class="inline-block mt-3 text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">{{ event.get_estado_display }} · {{ estado_operacional }}</span>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
-      <a href="{{ capture_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Capturar asistencia</a>
+      {% if can_capture %}<a href="{{ capture_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Capturar asistencia</a>{% endif %}
+      <a href="{{ estado_edit_url }}" class="px-3 py-2 rounded-lg bg-amber-100 text-amber-800">Editar estado</a>
       <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Editar evento</a>
     </div>
   </div>
@@ -22,6 +23,8 @@
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias registradas</p><p class="text-2xl font-bold">{{ metricas.asistencias_registradas }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pendientes</p><p class="text-2xl font-bold">{{ metricas.pendientes }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Porcentaje de asistencia</p><p class="text-2xl font-bold">{{ metricas.porcentaje_asistencia }}%</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Adeudos</p><p class="text-2xl font-bold">{{ metricas.cantidad_adeudos }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Monto total de adeudos</p><p class="text-2xl font-bold">${{ metricas.monto_total_adeudos }}</p></article>
 </section>
 
 <section class="bg-white rounded-2xl border p-4 md:p-5">

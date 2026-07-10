@@ -52,7 +52,7 @@
         <tr>
           <th class="py-2 pr-3">Ciudadano</th>
           <th class="py-2 pr-3">Estatus</th>
-          {% if event_type == 'Faena' %}<th class="py-2 pr-3">Adeudo</th><th class="py-2 pr-3">Monto</th>{% endif %}
+          <th class="py-2 pr-3">Adeudo</th><th class="py-2 pr-3">Monto</th>
           <th class="py-2 pr-3">Observaciones</th>
         </tr>
       </thead>
@@ -67,10 +67,8 @@
                 {% endfor %}
               </select>
             </td>
-            {% if event_type == 'Faena' %}
-              <td class="py-2 pr-3 text-center"><input type="checkbox" name="registro_{{ registro.pk }}_genera_adeudo" {% if registro.genera_adeudo %}checked{% endif %}></td>
+            <td class="py-2 pr-3 text-center"><input type="checkbox" name="registro_{{ registro.pk }}_genera_adeudo" {% if registro.genera_adeudo %}checked{% endif %}></td>
               <td class="py-2 pr-3"><input type="number" step="0.01" min="0" name="registro_{{ registro.pk }}_monto_adeudo" value="{{ registro.monto_adeudo }}" class="w-28 rounded-lg border px-2 py-1"></td>
-            {% endif %}
             <td class="py-2 pr-3"><input type="text" name="registro_{{ registro.pk }}_observaciones" value="{{ registro.observaciones }}" class="w-full min-w-48 rounded-lg border px-2 py-1" placeholder="Observaciones"></td>
           </tr>
         {% empty %}

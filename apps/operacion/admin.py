@@ -18,15 +18,16 @@ class AsistenciaJuntaInline(admin.TabularInline):
     extra = 0
     autocomplete_fields = ("ciudadano",)
     show_change_link = True
-    fields = ("ciudadano", "estatus", "asistio", "observaciones")
+    fields = ("ciudadano", "estatus", "genera_adeudo", "monto_adeudo", "asistio", "observaciones")
 
 
 @admin.register(Junta)
 class JuntaAdmin(admin.ModelAdmin):
-    list_display = ("fecha", "comite", "tipo", "tema", "total_registros", "total_asistencias")
-    list_filter = ("tipo", "comite")
+    list_display = ("fecha", "comite", "tipo", "tema", "estado", "total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
+    list_filter = ("estado", "tipo", "comite")
     search_fields = ("tema", "comite__nombre")
     autocomplete_fields = ("comite",)
+    list_editable = ("estado",)
     date_hierarchy = "fecha"
     inlines = [AsistenciaJuntaInline]
 
@@ -39,6 +40,8 @@ class JuntaAdmin(admin.ModelAdmin):
                 filter=Q(asistencias__estatus=AsistenciaJunta.Estatus.ASISTIO),
                 distinct=True,
             ),
+            _total_adeudos=Count("asistencias", filter=Q(asistencias__genera_adeudo=True), distinct=True),
+            _monto_total_adeudos=Sum("asistencias__monto_adeudo", filter=Q(asistencias__genera_adeudo=True)),
         )
 
     @admin.display(ordering="_total_registros", description="Registros")
@@ -48,6 +51,14 @@ class JuntaAdmin(admin.ModelAdmin):
     @admin.display(ordering="_total_asistencias", description="Asistencias")
     def total_asistencias(self, obj):
         return obj._total_asistencias
+
+    @admin.display(ordering="_total_adeudos", description="Adeudos")
+    def total_adeudos(self, obj):
+        return obj._total_adeudos
+
+    @admin.display(ordering="_monto_total_adeudos", description="Monto adeudos")
+    def monto_total_adeudos(self, obj):
+        return obj._monto_total_adeudos or 0
 
 
 class RegistroFaenaInlineFormSet(BaseInlineFormSet):
@@ -153,6 +164,14 @@ class FaenaAdmin(admin.ModelAdmin):
     @admin.display(ordering="_total_asistencias", description="Asistencias")
     def total_asistencias(self, obj):
         return obj._total_asistencias
+
+    @admin.display(ordering="_total_adeudos", description="Adeudos")
+    def total_adeudos(self, obj):
+        return obj._total_adeudos
+
+    @admin.display(ordering="_monto_total_adeudos", description="Monto adeudos")
+    def monto_total_adeudos(self, obj):
+        return obj._monto_total_adeudos or 0
 
     @admin.display(ordering="_total_adeudos", description="Adeudos")
     def total_adeudos(self, obj):
