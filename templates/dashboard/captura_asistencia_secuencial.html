@@ -1,0 +1,94 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Captura presencial - {{ event_type }}{% endblock %}
+{% block content %}
+<nav class="text-sm mb-4 text-slate-500">
+  <a href="{% url 'control_asistencias' %}">Control de Asistencias</a> /
+  <a href="{{ detail_url }}">{{ event_type }}</a> /
+  <span>Captura presencial</span>
+</nav>
+
+<section class="bg-white rounded-2xl border p-4 md:p-5 mb-6">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">{{ event_type }}</p>
+      <h3 class="text-2xl font-bold">{{ event_type }}: {{ description }}</h3>
+      <p class="text-slate-500">{{ event.fecha }} · {{ event.comite.nombre }}{% if event.lugar %} · {{ event.lugar }}{% endif %}</p>
+      <p class="mt-2 text-sm text-slate-600">Estado: <strong>{{ event.get_estado_display }}</strong> · Registro <span data-metric="actual">{{ capture_metrics.actual }}</span> de <span data-metric="total">{{ capture_metrics.total }}</span> · Pendientes: <span data-metric="pendientes">{{ capture_metrics.pendientes }}</span></p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <a href="{{ detail_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Volver al detalle</a>
+      <a href="{% url 'control_asistencias' %}" class="px-3 py-2 rounded-lg bg-slate-100">Control de Asistencias</a>
+    </div>
+  </div>
+</section>
+
+<section class="grid md:grid-cols-5 gap-4 mb-6" aria-live="polite">
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total</p><p class="text-2xl font-bold" data-metric="total">{{ capture_metrics.total }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistieron</p><p class="text-2xl font-bold text-emerald-700" data-metric="asistieron">{{ capture_metrics.asistieron }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Faltaron</p><p class="text-2xl font-bold text-rose-700" data-metric="faltaron">{{ capture_metrics.faltaron }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pendientes</p><p class="text-2xl font-bold" data-metric="pendientes">{{ capture_metrics.pendientes }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Avance</p><p class="text-2xl font-bold"><span data-metric="porcentaje">{{ capture_metrics.porcentaje }}</span>%</p></article>
+</section>
+<div class="mb-6 h-3 rounded-full bg-slate-200 overflow-hidden"><div id="progressBar" class="h-full bg-indigo-600 transition-all" style="width: {{ capture_metrics.porcentaje }}%"></div></div>
+
+<section id="captureApp" class="max-w-3xl mx-auto" data-capture-url="{{ capture_url }}" data-csrf-token="{{ csrf_token }}">
+  <div id="completePanel" class="{% if current_record %}hidden{% endif %} bg-white rounded-2xl border p-6 text-center">
+    <p class="text-sm uppercase tracking-widest text-emerald-600 font-semibold">Captura completada</p>
+    <h4 class="text-2xl font-bold mt-2">Resumen final</h4>
+    <div class="grid sm:grid-cols-3 gap-3 mt-5 text-left">
+      <p class="rounded-xl bg-slate-50 p-3"><span class="block text-xs text-slate-500">Participantes</span><strong data-metric="total">{{ capture_metrics.total }}</strong></p>
+      <p class="rounded-xl bg-emerald-50 p-3"><span class="block text-xs text-slate-500">Asistieron</span><strong data-metric="asistieron">{{ capture_metrics.asistieron }}</strong></p>
+      <p class="rounded-xl bg-rose-50 p-3"><span class="block text-xs text-slate-500">Faltaron</span><strong data-metric="faltaron">{{ capture_metrics.faltaron }}</strong></p>
+      <p class="rounded-xl bg-slate-50 p-3"><span class="block text-xs text-slate-500">% asistencia</span><strong><span data-metric="porcentaje_asistencia">{{ capture_metrics.porcentaje_asistencia }}</span>%</strong></p>
+      <p class="rounded-xl bg-slate-50 p-3"><span class="block text-xs text-slate-500">Adeudos</span><strong data-metric="cantidad_adeudos">{{ capture_metrics.cantidad_adeudos }}</strong></p>
+      <p class="rounded-xl bg-slate-50 p-3"><span class="block text-xs text-slate-500">Monto adeudos</span><strong>$<span data-metric="monto_total_adeudos">{{ capture_metrics.monto_total_adeudos }}</span></strong></p>
+    </div>
+    <div class="mt-6 flex flex-wrap justify-center gap-2"><a href="{{ detail_url }}" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Volver al detalle</a><a href="{% url 'control_asistencias' %}" class="px-4 py-2 rounded-lg bg-slate-200">Volver a Control de Asistencias</a></div>
+  </div>
+
+  <div id="cardPanel" class="{% if not current_record %}hidden{% endif %}">
+    <div id="swipeCard" tabindex="0" role="group" aria-label="Tarjeta de ciudadano" class="relative overflow-hidden bg-white rounded-3xl border shadow-sm min-h-72 flex items-center justify-center transition-transform duration-200 touch-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-200">
+      <div id="actionHint" class="absolute inset-0 flex items-center justify-center text-4xl font-black text-white opacity-0 transition-opacity">Asistió</div>
+      <h4 id="citizenName" class="relative z-10 text-4xl md:text-5xl font-black text-center px-6 text-slate-900">{{ current_record.nombre }}</h4>
+    </div>
+    <p id="statusMessage" class="mt-3 min-h-6 text-center text-sm text-slate-500" aria-live="polite">Mueve el puntero o desliza la tarjeta. Clic derecho: Asistió. Clic izquierdo: Faltó.</p>
+    <div class="grid sm:grid-cols-2 gap-3 mt-5">
+      <button type="button" data-action="falto" class="decision rounded-2xl bg-rose-600 text-white text-xl font-bold py-5 focus:outline-none focus:ring-4 focus:ring-rose-200">Faltó</button>
+      <button type="button" data-action="asistio" class="decision rounded-2xl bg-emerald-600 text-white text-xl font-bold py-5 focus:outline-none focus:ring-4 focus:ring-emerald-200">Asistió</button>
+    </div>
+    <div class="mt-4 flex flex-wrap justify-center gap-2">
+      <button id="skipBtn" type="button" class="px-4 py-2 rounded-lg bg-slate-200">Revisar después</button>
+      <button id="undoBtn" type="button" class="px-4 py-2 rounded-lg bg-amber-100 text-amber-800 disabled:opacity-40" disabled>Deshacer última acción</button>
+    </div>
+  </div>
+</section>
+
+{{ current_record.id|json_script:"initial-record-id" }}
+<script>
+(() => {
+  const app = document.getElementById('captureApp');
+  const card = document.getElementById('swipeCard');
+  if (!app || !card) return;
+  const nameEl = document.getElementById('citizenName'), hint = document.getElementById('actionHint'), msg = document.getElementById('statusMessage');
+  const panel = document.getElementById('cardPanel'), complete = document.getElementById('completePanel'), bar = document.getElementById('progressBar'), undoBtn = document.getElementById('undoBtn');
+  let current = {id: JSON.parse(document.getElementById('initial-record-id').textContent), nombre: nameEl.textContent.trim()};
+  let queueTail = [], lastAction = null, busy = false, startX = null, dragX = 0;
+  const threshold = 120;
+  function paint(delta){ const action = delta < 0 ? 'falto' : 'asistio', intensity = Math.min(Math.abs(delta)/threshold, 1); card.style.background = action==='falto' ? `rgba(225,29,72,${0.12+intensity*.55})` : `rgba(5,150,105,${0.12+intensity*.55})`; hint.textContent = action==='falto' ? 'Faltó' : 'Asistió'; hint.style.opacity = intensity; card.style.transform = `translateX(${delta}px) rotate(${delta/25}deg)`; }
+  function reset(){ card.style.background='white'; hint.style.opacity=0; card.style.transform=''; }
+  function metrics(m){ Object.entries(m).forEach(([k,v]) => document.querySelectorAll(`[data-metric="${k}"]`).forEach(el => el.textContent = v)); bar.style.width = `${m.porcentaje}%`; }
+  function show(record){ current = record; if(record){ nameEl.textContent=record.nombre; panel.classList.remove('hidden'); complete.classList.add('hidden'); reset(); } else { panel.classList.add('hidden'); complete.classList.remove('hidden'); } }
+  async function send(action, record=current){ if(busy || !record?.id) return; busy=true; msg.textContent='Guardando...'; const body = new URLSearchParams({action, record_id: record.id}); if(action==='undo' && lastAction) body.set('expected_status', lastAction.status); const res = await fetch(app.dataset.captureUrl, {method:'POST', headers:{'X-CSRFToken': app.dataset.csrfToken, 'X-Requested-With':'XMLHttpRequest'}, body}); const data = await res.json(); busy=false; if(!res.ok || !data.ok){ msg.textContent=data.error || 'No se pudo guardar.'; if(data.metrics) metrics(data.metrics); reset(); return; } metrics(data.metrics); if(action==='undo'){ queueTail.unshift(current); show({id:lastAction.id, nombre:lastAction.nombre}); lastAction=null; undoBtn.disabled=true; msg.textContent='Última acción deshecha.'; return; } lastAction={id:record.id, nombre:record.nombre, status: data.updated_record.estatus}; undoBtn.disabled=false; show(queueTail.shift() || data.next_record); msg.textContent='Guardado. Continuando con el siguiente ciudadano.'; }
+  document.querySelectorAll('.decision').forEach(b => b.addEventListener('click', () => send(b.dataset.action)));
+  document.getElementById('skipBtn').addEventListener('click', () => { if(!current?.id) return; queueTail.push(current); show(queueTail.shift() || current); msg.textContent='Registro movido al final de esta sesión.'; });
+  undoBtn.addEventListener('click', () => lastAction && send('undo', {id:lastAction.id, nombre:lastAction.nombre}));
+  card.addEventListener('mousemove', e => { const r=card.getBoundingClientRect(); paint(e.clientX - (r.left + r.width/2)); });
+  card.addEventListener('mouseleave', reset);
+  card.addEventListener('click', e => { const r=card.getBoundingClientRect(); send(e.clientX < r.left + r.width/2 ? 'falto' : 'asistio'); });
+  card.addEventListener('pointerdown', e => { startX=e.clientX; card.setPointerCapture(e.pointerId); });
+  card.addEventListener('pointermove', e => { if(startX===null) return; dragX=e.clientX-startX; paint(dragX); });
+  card.addEventListener('pointerup', () => { if(startX!==null && Math.abs(dragX)>threshold) send(dragX<0?'falto':'asistio'); else reset(); startX=null; dragX=0; });
+  document.addEventListener('keydown', e => { if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return; if(e.key==='ArrowLeft') send('falto'); if(e.key==='ArrowRight') send('asistio'); if(e.key.toLowerCase()==='z' && lastAction) send('undo', {id:lastAction.id, nombre:lastAction.nombre}); if(e.key.toLowerCase()==='s') document.getElementById('skipBtn').click(); });
+})();
+</script>
+{% endblock %}

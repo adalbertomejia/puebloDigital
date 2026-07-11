@@ -11,7 +11,7 @@
       <span class="inline-block mt-3 text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">{{ event.get_estado_display }} · {{ estado_operacional }}</span>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
-      {% if can_capture %}<a href="{{ capture_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Capturar asistencia</a>{% endif %}
+      {% if can_capture %}<a href="{{ capture_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Capturar asistencia</a><a href="{{ sequential_capture_url }}" class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Captura presencial</a>{% endif %}
       <a href="{{ estado_edit_url }}" class="px-3 py-2 rounded-lg bg-amber-100 text-amber-800">Editar estado</a>
       <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Editar evento</a>
     </div>

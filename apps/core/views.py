@@ -3,7 +3,7 @@ from itertools import chain
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
@@ -419,6 +419,7 @@ def crear_faena_operativa(request):
         "Faena",
         "Registra una faena comunitaria y continúa el seguimiento desde Control de Asistencias.",
         "control_asistencias_faena_detalle",
+        "generar_registros_faena",
     )
 
 
@@ -430,6 +431,7 @@ def crear_junta_operativa(request):
         "Junta",
         "Programa una junta comunitaria con la información necesaria para su seguimiento operativo.",
         "control_asistencias_junta_detalle",
+        "generar_registros_junta",
     )
 
 
@@ -545,7 +547,7 @@ def _attendance_queryset(model, relation_name, pending_status):
     )
 
 
-def _decorate_attendance_events(events, description_attr, admin_url_name, capture_url_name, detail_url_name):
+def _decorate_attendance_events(events, description_attr, admin_url_name, capture_url_name, detail_url_name, generate_url_name):
     today = timezone.localdate()
     decorated = []
     for event in events:
@@ -576,11 +578,13 @@ def _decorate_attendance_events(events, description_attr, admin_url_name, captur
         event.porcentaje_asistencia = round((registradas / total) * 100) if total else 0
         event.cantidad_adeudos = event.cantidad_adeudos or 0
         event.monto_total_adeudos = event.monto_total_adeudos or 0
-        event.can_capture = event.estado == event.Estados.PROGRAMADA
+        event.can_capture = event.estado == event.Estados.PROGRAMADA and total > 0 and pendientes > 0
         event.estado_edit_url = reverse("editar_estado_evento", args=[event.__class__.__name__.lower(), event.pk])
         event.operational_priority = priority
         event.admin_change_url = reverse(admin_url_name, args=[event.pk])
         event.capture_url = reverse(capture_url_name, args=[event.pk])
+        event.sequential_capture_url = reverse(f"captura_asistencia_secuencial_{event.__class__.__name__.lower()}", args=[event.pk])
+        event.generate_url = reverse(generate_url_name, args=[event.pk])
         event.detail_url = reverse(detail_url_name, args=[event.pk])
         decorated.append(event)
 
@@ -604,6 +608,7 @@ def control_asistencias(request):
         "editar_faena_operativa",
         "captura_asistencia_faena",
         "control_asistencias_faena_detalle",
+        "generar_registros_faena",
     )
     juntas = _decorate_attendance_events(
         _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
@@ -611,6 +616,7 @@ def control_asistencias(request):
         "editar_junta_operativa",
         "captura_asistencia_junta",
         "control_asistencias_junta_detalle",
+        "generar_registros_junta",
     )
 
     return render(
@@ -645,7 +651,7 @@ def _event_detail_context(event, registros, event_type, description):
             "monto_total_adeudos": monto_total_adeudos,
         },
         "estado_operacional": event.estado if event.estado != event.Estados.PROGRAMADA else ("PROGRAMADA" if total == 0 else ("REGISTROS_GENERADOS" if pendientes else "COMPLETADA")),
-        "can_capture": event.estado == event.Estados.PROGRAMADA,
+        "can_capture": event.estado == event.Estados.PROGRAMADA and total > 0 and pendientes > 0,
         "participantes": registros.select_related("ciudadano").order_by("estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre")[:200],
     }
 
@@ -656,6 +662,7 @@ def control_asistencias_faena_detalle(request, faena_id):
     context = _event_detail_context(faena, faena.registros.all(), "Faena", faena.descripcion)
     context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk])
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
+    context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_faena", args=[faena.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
@@ -666,6 +673,7 @@ def control_asistencias_junta_detalle(request, junta_id):
     context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
     context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk])
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
+    context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_junta", args=[junta.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
@@ -681,6 +689,7 @@ def _capture_config(event_kind):
             "detail_url": "control_asistencias_faena_detalle",
             "admin_change_url": "editar_faena_operativa",
             "capture_url": "captura_asistencia_faena",
+            "sequential_capture_url": "captura_asistencia_secuencial_faena",
         },
         "junta": {
             "event_model": Junta,
@@ -691,6 +700,7 @@ def _capture_config(event_kind):
             "detail_url": "control_asistencias_junta_detalle",
             "admin_change_url": "editar_junta_operativa",
             "capture_url": "captura_asistencia_junta",
+            "sequential_capture_url": "captura_asistencia_secuencial_junta",
         },
     }
     return configs[event_kind]
@@ -736,6 +746,74 @@ def _update_attendance_records(request, registros, config):
     return updated
 
 
+def _capture_metrics(registros):
+    total = registros.count()
+    asistieron = registros.filter(estatus="ASISTIO").count()
+    faltaron = registros.filter(estatus="FALTO").count()
+    pendientes = registros.filter(estatus="PENDIENTE").count()
+    registradas = total - pendientes
+    cantidad_adeudos = registros.filter(genera_adeudo=True).count()
+    monto_total_adeudos = registros.filter(genera_adeudo=True).aggregate(total=Sum("monto_adeudo"))["total"] or 0
+    return {
+        "total": total,
+        "asistieron": asistieron,
+        "faltaron": faltaron,
+        "pendientes": pendientes,
+        "registradas": registradas,
+        "actual": registradas + 1 if pendientes else total,
+        "porcentaje": round((registradas / total) * 100) if total else 0,
+        "cantidad_adeudos": cantidad_adeudos,
+        "monto_total_adeudos": str(monto_total_adeudos),
+        "porcentaje_asistencia": round((asistieron / total) * 100) if total else 0,
+    }
+
+
+def _pending_records(event, relation):
+    return getattr(event, relation).select_related("ciudadano").filter(estatus="PENDIENTE").order_by(
+        "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk"
+    )
+
+
+def _serialize_record(registro):
+    if not registro:
+        return None
+    return {"id": registro.pk, "nombre": registro.ciudadano.nombre_completo}
+
+
+def _capture_payload(event, config):
+    registros = getattr(event, config["relation"]).all()
+    siguiente = _pending_records(event, config["relation"]).first()
+    return {
+        "ok": True,
+        "metrics": _capture_metrics(registros),
+        "next_record": _serialize_record(siguiente),
+        "completed": siguiente is None,
+    }
+
+
+def _json_capture_action(request, event, config):
+    action = request.POST.get("action")
+    record_id = request.POST.get("record_id")
+    valid = {"asistio": "ASISTIO", "falto": "FALTO", "undo": "PENDIENTE"}
+    if action not in valid or not record_id:
+        return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
+
+    with transaction.atomic():
+        registro = get_object_or_404(getattr(event, config["relation"]).select_for_update(), pk=record_id)
+        expected = request.POST.get("expected_status")
+        if action in {"asistio", "falto"} and registro.estatus != "PENDIENTE":
+            return JsonResponse({"ok": False, "error": "Este registro ya fue actualizado.", **_capture_payload(event, config)}, status=409)
+        if action == "undo" and expected and registro.estatus != expected:
+            return JsonResponse({"ok": False, "error": "El registro cambió desde la última acción.", **_capture_payload(event, config)}, status=409)
+        registro.estatus = valid[action]
+        if isinstance(registro, AsistenciaJunta):
+            registro.asistio = registro.estatus == AsistenciaJunta.Estatus.ASISTIO
+        registro.save()
+    payload = _capture_payload(event, config)
+    payload.update({"updated_record": {"id": registro.pk, "estatus": registro.estatus}})
+    return JsonResponse(payload)
+
+
 def _captura_asistencia(request, event_kind, event_id):
     config = _capture_config(event_kind)
     event = get_object_or_404(config["event_model"].objects.select_related("comite"), pk=event_id)
@@ -766,10 +844,44 @@ def _captura_asistencia(request, event_kind, event_id):
             "detail_url": reverse(config["detail_url"], args=[event.pk]),
             "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
             "capture_url": reverse(config["capture_url"], args=[event.pk]),
+            "sequential_capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),
             "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]),
         }
     )
     return render(request, "dashboard/captura_asistencia.html", context)
+
+
+def _captura_asistencia_secuencial(request, event_kind, event_id):
+    config = _capture_config(event_kind)
+    event = get_object_or_404(config["event_model"].objects.select_related("comite"), pk=event_id)
+    if event.estado != event.Estados.PROGRAMADA:
+        if request.method == "POST":
+            return JsonResponse({"ok": False, "error": "Solo se puede capturar asistencia en eventos programados."}, status=403)
+        messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
+        return redirect(config["detail_url"], event.pk)
+
+    if request.method == "POST":
+        return _json_capture_action(request, event, config)
+
+    context = _event_detail_context(
+        event,
+        getattr(event, config["relation"]).all(),
+        config["event_type"],
+        getattr(event, config["description_attr"]),
+    )
+    payload = _capture_payload(event, config)
+    context.update(
+        {
+            "current_record": payload["next_record"],
+            "capture_metrics": payload["metrics"],
+            "detail_url": reverse(config["detail_url"], args=[event.pk]),
+            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
+            "capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),
+            "bulk_capture_url": reverse(config["capture_url"], args=[event.pk]),
+            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]),
+        }
+    )
+    return render(request, "dashboard/captura_asistencia_secuencial.html", context)
 
 
 @login_required
@@ -780,6 +892,16 @@ def captura_asistencia_faena(request, faena_id):
 @login_required
 def captura_asistencia_junta(request, junta_id):
     return _captura_asistencia(request, "junta", junta_id)
+
+
+@login_required
+def captura_asistencia_secuencial_faena(request, faena_id):
+    return _captura_asistencia_secuencial(request, "faena", faena_id)
+
+
+@login_required
+def captura_asistencia_secuencial_junta(request, junta_id):
+    return _captura_asistencia_secuencial(request, "junta", junta_id)
 
 
 @login_required
