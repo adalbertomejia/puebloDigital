@@ -545,6 +545,18 @@ def _attendance_queryset(model, relation_name, pending_status):
     )
 
 
+def _event_can_capture_attendance(event, total_participantes=None):
+    """Return whether an event should expose the attendance capture action."""
+    total = total_participantes
+    if total is None:
+        registros = getattr(event, "registros", getattr(event, "asistencias", None))
+        total = registros.count() if registros is not None else 0
+
+    if event.estado == event.Estados.CANCELADA:
+        return False
+    return event.estado == event.Estados.PROGRAMADA or total > 0
+
+
 def _decorate_attendance_events(events, description_attr, admin_url_name, capture_url_name, detail_url_name):
     today = timezone.localdate()
     decorated = []
@@ -576,7 +588,7 @@ def _decorate_attendance_events(events, description_attr, admin_url_name, captur
         event.porcentaje_asistencia = round((registradas / total) * 100) if total else 0
         event.cantidad_adeudos = event.cantidad_adeudos or 0
         event.monto_total_adeudos = event.monto_total_adeudos or 0
-        event.can_capture = event.estado == event.Estados.PROGRAMADA
+        event.can_capture = _event_can_capture_attendance(event, total)
         event.estado_edit_url = reverse("editar_estado_evento", args=[event.__class__.__name__.lower(), event.pk])
         event.operational_priority = priority
         event.admin_change_url = reverse(admin_url_name, args=[event.pk])
@@ -645,7 +657,7 @@ def _event_detail_context(event, registros, event_type, description):
             "monto_total_adeudos": monto_total_adeudos,
         },
         "estado_operacional": event.estado if event.estado != event.Estados.PROGRAMADA else ("PROGRAMADA" if total == 0 else ("REGISTROS_GENERADOS" if pendientes else "COMPLETADA")),
-        "can_capture": event.estado == event.Estados.PROGRAMADA,
+        "can_capture": _event_can_capture_attendance(event, total),
         "participantes": registros.select_related("ciudadano").order_by("estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre")[:200],
     }
 
@@ -739,8 +751,8 @@ def _update_attendance_records(request, registros, config):
 def _captura_asistencia(request, event_kind, event_id):
     config = _capture_config(event_kind)
     event = get_object_or_404(config["event_model"].objects.select_related("comite"), pk=event_id)
-    if event.estado != event.Estados.PROGRAMADA:
-        messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
+    if not _event_can_capture_attendance(event):
+        messages.error(request, "Solo se puede capturar asistencia en eventos programados o con registros generados.")
         return redirect(config["detail_url"], event.pk)
     registros_qs = getattr(event, config["relation"]).select_related("ciudadano").order_by(
         "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
