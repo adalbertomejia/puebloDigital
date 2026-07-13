@@ -71,3 +71,54 @@ class ExportacionParticipantesCsvTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(self._rows(response)), 1)
+
+
+class OperationalEventCreationViewTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="operadora", password="testpass123")
+        self.client.force_login(self.user)
+        self.comite = Comite.objects.create(nombre="Comité Operativo", tipo=Comite.Tipos.DELEGACION)
+
+    def test_abre_y_crea_faena_operativa_con_flujo_compartido(self):
+        response = self.client.get(reverse("crear_faena_operativa"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Crear nueva faena")
+
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-07-20",
+                "descripcion": "Limpieza del parque",
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "Traer herramientas",
+            },
+        )
+
+        faena = Faena.objects.get(descripcion="Limpieza del parque")
+        self.assertRedirects(response, reverse("control_asistencias_faena_detalle", args=[faena.pk]))
+        self.assertEqual(faena.comite, self.comite)
+        self.assertEqual(faena.notas, "Traer herramientas")
+
+    def test_abre_y_crea_junta_operativa_con_flujo_compartido(self):
+        response = self.client.get(reverse("crear_junta_operativa"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Crear nueva junta")
+
+        response = self.client.post(
+            reverse("crear_junta_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-07-21",
+                "tipo": Junta.Tipos.ORDINARIA,
+                "lugar": "Salón comunitario",
+                "tema": "Seguimiento operativo",
+                "estado": Junta.Estados.PROGRAMADA,
+                "notas": "Confirmar asistencia",
+            },
+        )
+
+        junta = Junta.objects.get(tema="Seguimiento operativo")
+        self.assertRedirects(response, reverse("control_asistencias_junta_detalle", args=[junta.pk]))
+        self.assertEqual(junta.comite, self.comite)
+        self.assertEqual(junta.estado, Junta.Estados.PROGRAMADA)
