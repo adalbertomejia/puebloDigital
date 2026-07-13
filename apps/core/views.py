@@ -1,3 +1,4 @@
+import csv
 from itertools import chain
 
 from django.contrib import messages
@@ -656,6 +657,51 @@ def _event_detail_context(event, registros, event_type, description):
     }
 
 
+def _csv_filename(event_type, event):
+    return f"{event_type.lower()}_{event.pk}_participantes_{event.fecha.isoformat()}.csv"
+
+
+def _exportar_participantes_csv(event, registros, event_type, description):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    filename = _csv_filename(event_type, event)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "Numero",
+        "Nombre completo",
+        "Estado",
+        "Fecha",
+        "Tipo de evento",
+        "Descripcion",
+        "Genera adeudo",
+        "Monto adeudo",
+        "Observaciones",
+    ])
+
+    registros = registros.select_related("ciudadano").order_by(
+        "ciudadano__apellido_paterno",
+        "ciudadano__apellido_materno",
+        "ciudadano__nombre",
+        "pk",
+    )
+    for numero, registro in enumerate(registros, start=1):
+        writer.writerow([
+            numero,
+            registro.ciudadano.nombre_completo,
+            registro.estatus,
+            event.fecha.isoformat(),
+            event_type,
+            description,
+            "Sí" if registro.genera_adeudo else "No",
+            registro.monto_adeudo,
+            registro.observaciones,
+        ])
+
+    return response
+
+
 @login_required
 def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
@@ -664,6 +710,7 @@ def control_asistencias_faena_detalle(request, faena_id):
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_faena", args=[faena.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk])
+    context["export_csv_url"] = reverse("exportar_participantes_faena_csv", args=[faena.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
 
@@ -675,7 +722,20 @@ def control_asistencias_junta_detalle(request, junta_id):
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_junta", args=[junta.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk])
+    context["export_csv_url"] = reverse("exportar_participantes_junta_csv", args=[junta.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
+
+
+@login_required
+def exportar_participantes_faena_csv(request, faena_id):
+    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
+    return _exportar_participantes_csv(faena, faena.registros.all(), "Faena", faena.descripcion)
+
+
+@login_required
+def exportar_participantes_junta_csv(request, junta_id):
+    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    return _exportar_participantes_csv(junta, junta.asistencias.all(), "Junta", junta.tema)
 
 
 def _capture_config(event_kind):
