@@ -420,7 +420,6 @@ def crear_faena_operativa(request):
         "Faena",
         "Registra una faena comunitaria y continúa el seguimiento desde Control de Asistencias.",
         "control_asistencias_faena_detalle",
-        "generar_registros_faena",
     )
 
 
@@ -432,7 +431,6 @@ def crear_junta_operativa(request):
         "Junta",
         "Programa una junta comunitaria con la información necesaria para su seguimiento operativo.",
         "control_asistencias_junta_detalle",
-        "generar_registros_junta",
     )
 
 
