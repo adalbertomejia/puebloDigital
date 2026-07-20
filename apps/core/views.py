@@ -926,14 +926,31 @@ def _serialize_record(registro):
     return {"id": registro.pk, "nombre": registro.ciudadano.nombre_completo}
 
 
+LAST_PENDING_PRESENTIAL_MESSAGE = (
+    "Has llegado al último participante pendiente. "
+    "Para evitar cerrar el pase de lista sin revisar los adeudos y la información final, "
+    "este registro debe completarse desde Captura Normal."
+)
+
+
+def _normal_capture_url(event, config):
+    return reverse(config["capture_url"], args=[event.pk])
+
+
 def _capture_payload(event, config):
     registros = getattr(event, config["relation"]).all()
-    siguiente = _pending_records(event, config["relation"]).first()
+    metrics = _capture_metrics(registros)
+    siguiente = None
+    if metrics["pendientes"] > 1:
+        siguiente = _pending_records(event, config["relation"]).first()
     return {
         "ok": True,
-        "metrics": _capture_metrics(registros),
+        "metrics": metrics,
         "next_record": _serialize_record(siguiente),
-        "completed": siguiente is None,
+        "completed": metrics["pendientes"] == 0,
+        "requires_normal_capture": metrics["pendientes"] == 1,
+        "normal_capture_url": _normal_capture_url(event, config),
+        "last_pending_message": LAST_PENDING_PRESENTIAL_MESSAGE if metrics["pendientes"] == 1 else "",
     }
 
 
@@ -945,8 +962,20 @@ def _json_capture_action(request, event, config):
         return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
 
     with transaction.atomic():
-        registro = get_object_or_404(getattr(event, config["relation"]).select_for_update(), pk=record_id)
+        registros_locked = getattr(event, config["relation"]).select_for_update()
+        registro = get_object_or_404(registros_locked, pk=record_id)
         expected = request.POST.get("expected_status")
+        if action in {"asistio", "falto"}:
+            pendientes = registros_locked.filter(estatus="PENDIENTE").count()
+            if pendientes <= 1 and registro.estatus == "PENDIENTE":
+                return JsonResponse(
+                    {
+                        **_capture_payload(event, config),
+                        "ok": False,
+                        "error": LAST_PENDING_PRESENTIAL_MESSAGE,
+                    },
+                    status=409,
+                )
         if action in {"asistio", "falto"} and registro.estatus != "PENDIENTE":
             return JsonResponse({"ok": False, "error": "Este registro ya fue actualizado.", **_capture_payload(event, config)}, status=409)
         if action == "undo" and expected and registro.estatus != expected:
@@ -1020,6 +1049,9 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
         {
             "current_record": payload["next_record"],
             "capture_metrics": payload["metrics"],
+            "requires_normal_capture": payload["requires_normal_capture"],
+            "normal_capture_url": payload["normal_capture_url"],
+            "last_pending_message": payload["last_pending_message"],
             "detail_url": reverse(config["detail_url"], args=[event.pk]),
             "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
             "capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),

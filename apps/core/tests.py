@@ -122,3 +122,72 @@ class OperationalEventCreationViewTests(TestCase):
         self.assertRedirects(response, reverse("control_asistencias_junta_detalle", args=[junta.pk]))
         self.assertEqual(junta.comite, self.comite)
         self.assertEqual(junta.estado, Junta.Estados.PROGRAMADA)
+
+
+class CapturaPresencialUltimoPendienteTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="capturista", password="testpass123")
+        self.client.force_login(self.user)
+        self.comite = Comite.objects.create(nombre="Comité Captura", tipo=Comite.Tipos.DELEGACION)
+        self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="García", apellido_materno="Ruiz", edad=30)
+        self.juan = Ciudadano.objects.create(nombre="Juan", apellido_paterno="Pérez", apellido_materno="López", edad=31)
+        self.pedro = Ciudadano.objects.create(nombre="Pedro", apellido_paterno="Martínez", apellido_materno="Soto", edad=32)
+
+    def test_faena_presencial_rechaza_solicitud_manual_del_ultimo_pendiente(self):
+        faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")
+        registro = RegistroFaena.objects.create(faena=faena, ciudadano=self.ana, estatus=RegistroFaena.Estatus.PENDIENTE)
+
+        response = self.client.post(
+            reverse("captura_asistencia_secuencial_faena", args=[faena.pk]),
+            {"action": "asistio", "record_id": registro.pk},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        registro.refresh_from_db()
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.json()["ok"])
+        self.assertTrue(response.json()["requires_normal_capture"])
+        self.assertEqual(response.json()["normal_capture_url"], reverse("captura_asistencia_faena", args=[faena.pk]))
+        self.assertEqual(registro.estatus, RegistroFaena.Estatus.PENDIENTE)
+
+    def test_junta_presencial_permite_marcar_uno_de_dos_y_envia_a_captura_normal(self):
+        junta = Junta.objects.create(comite=self.comite, fecha=date(2026, 7, 20), tema="Asamblea")
+        primero = AsistenciaJunta.objects.create(junta=junta, ciudadano=self.ana, estatus=AsistenciaJunta.Estatus.PENDIENTE)
+        ultimo = AsistenciaJunta.objects.create(junta=junta, ciudadano=self.juan, estatus=AsistenciaJunta.Estatus.PENDIENTE)
+
+        response = self.client.post(
+            reverse("captura_asistencia_secuencial_junta", args=[junta.pk]),
+            {"action": "falto", "record_id": primero.pk},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        primero.refresh_from_db()
+        ultimo.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(primero.estatus, AsistenciaJunta.Estatus.FALTO)
+        self.assertFalse(primero.asistio)
+        self.assertEqual(ultimo.estatus, AsistenciaJunta.Estatus.PENDIENTE)
+        data = response.json()
+        self.assertTrue(data["requires_normal_capture"])
+        self.assertIsNone(data["next_record"])
+        self.assertEqual(data["metrics"]["pendientes"], 1)
+
+    def test_faena_presencial_con_tres_pendientes_avanza_normalmente(self):
+        faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")
+        primero = RegistroFaena.objects.create(faena=faena, ciudadano=self.ana, estatus=RegistroFaena.Estatus.PENDIENTE)
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.juan, estatus=RegistroFaena.Estatus.PENDIENTE)
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.pedro, estatus=RegistroFaena.Estatus.PENDIENTE)
+
+        response = self.client.post(
+            reverse("captura_asistencia_secuencial_faena", args=[faena.pk]),
+            {"action": "asistio", "record_id": primero.pk},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        primero.refresh_from_db()
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(primero.estatus, RegistroFaena.Estatus.ASISTIO)
+        self.assertFalse(data["requires_normal_capture"])
+        self.assertIsNotNone(data["next_record"])
+        self.assertEqual(data["metrics"]["pendientes"], 2)
