@@ -1,0 +1,46 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Base de datos local
+db.sqlite3
+db.sqlite3-journal
+
+# Archivos de logs
+*.log
+
+# Variables de entorno
+.env
+.env.*
+
+# Archivos estáticos generados
+staticfiles/
+media/
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Cobertura y pruebas
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Distribución
+build/
+dist/
+*.egg-info/
+
+# Archivos temporales
+*.swp
+*.swo
