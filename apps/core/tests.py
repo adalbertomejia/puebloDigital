@@ -260,3 +260,96 @@ class CapturaPresencialUltimoPendienteTests(TestCase):
         self.assertFalse(data["requires_normal_capture"])
         self.assertIsNotNone(data["next_record"])
         self.assertEqual(data["metrics"]["pendientes"], 2)
+
+from django.contrib.auth.models import Permission
+from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
+
+
+class SecureDeletionFlowTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="deleter", password="pw")
+        perms = Permission.objects.filter(codename__in=["delete_faena", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
+        self.user.user_permissions.set(perms)
+        self.client.force_login(self.user)
+        self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
+        self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", edad=30)
+        self.beto = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", edad=31)
+
+    def test_delete_buttons_visibility_only_on_edit_with_permission(self):
+        faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")
+        junta = Junta.objects.create(comite=self.comite, fecha=date(2026, 7, 21), tema="Asamblea")
+        concepto = ConceptoTesoreria.objects.create(naturaleza=ConceptoTesoreria.Naturalezas.PAGO, comite=self.comite, concepto="Cuota", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 22))
+        self.assertNotContains(self.client.get(reverse("crear_faena_operativa")), "Eliminar faena")
+        self.assertContains(self.client.get(reverse("editar_faena_operativa", args=[faena.pk])), reverse("eliminar_faena_operativa", args=[faena.pk]))
+        self.assertContains(self.client.get(reverse("editar_junta_operativa", args=[junta.pk])), reverse("eliminar_junta_operativa", args=[junta.pk]))
+        self.assertContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
+        self.assertNotContains(self.client.get(reverse("crear_concepto_tesoreria")), "Eliminar concepto")
+        limited = get_user_model().objects.create_user(username="limited", password="pw")
+        limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria"]))
+        self.client.force_login(limited)
+        self.assertNotContains(self.client.get(reverse("editar_faena_operativa", args=[faena.pk])), "Eliminar faena")
+        self.assertNotContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
+
+    def test_faena_get_confirms_post_deletes_records_and_redirects(self):
+        faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.ana, estatus=RegistroFaena.Estatus.PENDIENTE)
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.beto, estatus=RegistroFaena.Estatus.FALTO, genera_adeudo=True, monto_adeudo=Decimal("50.00"))
+        url = reverse("eliminar_faena_operativa", args=[faena.pk])
+        response = self.client.get(url)
+        self.assertContains(response, "Acción irreversible")
+        self.assertContains(response, "Total de registros generados")
+        self.assertContains(response, "$50.00")
+        self.assertContains(response, "csrfmiddlewaretoken")
+        self.assertTrue(Faena.objects.filter(pk=faena.pk).exists())
+        response = self.client.post(url)
+        self.assertRedirects(response, reverse("control_asistencias"), fetch_redirect_response=False)
+        self.assertFalse(Faena.objects.filter(pk=faena.pk).exists())
+        self.assertFalse(RegistroFaena.objects.filter(faena_id=faena.pk).exists())
+
+    def test_junta_get_confirms_post_deletes_asistencias_and_redirects(self):
+        junta = Junta.objects.create(comite=self.comite, fecha=date(2026, 7, 21), tema="Asamblea")
+        AsistenciaJunta.objects.create(junta=junta, ciudadano=self.ana, estatus=AsistenciaJunta.Estatus.PENDIENTE)
+        AsistenciaJunta.objects.create(junta=junta, ciudadano=self.beto, estatus=AsistenciaJunta.Estatus.ASISTIO, genera_adeudo=True, monto_adeudo=Decimal("25.00"))
+        url = reverse("eliminar_junta_operativa", args=[junta.pk])
+        response = self.client.get(url)
+        self.assertContains(response, "Total de asistencias generadas")
+        self.assertContains(response, "$25.00")
+        response = self.client.post(url)
+        self.assertRedirects(response, reverse("control_asistencias"), fetch_redirect_response=False)
+        self.assertFalse(Junta.objects.filter(pk=junta.pk).exists())
+        self.assertFalse(AsistenciaJunta.objects.filter(junta_id=junta.pk).exists())
+
+    def test_post_without_auth_or_permission_does_not_delete(self):
+        faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")
+        url = reverse("eliminar_faena_operativa", args=[faena.pk])
+        self.client.logout()
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.assertTrue(Faena.objects.filter(pk=faena.pk).exists())
+        self.client.force_login(get_user_model().objects.create_user(username="noperm", password="pw"))
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.assertTrue(Faena.objects.filter(pk=faena.pk).exists())
+
+    def test_concepto_deletes_obligaciones_and_abonos_with_exact_total(self):
+        concepto = ConceptoTesoreria.objects.create(naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION, comite=self.comite, concepto="Cooperación", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 22))
+        o1 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.ana, monto_asignado=Decimal("100.00"))
+        o2 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.beto, monto_asignado=Decimal("100.00"), estado=ObligacionCiudadano.Estados.PAGADO)
+        Abono.objects.create(obligacion=o1, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
+        Abono.objects.create(obligacion=o2, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
+        url = reverse("eliminar_concepto_tesoreria", args=[concepto.pk])
+        response = self.client.get(url)
+        self.assertContains(response, "Cantidad de obligaciones")
+        self.assertContains(response, "Cantidad de abonos")
+        self.assertContains(response, "$20.00")
+        response = self.client.post(url)
+        self.assertRedirects(response, reverse("tesoreria_operativa"), fetch_redirect_response=False)
+        self.assertFalse(ConceptoTesoreria.objects.filter(pk=concepto.pk).exists())
+        self.assertFalse(ObligacionCiudadano.objects.filter(concepto_id=concepto.pk).exists())
+        self.assertFalse(Abono.objects.filter(obligacion_id__in=[o1.pk, o2.pk]).exists())
+
+    def test_superuser_can_delete_concepto_without_explicit_permission(self):
+        superuser = get_user_model().objects.create_superuser(username="root", password="pw", email="root@example.com")
+        concepto = ConceptoTesoreria.objects.create(naturaleza=ConceptoTesoreria.Naturalezas.PAGO, comite=self.comite, concepto="Super", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 22))
+        self.client.force_login(superuser)
+        response = self.client.post(reverse("eliminar_concepto_tesoreria", args=[concepto.pk]))
+        self.assertRedirects(response, reverse("tesoreria_operativa"), fetch_redirect_response=False)
+        self.assertFalse(ConceptoTesoreria.objects.filter(pk=concepto.pk).exists())

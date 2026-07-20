@@ -9,6 +9,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Count, Max, Prefetch, Q, Sum
 from django.db.models.functions import ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
@@ -346,6 +347,14 @@ def dashboard_operativo(request):
     return render(request, "dashboard/operativo.html", context)
 
 
+def _can_delete_operacion_event(user, permission_codename):
+    return user.is_superuser or user.has_perm(permission_codename)
+
+
+def _money(value):
+    return f"${value:.2f}"
+
+
 def _evento_operativo_form_view(
     request,
     form_class,
@@ -354,6 +363,8 @@ def _evento_operativo_form_view(
     detail_url_name,
     *,
     instance=None,
+    delete_url_name="",
+    delete_permission="",
 ):
     is_edit = instance is not None
     if request.method == "POST":
@@ -368,6 +379,8 @@ def _evento_operativo_form_view(
         form = form_class(instance=instance)
 
     cancel_url = reverse(detail_url_name, args=[instance.pk]) if is_edit else reverse("dashboard_operativo")
+    can_delete = bool(is_edit and delete_permission and _can_delete_operacion_event(request.user, delete_permission))
+    delete_url = reverse(delete_url_name, args=[instance.pk]) if can_delete and delete_url_name else ""
     return render(
         request,
         "dashboard/evento_form.html",
@@ -379,6 +392,8 @@ def _evento_operativo_form_view(
             "submit_label": f"Guardar cambios" if is_edit else f"Guardar {event_label.lower()}",
             "cancel_url": cancel_url,
             "cancel_label": "Volver al detalle" if is_edit else "Volver al dashboard",
+            "can_delete": can_delete,
+            "delete_url": delete_url,
         },
     )
 
@@ -419,6 +434,8 @@ def editar_faena_operativa(request, faena_id):
         "Actualiza la información operativa de la faena sin salir del flujo de Control de Asistencias.",
         "control_asistencias_faena_detalle",
         instance=faena,
+        delete_url_name="eliminar_faena_operativa",
+        delete_permission="operacion.delete_faena",
     )
 
 
@@ -432,7 +449,49 @@ def editar_junta_operativa(request, junta_id):
         "Actualiza la información operativa de la junta sin salir del flujo de Control de Asistencias.",
         "control_asistencias_junta_detalle",
         instance=junta,
+        delete_url_name="eliminar_junta_operativa",
+        delete_permission="operacion.delete_junta",
     )
+
+
+def _confirmar_eliminacion(request, *, obj, object_type, object_label, cancel_url, success_redirect_name, permission, error_message, success_message, warning_message, deletion_summary):
+    if not (request.user.is_superuser or request.user.has_perm(permission)):
+        messages.error(request, error_message)
+        return redirect(cancel_url)
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                obj.delete()
+        except ProtectedError:
+            messages.error(request, "No se pudo eliminar porque existen registros protegidos relacionados.")
+            return redirect(cancel_url)
+        messages.success(request, success_message)
+        return redirect(success_redirect_name)
+    return render(request, "dashboard/confirmar_eliminacion.html", {"object_type": object_type, "object_label": object_label, "warning_message": warning_message, "deletion_summary": deletion_summary, "cancel_url": cancel_url})
+
+
+@login_required
+def eliminar_faena_operativa(request, faena_id):
+    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
+    registros = faena.registros.all()
+    total_registros = registros.count()
+    pendientes = registros.filter(estatus=RegistroFaena.Estatus.PENDIENTE).count()
+    registrados = total_registros - pendientes
+    registros_con_adeudo = registros.filter(genera_adeudo=True).count()
+    monto_adeudos = registros.filter(genera_adeudo=True).aggregate(total=Sum("monto_adeudo"))["total"] or Decimal("0.00")
+    return _confirmar_eliminacion(request, obj=faena, object_type="faena", object_label=faena.descripcion, cancel_url=reverse("control_asistencias_faena_detalle", args=[faena.pk]), success_redirect_name="control_asistencias", permission="operacion.delete_faena", error_message="No tienes permisos para eliminar faenas.", success_message="La faena fue eliminada correctamente.", warning_message="Esta acción eliminará permanentemente la faena y todos sus registros de asistencia relacionados. También se eliminará la información de adeudos asociada directamente a esos registros. Esta acción no se puede deshacer.", deletion_summary=[{"label": "Descripción", "value": faena.descripcion}, {"label": "Fecha", "value": faena.fecha}, {"label": "Comité", "value": faena.comite.nombre}, {"label": "Total de registros generados", "value": total_registros}, {"label": "Registros pendientes", "value": pendientes}, {"label": "Asistencias registradas", "value": registrados}, {"label": "Registros con adeudo", "value": registros_con_adeudo}, {"label": "Monto total de adeudos", "value": _money(monto_adeudos)}])
+
+
+@login_required
+def eliminar_junta_operativa(request, junta_id):
+    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    asistencias = junta.asistencias.all()
+    total_asistencias = asistencias.count()
+    pendientes = asistencias.filter(estatus=AsistenciaJunta.Estatus.PENDIENTE).count()
+    capturadas = total_asistencias - pendientes
+    registros_con_adeudo = asistencias.filter(genera_adeudo=True).count()
+    monto_adeudos = asistencias.filter(genera_adeudo=True).aggregate(total=Sum("monto_adeudo"))["total"] or Decimal("0.00")
+    return _confirmar_eliminacion(request, obj=junta, object_type="junta", object_label=junta.tema, cancel_url=reverse("control_asistencias_junta_detalle", args=[junta.pk]), success_redirect_name="control_asistencias", permission="operacion.delete_junta", error_message="No tienes permisos para eliminar juntas.", success_message="La junta fue eliminada correctamente.", warning_message="Esta acción eliminará permanentemente la junta y todos sus registros de asistencia relacionados. También se eliminará la información de adeudos asociada directamente a esos registros. Esta acción no se puede deshacer.", deletion_summary=[{"label": "Tema", "value": junta.tema}, {"label": "Fecha", "value": junta.fecha}, {"label": "Comité", "value": junta.comite.nombre}, {"label": "Total de asistencias generadas", "value": total_asistencias}, {"label": "Registros pendientes", "value": pendientes}, {"label": "Asistencias capturadas", "value": capturadas}, {"label": "Registros con adeudo", "value": registros_con_adeudo}, {"label": "Monto total de adeudos", "value": _money(monto_adeudos)}])
 
 
 @login_required
@@ -1132,6 +1191,10 @@ def _can_modify_tesoreria(user):
     return user.has_perm("tesoreria.add_conceptotesoreria") or user.has_perm("tesoreria.change_conceptotesoreria") or user.is_superuser
 
 
+def _can_delete_tesoreria(user):
+    return user.is_superuser or user.has_perm("tesoreria.delete_conceptotesoreria")
+
+
 def _tesoreria_conceptos_queryset(params):
     qs = ConceptoTesoreria.objects.select_related("comite").annotate(
         cantidad_obligaciones=Count("obligaciones", distinct=True),
@@ -1233,7 +1296,34 @@ def crear_concepto_tesoreria(request, pk=None):
         obj = form.save()
         messages.success(request, "Se guardó correctamente el concepto de tesorería.")
         return redirect("tesoreria_concepto_detalle", obj.pk)
-    return render(request, "dashboard/tesoreria_form.html", {"form": form, "concepto": concepto, "cancel_url": reverse("tesoreria_operativa")})
+    can_delete = bool(concepto and _can_delete_tesoreria(request.user))
+    delete_url = reverse("eliminar_concepto_tesoreria", args=[concepto.pk]) if can_delete else ""
+    return render(request, "dashboard/tesoreria_form.html", {"form": form, "concepto": concepto, "cancel_url": reverse("tesoreria_operativa"), "can_delete": can_delete, "delete_url": delete_url})
+
+
+@login_required
+def eliminar_concepto_tesoreria(request, pk):
+    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite"), pk=pk)
+    if not _can_delete_tesoreria(request.user):
+        messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
+        return redirect("tesoreria_operativa")
+    obligaciones = ObligacionCiudadano.objects.filter(concepto=concepto)
+    cantidad_obligaciones = obligaciones.count()
+    obligaciones_pendientes = obligaciones.filter(estado=ObligacionCiudadano.Estados.PENDIENTE).count()
+    obligaciones_pagadas = obligaciones.filter(estado=ObligacionCiudadano.Estados.PAGADO).count()
+    abonos = Abono.objects.filter(obligacion__concepto=concepto)
+    cantidad_abonos = abonos.count()
+    total_abonado = abonos.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                concepto.delete()
+        except ProtectedError:
+            messages.error(request, "No se pudo eliminar porque existen registros protegidos relacionados.")
+            return redirect("tesoreria_concepto_detalle", pk)
+        messages.success(request, "El concepto de tesorería fue eliminado correctamente.")
+        return redirect("tesoreria_operativa")
+    return render(request, "dashboard/confirmar_eliminacion.html", {"object_type": "concepto de tesorería", "object_label": concepto.concepto, "warning_message": "Esta acción eliminará permanentemente el concepto, todas sus obligaciones ciudadanas y todos los abonos asociados. El historial eliminado no podrá recuperarse.", "cancel_url": reverse("tesoreria_concepto_detalle", args=[concepto.pk]), "deletion_summary": [{"label": "Concepto", "value": concepto.concepto}, {"label": "Naturaleza", "value": concepto.get_naturaleza_display()}, {"label": "Fecha", "value": concepto.fecha}, {"label": "Comité", "value": concepto.comite.nombre}, {"label": "Cantidad de obligaciones", "value": cantidad_obligaciones}, {"label": "Obligaciones pendientes", "value": obligaciones_pendientes}, {"label": "Obligaciones pagadas", "value": obligaciones_pagadas}, {"label": "Cantidad de abonos", "value": cantidad_abonos}, {"label": "Total abonado histórico", "value": _money(total_abonado)}]})
 
 
 @login_required
