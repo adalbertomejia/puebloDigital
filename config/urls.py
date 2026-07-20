@@ -26,6 +26,11 @@ from apps.core.views import (
     home,
     padron_ciudadanos,
     perfil_ciudadano,
+    tesoreria_operativa,
+    crear_concepto_tesoreria,
+    generar_obligaciones_tesoreria,
+    tesoreria_concepto_detalle,
+    acreditar_obligacion,
 )
 
 urlpatterns = [
@@ -39,6 +44,12 @@ urlpatterns = [
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
     path('agua/', control_agua, name='control_agua'),
+    path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
+    path('tesoreria/nuevo/', crear_concepto_tesoreria, name='crear_concepto_tesoreria'),
+    path('tesoreria/conceptos/<int:pk>/editar/', crear_concepto_tesoreria, name='editar_concepto_tesoreria'),
+    path('tesoreria/conceptos/<int:pk>/', tesoreria_concepto_detalle, name='tesoreria_concepto_detalle'),
+    path('tesoreria/conceptos/<int:pk>/generar-obligaciones/', generar_obligaciones_tesoreria, name='generar_obligaciones_tesoreria'),
+    path('tesoreria/obligaciones/<int:pk>/acreditar/', acreditar_obligacion, name='acreditar_obligacion'),
     path('operacion/faenas/nueva/', crear_faena_operativa, name='crear_faena_operativa'),
     path('operacion/faenas/<int:faena_id>/editar/', editar_faena_operativa, name='editar_faena_operativa'),
     path('operacion/juntas/nueva/', crear_junta_operativa, name='crear_junta_operativa'),
