@@ -1,0 +1,61 @@
+{% if color == 'orange' %}
+  {% with wrapper='bg-amber-50 border-amber-200' icon_box='bg-amber-100 text-amber-700' title_color='text-amber-950' subtitle_color='text-amber-800/80' %}
+    <section class="mb-6 rounded-2xl border {{ wrapper }} p-4 md:p-5">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ icon_box }} text-xl" aria-hidden="true">{{ icon }}</span>
+          <div>
+            <h1 class="text-2xl md:text-3xl font-bold {{ title_color }}">{{ title }}</h1>
+            {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
+          </div>
+        </div>
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-amber-900 border border-amber-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+      </div>
+    </section>
+  {% endwith %}
+{% elif color == 'green' %}
+  {% with wrapper='bg-emerald-50 border-emerald-200' icon_box='bg-emerald-100 text-emerald-700' title_color='text-emerald-950' subtitle_color='text-emerald-800/80' %}
+    <section class="mb-6 rounded-2xl border {{ wrapper }} p-4 md:p-5">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ icon_box }} text-xl" aria-hidden="true">{{ icon }}</span>
+          <div>
+            <h1 class="text-2xl md:text-3xl font-bold {{ title_color }}">{{ title }}</h1>
+            {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
+          </div>
+        </div>
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-emerald-900 border border-emerald-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+      </div>
+    </section>
+  {% endwith %}
+{% elif color == 'slate' %}
+  {% with wrapper='bg-slate-100 border-slate-300' icon_box='bg-slate-200 text-slate-700' title_color='text-slate-900' subtitle_color='text-slate-600' %}
+    <section class="mb-6 rounded-2xl border {{ wrapper }} p-4 md:p-5">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ icon_box }} text-xl" aria-hidden="true">{{ icon }}</span>
+          <div>
+            <h1 class="text-2xl md:text-3xl font-bold {{ title_color }}">{{ title }}</h1>
+            {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
+          </div>
+        </div>
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 hover:bg-white">{{ action_label }}</a>{% endif %}
+      </div>
+    </section>
+  {% endwith %}
+{% else %}
+  {% with wrapper='bg-sky-50 border-sky-200' icon_box='bg-sky-100 text-sky-700' title_color='text-sky-950' subtitle_color='text-sky-800/80' %}
+    <section class="mb-6 rounded-2xl border {{ wrapper }} p-4 md:p-5">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ icon_box }} text-xl" aria-hidden="true">{{ icon }}</span>
+          <div>
+            <h1 class="text-2xl md:text-3xl font-bold {{ title_color }}">{{ title }}</h1>
+            {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
+          </div>
+        </div>
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-sky-900 border border-sky-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+      </div>
+    </section>
+  {% endwith %}
+{% endif %}

@@ -1,20 +1,12 @@
 {% extends 'dashboard/base_dashboard.html' %}
-{% block title %}Padrón de Ciudadanos{% endblock %}
+{% block title %}Ciudadanos{% endblock %}
 {% block content %}
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>Padrón de ciudadanos</span></nav>
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>Ciudadanos</span></nav>
 
-<section class="bg-white border rounded-2xl p-5 mb-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <p class="text-xs uppercase tracking-widest text-indigo-600 font-semibold">Padrón operativo</p>
-      <h2 class="text-2xl font-bold mt-1">Ciudadanos</h2>
-      <p class="text-slate-500 mt-1">Consulta, filtra y abre expedientes sin depender del listado técnico de administración.</p>
-    </div>
-    <div class="flex flex-wrap gap-2 text-sm">
-      <a href="{% url 'descargar_padron_activo_pdf' %}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Descargar padrón activo PDF</a>
-      <a href="{{ crear_ciudadano_url }}" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Agregar ciudadano</a>
-    </div>
-  </div>
+{% url 'descargar_padron_activo_pdf' as descargar_padron_url %}
+{% include 'dashboard/components/module_header.html' with title='Ciudadanos' subtitle='Consulta y administra la información de los ciudadanos.' icon='👥' color='slate' action_url=crear_ciudadano_url action_label='Agregar ciudadano' %}
+<section class="mb-6 flex flex-wrap justify-end gap-2 text-sm">
+  <a href="{{ descargar_padron_url }}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Descargar padrón activo PDF</a>
 </section>
 
 <section class="grid md:grid-cols-5 gap-4 mb-6">
