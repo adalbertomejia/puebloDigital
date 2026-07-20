@@ -1180,8 +1180,26 @@ def _decorate_tesoreria_concepts(concepts):
 @login_required
 def tesoreria_operativa(request):
     conceptos_qs = _tesoreria_conceptos_queryset(request.GET)
-    metrics = conceptos_qs.aggregate(total_generado=Sum("obligaciones__monto_asignado"), total_abonado=Sum("obligaciones__abonos__monto"))
-    pendientes = ObligacionCiudadano.objects.filter(concepto__in=conceptos_qs, estado=ObligacionCiudadano.Estados.PENDIENTE).values("ciudadano").distinct().count()
+
+    conceptos_con_obligaciones = ConceptoTesoreria.objects.annotate(
+        total_obligaciones=Count("obligaciones", distinct=True),
+        pendientes=Count(
+            "obligaciones",
+            filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE),
+            distinct=True,
+        ),
+    )
+    conceptos_en_cobro = conceptos_con_obligaciones.filter(total_obligaciones__gt=0, pendientes__gt=0).count()
+    conceptos_completados = conceptos_con_obligaciones.filter(total_obligaciones__gt=0, pendientes=0).count()
+    hoy = timezone.localdate()
+    recaudado_mes = Abono.objects.filter(fecha__year=hoy.year, fecha__month=hoy.month).aggregate(total=Sum("monto"))["total"] or 0
+    ciudadanos_conceptos_pendientes = (
+        ObligacionCiudadano.objects.filter(estado=ObligacionCiudadano.Estados.PENDIENTE)
+        .values("ciudadano_id")
+        .distinct()
+        .count()
+    )
+
     paginator = Paginator(conceptos_qs, 12)
     conceptos_page = paginator.get_page(request.GET.get("page"))
     conceptos_page.previous_querystring = _page_querystring(request, "page", conceptos_page.previous_page_number()) if conceptos_page.has_previous() else ""
@@ -1189,7 +1207,12 @@ def tesoreria_operativa(request):
     return render(request, "dashboard/tesoreria.html", {
         "conceptos": _decorate_tesoreria_concepts(conceptos_page.object_list),
         "page_obj": conceptos_page,
-        "metricas": {"total_generado": metrics["total_generado"] or 0, "total_abonado": metrics["total_abonado"] or 0, "saldo_pendiente": (metrics["total_generado"] or 0) - (metrics["total_abonado"] or 0), "ciudadanos_pendientes": pendientes},
+        "metricas": {
+            "conceptos_en_cobro": conceptos_en_cobro,
+            "conceptos_completados": conceptos_completados,
+            "recaudado_mes": recaudado_mes,
+            "ciudadanos_conceptos_pendientes": ciudadanos_conceptos_pendientes,
+        },
         "filtros": {"q": request.GET.get("q", "").strip(), "naturaleza": request.GET.get("naturaleza", "todos"), "mes": request.GET.get("mes", "todos"), "anio": request.GET.get("anio", "todos"), "estado": request.GET.get("estado", "todos"), "comite": request.GET.get("comite", "todos")},
         "meses": MESES,
         "anios": sorted(set(ConceptoTesoreria.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)), reverse=True),

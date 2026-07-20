@@ -97,6 +97,53 @@ class TesoreriaOperativaTests(TestCase):
         pago.obligaciones.exclude(pk=o.pk).update(estado=ObligacionCiudadano.Estados.PAGADO)
         self.assertContains(self.client.get(reverse("tesoreria_operativa") + "?estado=COMPLETADO"), "Agua julio")
 
+
+    def test_nuevas_metricas_tesoreria_operativa(self):
+        self.concepto(concepto="Sin obligaciones")
+        en_cobro = self.concepto(concepto="Feria 2027")
+        completado = self.concepto(concepto="Cooperación completada")
+        otro_mes = self.concepto(concepto="Abono histórico")
+
+        for concepto in [en_cobro, completado, otro_mes]:
+            ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("100.00"))
+            ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo2, monto_asignado=Decimal("100.00"))
+
+        # Dos obligaciones pendientes del mismo ciudadano en conceptos diferentes deben contarse una sola vez.
+        ObligacionCiudadano.objects.create(concepto=en_cobro, ciudadano=self.inactivo, monto_asignado=Decimal("100.00"))
+        ObligacionCiudadano.objects.create(concepto=otro_mes, ciudadano=self.inactivo, monto_asignado=Decimal("100.00"))
+
+        for obligacion in completado.obligaciones.all():
+            obligacion.acreditar(Decimal("100.00"), date(2026, 7, 5))
+
+        en_cobro.obligaciones.get(ciudadano=self.activo1).acreditar(Decimal("40.00"), date(2026, 7, 10))
+        Abono.objects.create(
+            obligacion=otro_mes.obligaciones.get(ciudadano=self.activo1),
+            monto=Decimal("25.00"),
+            fecha=date(2026, 6, 30),
+        )
+
+        self.login()
+        response = self.client.get(reverse("tesoreria_operativa"))
+        metricas = response.context["metricas"]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("total_generado", metricas)
+        self.assertNotIn("total_abonado", metricas)
+        self.assertNotIn("saldo_pendiente", metricas)
+        self.assertNotIn("ciudadanos_pendientes", metricas)
+        self.assertEqual(metricas["conceptos_en_cobro"], 2)
+        self.assertEqual(metricas["conceptos_completados"], 1)
+        self.assertEqual(metricas["ciudadanos_conceptos_pendientes"], 3)
+        self.assertEqual(metricas["recaudado_mes"], Decimal("240.00"))
+        self.assertContains(response, "Conceptos en cobro")
+        self.assertContains(response, "Conceptos completados")
+        self.assertContains(response, "Recaudado este mes")
+        self.assertContains(response, "Ciudadanos con conceptos pendientes")
+        self.assertContains(response, "$240.00")
+
+        filtered_response = self.client.get(reverse("tesoreria_operativa") + "?q=Feria")
+        self.assertEqual(filtered_response.context["metricas"]["recaudado_mes"], Decimal("240.00"))
+
     def test_busqueda_detalle_y_paginacion_conserva_filtros(self):
         concepto = self.concepto(); self.generar(concepto); self.login()
         response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]) + "?q=Ana&estado=PENDIENTE&page=1")
