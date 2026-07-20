@@ -162,3 +162,122 @@ class TesoreriaOperativaTests(TestCase):
         concepto = self.concepto(); self.login(self.reader)
         self.client.post(reverse("generar_obligaciones_tesoreria", args=[concepto.pk]))
         self.assertEqual(concepto.obligaciones.count(), 0)
+
+    def test_detalle_metricas_modelo_abonos_parciales_y_estados(self):
+        concepto = self.concepto(monto_individual=Decimal("100.00"))
+        self.generar(concepto)
+        obligacion = concepto.obligaciones.get(ciudadano=self.activo1)
+
+        self.assertEqual(obligacion.total_abonado, Decimal("0.00"))
+        self.assertEqual(obligacion.saldo_pendiente, Decimal("100.00"))
+
+        obligacion.acreditar(Decimal("40.00"), date(2026, 7, 20), "parcial")
+        obligacion.refresh_from_db()
+        self.assertEqual(obligacion.total_abonado, Decimal("40.00"))
+        self.assertEqual(obligacion.saldo_pendiente, Decimal("60.00"))
+        self.assertEqual(obligacion.estado, ObligacionCiudadano.Estados.PENDIENTE)
+
+        obligacion.acreditar(Decimal("30.00"), date(2026, 7, 21), "parcial repetido 1")
+        with self.assertRaises(ValidationError):
+            obligacion.acreditar(Decimal("31.00"), date(2026, 7, 22), "excede saldo")
+        obligacion.acreditar(Decimal("30.00"), date(2026, 7, 22), "parcial repetido 2")
+        obligacion.refresh_from_db()
+        self.assertEqual(obligacion.abonos.count(), 3)
+        self.assertEqual(obligacion.total_abonado, Decimal("100.00"))
+        self.assertEqual(obligacion.saldo_pendiente, Decimal("0.00"))
+        self.assertEqual(obligacion.estado, ObligacionCiudadano.Estados.PAGADO)
+
+    def test_detalle_metricas_globales_no_duplican_obligaciones_ni_descartan_abonos_repetidos(self):
+        concepto = self.concepto(monto_individual=Decimal("1000.00"))
+        self.generar(concepto)
+        o1 = concepto.obligaciones.get(ciudadano=self.activo1)
+        o2 = concepto.obligaciones.get(ciudadano=self.activo2)
+        o1.acreditar(Decimal("500.00"), date(2026, 7, 20), "1")
+        o1.acreditar(Decimal("500.00"), date(2026, 7, 21), "2")
+        o2.acreditar(Decimal("250.00"), date(2026, 7, 22), "parcial")
+
+        self.login()
+        response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]))
+        metricas = response.context["metricas"]
+
+        self.assertEqual(metricas["total_generado"], Decimal("2000.00"))
+        self.assertEqual(metricas["total_abonado"], Decimal("1250.00"))
+        self.assertEqual(metricas["saldo_pendiente"], Decimal("750.00"))
+        self.assertEqual(metricas["pendientes"], 1)
+        self.assertEqual(metricas["pagadas"], 1)
+        self.assertEqual(response.context["concepto"].cantidad_obligaciones, 2)
+        self.assertEqual(response.context["concepto"].cantidad_pagada, 1)
+        self.assertContains(response, "$500.00", count=2)
+
+    def test_detalle_metricas_no_cambian_con_busqueda_o_filtro_estado(self):
+        concepto = self.concepto(monto_individual=Decimal("1000.00"))
+        self.generar(concepto)
+        concepto.obligaciones.get(ciudadano=self.activo1).acreditar(Decimal("1000.00"), date(2026, 7, 20))
+        expected = {
+            "total_generado": Decimal("2000.00"),
+            "total_abonado": Decimal("1000.00"),
+            "saldo_pendiente": Decimal("1000.00"),
+            "pendientes": 1,
+            "pagadas": 1,
+        }
+
+        self.login()
+        for querystring in ["?q=Ana", "?estado=PAGADO", "?estado=PENDIENTE"]:
+            response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]) + querystring)
+            self.assertEqual(response.context["metricas"], expected)
+
+    def test_detalle_historial_prefetch_muestra_todos_los_abonos(self):
+        concepto = self.concepto(monto_individual=Decimal("1000.00"))
+        self.generar(concepto)
+        obligacion = concepto.obligaciones.get(ciudadano=self.activo1)
+        obligacion.acreditar(Decimal("500.00"), date(2026, 7, 20), "primer abono")
+        obligacion.acreditar(Decimal("500.00"), date(2026, 7, 21), "segundo abono")
+
+        self.login()
+        response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]) + "?q=Ana")
+        self.assertContains(response, "primer abono")
+        self.assertContains(response, "segundo abono")
+        obligacion_renderizada = response.context["obligaciones"][0]
+        self.assertTrue(hasattr(obligacion_renderizada, "_prefetched_objects_cache"))
+        self.assertIn("abonos", obligacion_renderizada._prefetched_objects_cache)
+
+    def test_abono_directo_cancelado_es_rechazado_y_sin_saldo_se_actualiza_a_pagado(self):
+        concepto = self.concepto(monto_individual=Decimal("100.00"))
+        self.generar(concepto)
+        cancelada = concepto.obligaciones.get(ciudadano=self.activo1)
+        cancelada.estado = ObligacionCiudadano.Estados.CANCELADO
+        cancelada.save(update_fields=["estado", "updated_at"])
+        with self.assertRaises(ValidationError):
+            Abono.objects.create(obligacion=cancelada, monto=Decimal("1.00"), fecha=date(2026, 7, 20))
+
+        sin_saldo = concepto.obligaciones.get(ciudadano=self.activo2)
+        sin_saldo.acreditar(Decimal("100.00"), date(2026, 7, 20))
+        sin_saldo.refresh_from_db()
+        self.assertEqual(sin_saldo.estado, ObligacionCiudadano.Estados.PAGADO)
+        self.assertNotEqual(sin_saldo.estado, ObligacionCiudadano.Estados.PENDIENTE)
+
+    def test_detalle_caso_real_51_obligaciones_5_abonos(self):
+        concepto = self.concepto(monto_individual=Decimal("1000.00"))
+        ciudadanos = [self.activo1, self.activo2]
+        for i in range(49):
+            ciudadanos.append(Ciudadano.objects.create(nombre=f"Ciudadano {i}", apellido_paterno="Prueba", apellido_materno=str(i), edad=20 + i, activo=True))
+        for ciudadano in ciudadanos:
+            ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=ciudadano, monto_asignado=Decimal("1000.00"))
+
+        obligaciones = list(concepto.obligaciones.order_by("id")[:4])
+        obligaciones[0].acreditar(Decimal("1000.00"), date(2026, 7, 20))
+        obligaciones[1].acreditar(Decimal("500.00"), date(2026, 7, 20))
+        obligaciones[1].acreditar(Decimal("500.00"), date(2026, 7, 21))
+        obligaciones[2].acreditar(Decimal("1000.00"), date(2026, 7, 20))
+        obligaciones[3].acreditar(Decimal("1000.00"), date(2026, 7, 20))
+
+        self.login()
+        response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]))
+        metricas = response.context["metricas"]
+        self.assertEqual(metricas["total_generado"], Decimal("51000.00"))
+        self.assertEqual(metricas["total_abonado"], Decimal("4000.00"))
+        self.assertEqual(metricas["saldo_pendiente"], Decimal("47000.00"))
+        self.assertEqual(metricas["pendientes"], 47)
+        self.assertEqual(metricas["pagadas"], 4)
+        self.assertEqual(response.context["concepto"].cantidad_pendiente + response.context["concepto"].cantidad_pagada + response.context["concepto"].cantidad_cancelada, 51)
+
