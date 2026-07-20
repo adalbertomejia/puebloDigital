@@ -9,15 +9,15 @@
   </div>
 {% endif %}
 <section class="grid xl:grid-cols-4 gap-4 mb-6">
-  <article class="xl:col-span-3 bg-white rounded-2xl border p-4 md:p-5">
-    <h3 class="font-semibold text-lg">Buscador global de ciudadanos</h3>
-    <p class="text-sm text-slate-500 mb-3">Acceso rápido a expediente y operaciones comunitarias.</p>
+  <article class="xl:col-span-2 bg-white rounded-2xl border p-3 md:p-4">
+    <h3 class="font-semibold">Buscador global de ciudadanos</h3>
+    <p class="text-sm text-slate-500 mb-2">Acceso rápido a expediente y operaciones comunitarias.</p>
     <form method="get" class="flex flex-wrap gap-2">
-      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-2">
-      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Buscar</button>
+      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-1.5">
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-1.5">Buscar</button>
     </form>
   </article>
-  <article class="bg-white rounded-2xl border p-4 md:p-5">
+  <article class="xl:col-span-2 bg-white rounded-2xl border p-4 md:p-5">
     <h4 class="font-semibold mb-2">Acciones rápidas</h4>
     <div class="space-y-2 text-sm">
       <a class="block rounded-lg bg-indigo-50 text-indigo-700 px-3 py-2" href="{% url 'control_asistencias' %}">Abrir Control de Asistencias</a>
