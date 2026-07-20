@@ -104,8 +104,49 @@ def padron_ciudadanos(request):
             "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
         },
         "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
+        "exportar_ciudadanos_url": reverse("exportar_ciudadanos_csv"),
+        "exportar_ciudadanos_querystring": urlencode(
+            {key: value for key, value in request.GET.items() if key != "page" and value}
+        ),
     }
     return render(request, "dashboard/padron_ciudadanos.html", context)
+
+
+@login_required
+def exportar_ciudadanos_csv(request):
+    ciudadanos = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    filename = f"ciudadanos_{timezone.localdate().isoformat()}.csv"
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "ID",
+        "Nombre",
+        "Apellido paterno",
+        "Apellido materno",
+        "Nombre completo",
+        "Teléfono",
+        "Edad",
+        "Estado",
+        "Fecha de registro",
+    ])
+
+    for ciudadano in ciudadanos:
+        writer.writerow([
+            ciudadano.pk,
+            ciudadano.nombre,
+            ciudadano.apellido_paterno,
+            ciudadano.apellido_materno,
+            ciudadano.nombre_completo,
+            ciudadano.telefono or "",
+            ciudadano.edad,
+            "Activo" if ciudadano.activo else "Inactivo",
+            timezone.localtime(ciudadano.created_at).strftime("%Y-%m-%d %H:%M"),
+        ])
+
+    return response
 
 
 @login_required
@@ -131,75 +172,6 @@ def crear_ciudadano_operativo(request):
             "cancel_url": reverse("padron_ciudadanos"),
         },
     )
-
-
-def _pdf_escape(value):
-    return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _build_simple_pdf(lines):
-    pages = []
-    max_lines = 42
-    for start in range(0, len(lines), max_lines):
-        chunk = lines[start:start + max_lines]
-        y = 780
-        content = ["BT", "/F1 11 Tf"]
-        for line in chunk:
-            content.append(f"1 0 0 1 50 {y} Tm ({_pdf_escape(line)}) Tj")
-            y -= 17
-        content.append("ET")
-        pages.append("\n".join(content).encode("latin-1", "replace"))
-
-    objects = [b"<< /Type /Catalog /Pages 2 0 R >>"]
-    kids = []
-    content_object_ids = []
-    next_id = 3
-    for _page in pages:
-        kids.append(f"{next_id} 0 R".encode())
-        content_object_ids.append(next_id + 1)
-        next_id += 2
-    objects.append(b"<< /Type /Pages /Kids [" + b" ".join(kids) + b"] /Count " + str(len(pages)).encode() + b" >>")
-    for page_content, content_id in zip(pages, content_object_ids):
-        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {next_id} 0 R >> >> /Contents {content_id} 0 R >>".encode())
-        objects.append(b"<< /Length " + str(len(page_content)).encode() + b" >>\nstream\n" + page_content + b"\nendstream")
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-
-    pdf = bytearray(b"%PDF-1.4\n")
-    offsets = [0]
-    for idx, obj in enumerate(objects, 1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{idx} 0 obj\n".encode() + obj + b"\nendobj\n")
-    xref = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode())
-    for offset in offsets[1:]:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode())
-    pdf.extend(f"trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
-    return bytes(pdf)
-
-
-@login_required
-def descargar_padron_activo_pdf(request):
-    ciudadanos = _ciudadanos_operativos_queryset().filter(activo=True).order_by("apellido_paterno", "apellido_materno", "nombre")
-    generado = timezone.localtime().strftime("%d/%m/%Y %H:%M")
-    lines = [
-        "Pueblo Digital",
-        "Centro de Gestión Comunitaria",
-        "Padrón de Ciudadanos Activos",
-        f"Fecha de generación: {generado}",
-        "",
-        "Nombre | Teléfono | Toma de agua | Estado",
-        "-" * 95,
-    ]
-    for ciudadano in ciudadanos:
-        toma = getattr(ciudadano, "toma", None)
-        lines.append(
-            f"{ciudadano.nombre_completo} | {ciudadano.telefono or 'Sin teléfono'} | "
-            f"{toma.numero_toma if toma else 'Sin toma'} | Activo"
-        )
-
-    response = HttpResponse(_build_simple_pdf(lines), content_type="application/pdf")
-    response["Content-Disposition"] = 'attachment; filename="padron-ciudadanos-activos.pdf"'
-    return response
 
 
 def _filtrar_tomas_operativas(queryset, params):

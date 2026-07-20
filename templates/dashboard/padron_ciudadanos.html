@@ -3,10 +3,9 @@
 {% block content %}
 <nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>Ciudadanos</span></nav>
 
-{% url 'descargar_padron_activo_pdf' as descargar_padron_url %}
 {% include 'dashboard/components/module_header.html' with title='Ciudadanos' subtitle='Consulta y administra la información de los ciudadanos.' icon='👥' color='slate' action_url=crear_ciudadano_url action_label='Agregar ciudadano' %}
 <section class="mb-6 flex flex-wrap justify-end gap-2 text-sm">
-  <a href="{{ descargar_padron_url }}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Descargar padrón activo PDF</a>
+  <a href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">⬇️ Exportar CSV</a>
 </section>
 
 <section class="grid md:grid-cols-5 gap-4 mb-6">

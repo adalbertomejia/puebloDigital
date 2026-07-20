@@ -2,9 +2,11 @@ import csv
 import io
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from django.urls import reverse
 
 from apps.comites.models import Comite
@@ -71,6 +73,73 @@ class ExportacionParticipantesCsvTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(self._rows(response)), 1)
+
+
+class ExportacionCiudadanosCsvTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="padron", password="testpass123")
+        self.client.force_login(self.user)
+        self.ana = Ciudadano.objects.create(
+            nombre="Ana María",
+            apellido_paterno="García",
+            apellido_materno="Ñúñez",
+            edad=30,
+            telefono="",
+            activo=True,
+        )
+        self.beto = Ciudadano.objects.create(
+            nombre="Beto",
+            apellido_paterno="Pérez",
+            apellido_materno="López",
+            edad=40,
+            telefono="555",
+            activo=False,
+        )
+        self.maria = Ciudadano.objects.create(
+            nombre="María",
+            apellido_paterno="Zapata",
+            apellido_materno="Soto",
+            edad=28,
+            activo=True,
+        )
+
+    def _rows(self, response):
+        content = response.content.decode("utf-8-sig")
+        return list(csv.reader(io.StringIO(content)))
+
+    def test_template_tiene_boton_csv_y_no_pdf(self):
+        template = Path("templates/dashboard/padron_ciudadanos.html").read_text()
+
+        self.assertIn("Exportar CSV", template)
+        self.assertIn("exportar_ciudadanos_url", template)
+        self.assertIn("exportar_ciudadanos_querystring", template)
+        self.assertNotIn("Exportar PDF", template)
+        self.assertNotIn("Descargar padrón activo PDF", template)
+
+    def test_exporta_csv_con_bom_fecha_estado_legible_filtros_y_sin_paginar(self):
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"q": "Ana María", "estado": "activos", "page": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn(f'filename="ciudadanos_{timezone.localdate().isoformat()}.csv"', response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+        rows = self._rows(response)
+        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "Teléfono", "Edad", "Estado", "Fecha de registro"])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1][1:8], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "30", "Activo"])
+        self.assertNotIn("Beto Pérez López", response.content.decode("utf-8-sig"))
+
+    def test_exporta_inactivos_como_inactivo_y_requiere_autenticacion(self):
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"estado": "inactivos"})
+        rows = self._rows(response)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1][1:8], ["Beto", "Pérez", "López", "Beto Pérez López", "555", "40", "Inactivo"])
+
+        self.client.logout()
+        response = self.client.get(reverse("exportar_ciudadanos_csv"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response["Location"])
 
 
 class OperationalEventCreationViewTests(TestCase):
