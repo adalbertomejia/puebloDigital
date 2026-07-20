@@ -1117,3 +1117,156 @@ def perfil_ciudadano(request, pk):
             },
         },
     )
+
+from apps.comites.models import Comite
+from apps.tesoreria.forms import AbonoForm, ConceptoTesoreriaForm
+from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
+
+
+def _can_modify_tesoreria(user):
+    return user.has_perm("tesoreria.add_conceptotesoreria") or user.has_perm("tesoreria.change_conceptotesoreria") or user.is_superuser
+
+
+def _tesoreria_conceptos_queryset(params):
+    qs = ConceptoTesoreria.objects.select_related("comite").annotate(
+        cantidad_obligaciones=Count("obligaciones", distinct=True),
+        cantidad_pagada=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PAGADO), distinct=True),
+        cantidad_pendiente=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE), distinct=True),
+        total_generado=Sum("obligaciones__monto_asignado"),
+        total_abonado=Sum("obligaciones__abonos__monto"),
+    )
+    q = params.get("q", "").strip()
+    if q:
+        qs = qs.filter(Q(concepto__icontains=q) | Q(descripcion__icontains=q) | Q(comite__nombre__icontains=q))
+    if params.get("naturaleza", "todos") in dict(ConceptoTesoreria.Naturalezas.choices):
+        qs = qs.filter(naturaleza=params["naturaleza"])
+    if params.get("mes", "todos").isdigit():
+        qs = qs.filter(fecha__month=int(params["mes"]))
+    if params.get("anio", "todos").isdigit():
+        qs = qs.filter(fecha__year=int(params["anio"]))
+    if params.get("comite", "todos").isdigit():
+        qs = qs.filter(comite_id=int(params["comite"]))
+    estado = params.get("estado", "todos")
+    if estado == "SIN_GENERAR":
+        qs = qs.filter(cantidad_obligaciones=0)
+    elif estado == "CON_PENDIENTES":
+        qs = qs.filter(cantidad_pendiente__gt=0)
+    elif estado == "COMPLETADO":
+        qs = qs.filter(cantidad_obligaciones__gt=0, cantidad_pendiente=0)
+    return qs.order_by("-fecha", "-created_at")
+
+
+def _decorate_tesoreria_concepts(concepts):
+    for c in concepts:
+        c.total_generado = c.total_generado or 0
+        c.total_abonado = c.total_abonado or 0
+        c.saldo_pendiente = c.total_generado - c.total_abonado
+        if c.cantidad_obligaciones == 0:
+            c.estado_general = "SIN_GENERAR"
+            c.estado_general_label = "Sin generar"
+        elif c.cantidad_pendiente:
+            c.estado_general = "CON_PENDIENTES"
+            c.estado_general_label = "Con pendientes"
+        else:
+            c.estado_general = "COMPLETADO"
+            c.estado_general_label = "Completado"
+    return concepts
+
+
+@login_required
+def tesoreria_operativa(request):
+    conceptos_qs = _tesoreria_conceptos_queryset(request.GET)
+    metrics = conceptos_qs.aggregate(total_generado=Sum("obligaciones__monto_asignado"), total_abonado=Sum("obligaciones__abonos__monto"))
+    pendientes = ObligacionCiudadano.objects.filter(concepto__in=conceptos_qs, estado=ObligacionCiudadano.Estados.PENDIENTE).values("ciudadano").distinct().count()
+    paginator = Paginator(conceptos_qs, 12)
+    conceptos_page = paginator.get_page(request.GET.get("page"))
+    conceptos_page.previous_querystring = _page_querystring(request, "page", conceptos_page.previous_page_number()) if conceptos_page.has_previous() else ""
+    conceptos_page.next_querystring = _page_querystring(request, "page", conceptos_page.next_page_number()) if conceptos_page.has_next() else ""
+    return render(request, "dashboard/tesoreria.html", {
+        "conceptos": _decorate_tesoreria_concepts(conceptos_page.object_list),
+        "page_obj": conceptos_page,
+        "metricas": {"total_generado": metrics["total_generado"] or 0, "total_abonado": metrics["total_abonado"] or 0, "saldo_pendiente": (metrics["total_generado"] or 0) - (metrics["total_abonado"] or 0), "ciudadanos_pendientes": pendientes},
+        "filtros": {"q": request.GET.get("q", "").strip(), "naturaleza": request.GET.get("naturaleza", "todos"), "mes": request.GET.get("mes", "todos"), "anio": request.GET.get("anio", "todos"), "estado": request.GET.get("estado", "todos"), "comite": request.GET.get("comite", "todos")},
+        "meses": MESES,
+        "anios": sorted(set(ConceptoTesoreria.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)), reverse=True),
+        "comites": Comite.objects.filter(activo=True),
+        "can_modify": _can_modify_tesoreria(request.user),
+    })
+
+
+@login_required
+def crear_concepto_tesoreria(request, pk=None):
+    concepto = get_object_or_404(ConceptoTesoreria, pk=pk) if pk else None
+    if not _can_modify_tesoreria(request.user):
+        messages.error(request, "No tienes permisos para modificar tesorería.")
+        return redirect("tesoreria_operativa")
+    form = ConceptoTesoreriaForm(request.POST or None, instance=concepto)
+    if request.method == "POST" and form.is_valid():
+        obj = form.save()
+        messages.success(request, "Se guardó correctamente el concepto de tesorería.")
+        return redirect("tesoreria_concepto_detalle", obj.pk)
+    return render(request, "dashboard/tesoreria_form.html", {"form": form, "concepto": concepto, "cancel_url": reverse("tesoreria_operativa")})
+
+
+@login_required
+def generar_obligaciones_tesoreria(request, pk):
+    if request.method != "POST":
+        return redirect("tesoreria_operativa")
+    if not _can_modify_tesoreria(request.user):
+        messages.error(request, "No tienes permisos para generar obligaciones.")
+        return redirect("tesoreria_operativa")
+    concepto = get_object_or_404(ConceptoTesoreria, pk=pk)
+    with transaction.atomic():
+        ids = list(Ciudadano.objects.filter(activo=True).values_list("id", flat=True))
+        existentes = set(ObligacionCiudadano.objects.filter(concepto=concepto, ciudadano_id__in=ids).values_list("ciudadano_id", flat=True))
+        nuevos = [ObligacionCiudadano(concepto=concepto, ciudadano_id=i, monto_asignado=concepto.monto_individual) for i in ids if i not in existentes]
+        if nuevos:
+            ObligacionCiudadano.objects.bulk_create(nuevos, batch_size=500)
+        concepto.registros_generados = True
+        concepto.save(update_fields=["registros_generados", "updated_at"])
+    messages.success(request, f"Se crearon {len(nuevos)} obligaciones. {len(existentes)} obligaciones ya existían y fueron omitidas.")
+    return redirect("tesoreria_operativa")
+
+
+@login_required
+def tesoreria_concepto_detalle(request, pk):
+    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite"), pk=pk)
+    obligaciones = ObligacionCiudadano.objects.filter(concepto=concepto).select_related("ciudadano").annotate(total_abonado_anno=Sum("abonos__monto"), ultimo_abono=Max("abonos__fecha"))
+    q = request.GET.get("q", "").strip()
+    if q:
+        obligaciones = obligaciones.filter(Q(ciudadano__nombre__icontains=q) | Q(ciudadano__apellido_paterno__icontains=q) | Q(ciudadano__apellido_materno__icontains=q))
+    estado = request.GET.get("estado", "todos")
+    if estado in dict(ObligacionCiudadano.Estados.choices):
+        obligaciones = obligaciones.filter(estado=estado)
+    paginator = Paginator(obligaciones, 20)
+    page = paginator.get_page(request.GET.get("page"))
+    page.previous_querystring = _page_querystring(request, "page", page.previous_page_number()) if page.has_previous() else ""
+    page.next_querystring = _page_querystring(request, "page", page.next_page_number()) if page.has_next() else ""
+    decorated = []
+    for o in page.object_list:
+        o.total_abonado_calc = o.total_abonado_anno or 0
+        o.saldo_pendiente_calc = o.monto_asignado - o.total_abonado_calc
+        decorated.append(o)
+    metricas = obligaciones.aggregate(total_generado=Sum("monto_asignado"), total_abonado=Sum("abonos__monto"), pendientes=Count("id", filter=Q(estado=ObligacionCiudadano.Estados.PENDIENTE)), pagadas=Count("id", filter=Q(estado=ObligacionCiudadano.Estados.PAGADO)))
+    concepto_decorado = _decorate_tesoreria_concepts([ConceptoTesoreria.objects.filter(pk=pk).annotate(cantidad_obligaciones=Count("obligaciones", distinct=True), cantidad_pagada=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PAGADO), distinct=True), cantidad_pendiente=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE), distinct=True), total_generado=Sum("obligaciones__monto_asignado"), total_abonado=Sum("obligaciones__abonos__monto")).get()])[0]
+    return render(request, "dashboard/tesoreria_detalle.html", {"concepto": concepto_decorado, "obligaciones": decorated, "page_obj": page, "filtros": {"q": q, "estado": estado}, "metricas": {"total_generado": metricas["total_generado"] or 0, "total_abonado": metricas["total_abonado"] or 0, "saldo_pendiente": (metricas["total_generado"] or 0) - (metricas["total_abonado"] or 0), "pendientes": metricas["pendientes"] or 0, "pagadas": metricas["pagadas"] or 0}, "can_modify": _can_modify_tesoreria(request.user)})
+
+
+@login_required
+def acreditar_obligacion(request, pk):
+    obligacion = get_object_or_404(ObligacionCiudadano.objects.select_related("ciudadano", "concepto"), pk=pk)
+    if not _can_modify_tesoreria(request.user):
+        messages.error(request, "No tienes permisos para acreditar pagos.")
+        return redirect("tesoreria_concepto_detalle", obligacion.concepto_id)
+    if request.method == "POST":
+        form = AbonoForm(request.POST, obligacion=obligacion)
+        if form.is_valid():
+            try:
+                obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"])
+                messages.success(request, "Se registró correctamente el abono.")
+                return redirect("tesoreria_concepto_detalle", obligacion.concepto_id)
+            except Exception as exc:
+                form.add_error(None, exc)
+    else:
+        form = AbonoForm(obligacion=obligacion)
+    return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.all()})
