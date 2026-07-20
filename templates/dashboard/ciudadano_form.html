@@ -9,19 +9,10 @@
   </div>
 {% endif %}
 
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'padron_ciudadanos' %}">Padrón de ciudadanos</a> / <span>Agregar ciudadano</span></nav>
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'padron_ciudadanos' %}">Ciudadanos</a> / <span>Agregar ciudadano</span></nav>
 
 <section class="max-w-4xl mx-auto space-y-4">
-  <div class="bg-white rounded-2xl border p-4 md:p-6">
-    <p class="text-xs uppercase tracking-[.2em] text-indigo-600">Padrón operativo</p>
-    <div class="mt-2 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h3 class="text-2xl font-semibold text-slate-900">{{ title }}</h3>
-        <p class="text-sm text-slate-500 mt-1">{{ description }}</p>
-      </div>
-      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">Volver al padrón</a>
-    </div>
-  </div>
+  {% include 'dashboard/components/module_header.html' with title=title subtitle=description icon='👥' color='slate' action_url=cancel_url action_label='Volver a ciudadanos' %}
 
   <form method="post" class="bg-white rounded-2xl border p-4 md:p-6 space-y-5" novalidate>
     {% csrf_token %}

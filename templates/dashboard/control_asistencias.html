@@ -1,16 +1,8 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Control de Asistencias{% endblock %}
 {% block content %}
-<section class="mb-6">
-  <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">Bandeja operacional</p>
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <h3 class="text-2xl font-bold">Control de Asistencias</h3>
-      <p class="text-slate-500">Seguimiento diario agrupado por eventos comunitarios, no por registros internos.</p>
-    </div>
-    <a href="{% url 'dashboard_operativo' %}" class="rounded-lg bg-slate-200 px-3 py-2 text-sm">Volver al dashboard</a>
-  </div>
-</section>
+{% url 'dashboard_operativo' as dashboard_url %}
+{% include 'dashboard/components/module_header.html' with title='Control de Asistencias' subtitle='Administra la asistencia de faenas y juntas.' icon='☑️' color='orange' action_url=dashboard_url action_label='Volver al dashboard' %}
 
 <section class="grid md:grid-cols-4 gap-4 mb-6">
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Faenas activas</p><p class="text-2xl font-bold">{{ resumen.faenas_activas }}</p></article>
@@ -48,6 +40,6 @@
   </form>
 </section>
 
-<div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas page_obj=faenas_page empty_message='No hay faenas para seguimiento operacional.' %}</div>
-<div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas page_obj=juntas_page empty_message='No hay juntas para seguimiento operacional.' %}</div>
+<div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas page_obj=faenas_page empty_message='No hay faenas para seguimiento.' %}</div>
+<div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas page_obj=juntas_page empty_message='No hay juntas para seguimiento.' %}</div>
 {% endblock %}
