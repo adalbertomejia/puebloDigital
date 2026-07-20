@@ -1,5 +1,6 @@
 import csv
 from itertools import chain
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -8,6 +9,7 @@ from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse
@@ -587,7 +589,7 @@ def _decorate_attendance_events(events, description_attr, admin_url_name, captur
         event.detail_url = reverse(detail_url_name, args=[event.pk])
         decorated.append(event)
 
-    return sorted(decorated, key=lambda item: (item.operational_priority, item.fecha))
+    return decorated
 
 
 def _attendance_summary(faenas, juntas):
@@ -599,10 +601,87 @@ def _attendance_summary(faenas, juntas):
     }
 
 
+MESES = [
+    (1, "Enero"),
+    (2, "Febrero"),
+    (3, "Marzo"),
+    (4, "Abril"),
+    (5, "Mayo"),
+    (6, "Junio"),
+    (7, "Julio"),
+    (8, "Agosto"),
+    (9, "Septiembre"),
+    (10, "Octubre"),
+    (11, "Noviembre"),
+    (12, "Diciembre"),
+]
+
+
+def _attendance_years():
+    faena_years = Faena.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
+    junta_years = Junta.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
+    return sorted({year for year in chain(faena_years, junta_years) if year}, reverse=True)
+
+
+def _filtrar_eventos_asistencia(queryset, params, description_field, tipo_actividad):
+    q = params.get("q", "").strip()
+    mes = params.get("mes", "todos")
+    anio = params.get("anio", "todos")
+
+    if q:
+        search_filter = (
+            Q(**{f"{description_field}__icontains": q})
+            | Q(comite__nombre__icontains=q)
+            | Q(estado__icontains=q)
+        )
+        if tipo_actividad.lower().startswith(q.lower()) or q.lower() in tipo_actividad.lower():
+            search_filter |= Q(pk__isnull=False)
+        queryset = queryset.filter(search_filter)
+
+    if mes != "todos" and mes.isdigit():
+        queryset = queryset.filter(fecha__month=int(mes))
+
+    if anio != "todos" and anio.isdigit():
+        queryset = queryset.filter(fecha__year=int(anio))
+
+    return queryset.order_by("-fecha", "-created_at")
+
+
+def _page_querystring(request, page_param, page_number):
+    params = request.GET.copy()
+    params[page_param] = page_number
+    return urlencode(params, doseq=True)
+
+
+def _paginate_events(request, queryset, page_param):
+    page = Paginator(queryset, 12).get_page(request.GET.get(page_param))
+    page.previous_querystring = (
+        _page_querystring(request, page_param, page.previous_page_number()) if page.has_previous() else ""
+    )
+    page.next_querystring = (
+        _page_querystring(request, page_param, page.next_page_number()) if page.has_next() else ""
+    )
+    return page
+
+
 @login_required
 def control_asistencias(request):
+    faenas_qs = _filtrar_eventos_asistencia(
+        _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE),
+        request.GET,
+        "descripcion",
+        "faena",
+    )
+    juntas_qs = _filtrar_eventos_asistencia(
+        _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE),
+        request.GET,
+        "tema",
+        "junta",
+    )
+    faenas_page = _paginate_events(request, faenas_qs, "faenas_page")
+    juntas_page = _paginate_events(request, juntas_qs, "juntas_page")
     faenas = _decorate_attendance_events(
-        _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
+        faenas_page.object_list,
         "descripcion",
         "editar_faena_operativa",
         "captura_asistencia_faena",
@@ -610,7 +689,7 @@ def control_asistencias(request):
         "generar_registros_faena",
     )
     juntas = _decorate_attendance_events(
-        _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE).order_by("fecha", "created_at")[:50],
+        juntas_page.object_list,
         "tema",
         "editar_junta_operativa",
         "captura_asistencia_junta",
@@ -625,6 +704,15 @@ def control_asistencias(request):
             "resumen": _attendance_summary(faenas, juntas),
             "faenas": faenas,
             "juntas": juntas,
+            "faenas_page": faenas_page,
+            "juntas_page": juntas_page,
+            "filtros": {
+                "q": request.GET.get("q", "").strip(),
+                "mes": request.GET.get("mes", "todos"),
+                "anio": request.GET.get("anio", "todos"),
+            },
+            "meses": MESES,
+            "anios": _attendance_years(),
             "tipo_activo": request.GET.get("tipo", ""),
         },
     )

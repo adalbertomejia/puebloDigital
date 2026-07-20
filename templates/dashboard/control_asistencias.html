@@ -19,6 +19,35 @@
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias pendientes</p><p class="text-2xl font-bold">{{ resumen.asistencias_pendientes }}</p></article>
 </section>
 
-<div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas empty_message='No hay faenas para seguimiento operacional.' %}</div>
-<div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas empty_message='No hay juntas para seguimiento operacional.' %}</div>
+<section class="bg-white rounded-2xl border p-4 md:p-5 mb-6">
+  <form method="get" class="grid lg:grid-cols-12 gap-3 items-end">
+    {% if tipo_activo %}<input type="hidden" name="tipo" value="{{ tipo_activo }}">{% endif %}
+    <label class="lg:col-span-6 text-sm font-medium text-slate-700">Buscar actividad
+      <input type="search" name="q" value="{{ filtros.q }}" placeholder="Descripción, comité, faena o junta" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
+    </label>
+    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Mes
+      <select name="mes" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
+        <option value="todos">Todos</option>
+        {% for mes_value, mes_nombre in meses %}
+          <option value="{{ mes_value }}" {% if filtros.mes == mes_value|stringformat:'s' %}selected{% endif %}>{{ mes_nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Año
+      <select name="anio" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
+        <option value="todos">Todos</option>
+        {% for anio in anios %}
+          <option value="{{ anio }}" {% if filtros.anio == anio|stringformat:'s' %}selected{% endif %}>{{ anio }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="lg:col-span-2 flex flex-wrap gap-2">
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar</button>
+      <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'control_asistencias' %}">Limpiar filtros</a>
+    </div>
+  </form>
+</section>
+
+<div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas page_obj=faenas_page empty_message='No hay faenas para seguimiento operacional.' %}</div>
+<div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas page_obj=juntas_page empty_message='No hay juntas para seguimiento operacional.' %}</div>
 {% endblock %}
