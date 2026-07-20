@@ -1,4 +1,5 @@
 import csv
+from decimal import Decimal
 from itertools import chain
 from urllib.parse import urlencode
 
@@ -8,7 +9,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Prefetch, Q, Sum
 from django.db.models.functions import ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -1258,7 +1259,30 @@ def generar_obligaciones_tesoreria(request, pk):
 @login_required
 def tesoreria_concepto_detalle(request, pk):
     concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite"), pk=pk)
-    obligaciones = ObligacionCiudadano.objects.filter(concepto=concepto).select_related("ciudadano").annotate(total_abonado_anno=Sum("abonos__monto"), ultimo_abono=Max("abonos__fecha"))
+    obligaciones_base = ObligacionCiudadano.objects.filter(concepto=concepto)
+
+    total_obligaciones = obligaciones_base.count()
+    total_generado = obligaciones_base.aggregate(total=Sum("monto_asignado"))["total"] or Decimal("0.00")
+    total_abonado = (
+        Abono.objects.filter(obligacion__concepto=concepto).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    saldo_pendiente = max(total_generado - total_abonado, Decimal("0.00"))
+    pendientes = obligaciones_base.filter(estado=ObligacionCiudadano.Estados.PENDIENTE).count()
+    pagadas = obligaciones_base.filter(estado=ObligacionCiudadano.Estados.PAGADO).count()
+    canceladas = obligaciones_base.filter(estado=ObligacionCiudadano.Estados.CANCELADO).count()
+
+    obligaciones = (
+        obligaciones_base.select_related("ciudadano")
+        .prefetch_related(
+            Prefetch(
+                "abonos",
+                queryset=Abono.objects.order_by("-fecha", "-created_at"),
+            )
+        )
+        .annotate(total_abonado_anno=Sum("abonos__monto"), ultimo_abono=Max("abonos__fecha"))
+        .order_by("ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre")
+    )
     q = request.GET.get("q", "").strip()
     if q:
         obligaciones = obligaciones.filter(Q(ciudadano__nombre__icontains=q) | Q(ciudadano__apellido_paterno__icontains=q) | Q(ciudadano__apellido_materno__icontains=q))
@@ -1271,12 +1295,28 @@ def tesoreria_concepto_detalle(request, pk):
     page.next_querystring = _page_querystring(request, "page", page.next_page_number()) if page.has_next() else ""
     decorated = []
     for o in page.object_list:
-        o.total_abonado_calc = o.total_abonado_anno or 0
-        o.saldo_pendiente_calc = o.monto_asignado - o.total_abonado_calc
+        o.total_abonado_calc = o.total_abonado_anno or Decimal("0.00")
+        o.saldo_pendiente_calc = max(o.monto_asignado - o.total_abonado_calc, Decimal("0.00"))
         decorated.append(o)
-    metricas = obligaciones.aggregate(total_generado=Sum("monto_asignado"), total_abonado=Sum("abonos__monto"), pendientes=Count("id", filter=Q(estado=ObligacionCiudadano.Estados.PENDIENTE)), pagadas=Count("id", filter=Q(estado=ObligacionCiudadano.Estados.PAGADO)))
-    concepto_decorado = _decorate_tesoreria_concepts([ConceptoTesoreria.objects.filter(pk=pk).annotate(cantidad_obligaciones=Count("obligaciones", distinct=True), cantidad_pagada=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PAGADO), distinct=True), cantidad_pendiente=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE), distinct=True), total_generado=Sum("obligaciones__monto_asignado"), total_abonado=Sum("obligaciones__abonos__monto")).get()])[0]
-    return render(request, "dashboard/tesoreria_detalle.html", {"concepto": concepto_decorado, "obligaciones": decorated, "page_obj": page, "filtros": {"q": q, "estado": estado}, "metricas": {"total_generado": metricas["total_generado"] or 0, "total_abonado": metricas["total_abonado"] or 0, "saldo_pendiente": (metricas["total_generado"] or 0) - (metricas["total_abonado"] or 0), "pendientes": metricas["pendientes"] or 0, "pagadas": metricas["pagadas"] or 0}, "can_modify": _can_modify_tesoreria(request.user)})
+
+    concepto.cantidad_obligaciones = total_obligaciones
+    concepto.cantidad_pagada = pagadas
+    concepto.cantidad_pendiente = pendientes
+    concepto.cantidad_cancelada = canceladas
+    concepto.total_generado = total_generado
+    concepto.total_abonado = total_abonado
+    concepto.saldo_pendiente = saldo_pendiente
+    if concepto.cantidad_obligaciones == 0:
+        concepto.estado_general = "SIN_GENERAR"
+        concepto.estado_general_label = "Sin generar"
+    elif pendientes > 0:
+        concepto.estado_general = "CON_PENDIENTES"
+        concepto.estado_general_label = "Con pendientes"
+    else:
+        concepto.estado_general = "COMPLETADO"
+        concepto.estado_general_label = "Completado"
+
+    return render(request, "dashboard/tesoreria_detalle.html", {"concepto": concepto, "obligaciones": decorated, "page_obj": page, "filtros": {"q": q, "estado": estado}, "metricas": {"total_generado": total_generado, "total_abonado": total_abonado, "saldo_pendiente": saldo_pendiente, "pendientes": pendientes, "pagadas": pagadas}, "can_modify": _can_modify_tesoreria(request.user)})
 
 
 @login_required

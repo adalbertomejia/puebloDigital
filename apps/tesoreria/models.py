@@ -175,6 +175,26 @@ class Abono(TimeStampedModel):
     def clean(self):
         if self.monto is not None and self.monto <= 0:
             raise ValidationError({"monto": "El monto del abono debe ser mayor que cero."})
+        if not self.obligacion_id or self.monto is None:
+            return
+
+        obligacion = self.obligacion
+        if obligacion.estado == ObligacionCiudadano.Estados.CANCELADO:
+            raise ValidationError("No se pueden registrar abonos sobre una obligación cancelada.")
+        if obligacion.estado == ObligacionCiudadano.Estados.PAGADO and not self.pk:
+            raise ValidationError("No se pueden registrar abonos sobre una obligación pagada.")
+
+        abonos_existentes = obligacion.abonos.all()
+        if self.pk:
+            abonos_existentes = abonos_existentes.exclude(pk=self.pk)
+        total_existente = abonos_existentes.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+        saldo_disponible = max(obligacion.monto_asignado - total_existente, Decimal("0.00"))
+        if self.monto > saldo_disponible:
+            raise ValidationError(f"El abono no puede superar el saldo pendiente de ${saldo_disponible:.2f}.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.obligacion} · ${self.monto}"
