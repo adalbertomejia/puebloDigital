@@ -21,7 +21,7 @@ from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
-from .models import Ciudadano
+from .models import Ciudadano, Manzana
 
 
 class EstadoEventoForm(DashboardFormMixin, forms.Form):
@@ -34,7 +34,7 @@ class EstadoEventoForm(DashboardFormMixin, forms.Form):
 
 
 def _ciudadanos_operativos_queryset():
-    return Ciudadano.objects.select_related("toma").annotate(
+    return Ciudadano.objects.select_related("toma", "manzana").annotate(
         ultimo_pago_fecha=Max("pagos__fecha"),
         adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
     )
@@ -45,13 +45,14 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     estado = params.get("estado", "todos")
     toma = params.get("toma", "todos")
     adeudo = params.get("adeudo", "todos")
+    manzana = params.get("manzana", "todas")
 
     if q:
         search_filter = (
             Q(nombre__icontains=q)
             | Q(apellido_paterno__icontains=q)
             | Q(apellido_materno__icontains=q)
-            | Q(telefono__icontains=q)
+            | Q(numero_contrato__icontains=q)
             | Q(toma__numero_toma__icontains=q)
         )
         if q.isdigit():
@@ -72,6 +73,11 @@ def _filtrar_ciudadanos_operativos(queryset, params):
         queryset = queryset.filter(adeudos_faena__gt=0)
     elif adeudo == "sin_adeudo":
         queryset = queryset.filter(adeudos_faena=0)
+
+    if manzana == "sin_manzana":
+        queryset = queryset.filter(manzana__isnull=True)
+    elif manzana.isdigit():
+        queryset = queryset.filter(manzana_id=int(manzana))
 
     ordering = params.get("orden", "nombre")
     orderings = {
@@ -96,8 +102,10 @@ def padron_ciudadanos(request):
             "estado": request.GET.get("estado", "todos"),
             "toma": request.GET.get("toma", "todos"),
             "adeudo": request.GET.get("adeudo", "todos"),
+            "manzana": request.GET.get("manzana", "todas"),
             "orden": request.GET.get("orden", "nombre"),
         },
+        "manzanas": Manzana.objects.filter(activa=True),
         "metricas": {
             "total": Ciudadano.objects.count(),
             "activos": Ciudadano.objects.filter(activo=True).count(),
@@ -129,7 +137,8 @@ def exportar_ciudadanos_csv(request):
         "Apellido paterno",
         "Apellido materno",
         "Nombre completo",
-        "Teléfono",
+        "No. de contrato",
+        "Manzana",
         "Edad",
         "Estado",
         "Fecha de registro",
@@ -142,7 +151,8 @@ def exportar_ciudadanos_csv(request):
             ciudadano.apellido_paterno,
             ciudadano.apellido_materno,
             ciudadano.nombre_completo,
-            ciudadano.telefono or "",
+            ciudadano.numero_contrato or "",
+            ciudadano.manzana.nombre if ciudadano.manzana else "",
             ciudadano.edad,
             "Activo" if ciudadano.activo else "Inactivo",
             timezone.localtime(ciudadano.created_at).strftime("%Y-%m-%d %H:%M"),
@@ -257,7 +267,7 @@ def dashboard_operativo(request):
     q = request.GET.get("q", "").strip()
 
     ciudadanos_qs = (
-        Ciudadano.objects.select_related("toma")
+        Ciudadano.objects.select_related("toma", "manzana")
         .annotate(
             total_pagos=Count("pagos", distinct=True),
             ultimo_pago_fecha=Max("pagos__fecha"),
@@ -272,7 +282,7 @@ def dashboard_operativo(request):
             Q(nombre__icontains=q)
             | Q(apellido_paterno__icontains=q)
             | Q(apellido_materno__icontains=q)
-            | Q(telefono__icontains=q)
+            | Q(numero_contrato__icontains=q)
             | Q(toma__numero_toma__icontains=q)
         )
 

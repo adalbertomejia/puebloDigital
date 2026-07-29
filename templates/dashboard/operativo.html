@@ -13,7 +13,7 @@
     <h3 class="font-semibold">Buscador global de ciudadanos</h3>
     <p class="text-sm text-slate-500 mb-2">Acceso rápido a expediente y operaciones comunitarias.</p>
     <form method="get" class="flex flex-wrap gap-2">
-      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, teléfono, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-1.5">
+      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, contrato, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-1.5">
       <button class="rounded-lg bg-indigo-600 text-white px-4 py-1.5">Buscar</button>
     </form>
   </article>
@@ -44,7 +44,7 @@
         <div class="flex justify-between items-start gap-2">
           <div>
             <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
-            <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }}</p>
+            <p class="text-sm text-slate-500">{{ c.edad }} años · Contrato: {{ c.numero_contrato|default:'-' }} · Manzana: {{ c.manzana|default:'-' }}</p>
           </div>
           <span class="text-xs px-2 py-1 rounded-full {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
         </div>

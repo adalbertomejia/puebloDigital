@@ -17,7 +17,7 @@
       <div class="h-16 w-16 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xl">{{ ciudadano.nombre|first }}{{ ciudadano.apellido_paterno|first }}</div>
       <div>
         <h2 class="text-2xl font-bold">{{ ciudadano.nombre_completo }}</h2>
-        <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.telefono|default:'Sin teléfono' }}</p>
+        <p class="text-slate-500">{{ ciudadano.edad }} años · Contrato: {{ ciudadano.numero_contrato|default:'-' }} · Manzana: {{ ciudadano.manzana|default:'-' }}</p>
       </div>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
@@ -30,6 +30,7 @@
 </section>
 
 <section class="grid lg:grid-cols-2 gap-4">
+  <article class="bg-white border rounded-xl p-4 lg:col-span-2"><h3 class="font-semibold mb-2">Datos del padrón</h3><p>Labor social: {{ ciudadano.labor_social|default:'-' }}</p><p>Motivo de alta: {{ ciudadano.motivo_alta|default:'-' }}</p></article>
   <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Agua</h3><p>Toma: {{ ciudadano.toma.numero_toma|default:'Sin toma' }}</p><p>Estado: {{ ciudadano.toma.get_estado_display|default:'-' }}</p><p>Observaciones: {{ ciudadano.toma.observaciones|default:'-' }}</p></article>
   <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Resumen</h3><p>Adeudos de faena: {{ resumen.adeudos_faena }}</p><p>Último pago: {{ resumen.ultimo_pago.fecha|default:'Sin registro' }}</p><p>Última faena: {{ resumen.ultima_faena.faena.fecha|default:'Sin registro' }}</p></article>
 
