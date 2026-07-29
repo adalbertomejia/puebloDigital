@@ -17,7 +17,7 @@
       <div class="h-16 w-16 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xl">{{ ciudadano.nombre|first }}{{ ciudadano.apellido_paterno|first }}</div>
       <div>
         <h2 class="text-2xl font-bold">{{ ciudadano.nombre_completo }}</h2>
-        <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.telefono|default:'Sin teléfono' }}</p>
+        <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.manzana|default:'—' }} · Contrato {{ ciudadano.numero_contrato|default:'—' }}</p>
       </div>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">

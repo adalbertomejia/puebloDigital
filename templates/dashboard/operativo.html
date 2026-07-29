@@ -44,7 +44,7 @@
         <div class="flex justify-between items-start gap-2">
           <div>
             <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
-            <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }}</p>
+            <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.manzana|default:'—' }} · Contrato {{ c.numero_contrato|default:'—' }}</p>
           </div>
           <span class="text-xs px-2 py-1 rounded-full {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
         </div>

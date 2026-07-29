@@ -4,7 +4,7 @@ from apps.agua.models import Toma
 from apps.operacion.models import RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
-from .models import Ciudadano
+from .models import Ciudadano, Manzana, TelefonoCiudadanoLegado
 
 
 class PagoInline(admin.TabularInline):
@@ -73,12 +73,30 @@ class TomaInline(admin.StackedInline):
     verbose_name_plural = "Agua"
 
 
+@admin.register(Manzana)
+class ManzanaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "activa", "created_at")
+    search_fields = ("nombre", "descripcion")
+    list_filter = ("activa",)
+
+
+@admin.register(TelefonoCiudadanoLegado)
+class TelefonoCiudadanoLegadoAdmin(admin.ModelAdmin):
+    list_display = ("ciudadano", "valor", "archivado_at")
+    search_fields = ("ciudadano__nombre", "ciudadano__apellido_paterno", "valor")
+    readonly_fields = ("ciudadano", "valor", "archivado_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
 @admin.register(Ciudadano)
 class CiudadanoAdmin(admin.ModelAdmin):
     list_display = (
         "nombre_completo",
         "edad",
-        "telefono",
+        "numero_contrato",
+        "manzana",
         "activo",
         "numero_toma",
         "estado_toma",
@@ -88,18 +106,19 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "^apellido_paterno",
         "^apellido_materno",
         "^nombre",
-        "telefono",
+        "numero_contrato",
         "direccion",
     )
-    list_filter = ("activo", "edad", "created_at", "registros_faena__estatus", "toma__estado")
+    list_filter = ("activo", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
     ordering = ("apellido_paterno", "apellido_materno", "nombre")
     list_per_page = 50
     save_on_top = True
-    list_select_related = ("toma",)
+    list_select_related = ("toma", "manzana")
     inlines = [TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
     fieldsets = (
         ("Identidad", {"fields": (("nombre", "apellido_paterno", "apellido_materno"), "activo")}),
-        ("Datos de contacto", {"fields": ("edad", "fecha_nacimiento", "telefono", "direccion")}),
+        ("Datos del padrón", {"fields": ("edad", "fecha_nacimiento", "numero_contrato", "manzana", "direccion")}),
+        ("Participación", {"fields": ("labor_social", "motivo_alta")}),
         ("Notas internas", {"fields": ("observaciones",), "classes": ("collapse",)}),
     )
 
