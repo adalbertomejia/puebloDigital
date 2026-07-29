@@ -17,9 +17,16 @@
 </section>
 
 <section class="bg-white rounded-2xl border p-4 mb-6">
-  <form method="get" class="grid lg:grid-cols-6 gap-3 items-end">
+  <form method="get" class="grid lg:grid-cols-7 gap-3 items-end">
     <label class="lg:col-span-2 text-sm font-medium">Búsqueda general
-      <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre, teléfono, toma o identificador" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+      <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre, contrato, toma o identificador" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+    </label>
+    <label class="text-sm font-medium">Manzana
+      <select name="manzana" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
+        <option value="todas" {% if filtros.manzana == 'todas' %}selected{% endif %}>Todas</option>
+        <option value="sin_manzana" {% if filtros.manzana == 'sin_manzana' %}selected{% endif %}>Sin manzana</option>
+        {% for manzana in manzanas %}<option value="{{ manzana.pk }}" {% if filtros.manzana == manzana.pk|stringformat:'s' %}selected{% endif %}>{{ manzana }}</option>{% endfor %}
+      </select>
     </label>
     <label class="text-sm font-medium">Estado
       <select name="estado" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
@@ -50,7 +57,7 @@
         <option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Fecha de registro</option>
       </select>
     </label>
-    <div class="lg:col-span-6 flex flex-wrap gap-2">
+    <div class="lg:col-span-7 flex flex-wrap gap-2">
       <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar filtros</button>
       <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'padron_ciudadanos' %}">Limpiar</a>
     </div>
@@ -63,11 +70,12 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
-          <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }} · ID {{ c.id }}</p>
+          <p class="text-sm text-slate-500">{{ c.edad }} años · Contrato: {{ c.numero_contrato|default:'-' }} · ID {{ c.id }}</p>
         </div>
         <span class="text-xs px-3 py-1 rounded-full font-medium {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
       </div>
-      <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm">
+      <div class="grid md:grid-cols-5 gap-3 mt-4 text-sm">
+        <p><span class="block text-xs text-slate-500">Manzana</span><strong>{{ c.manzana|default:'-' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Toma de agua</span><strong>{{ c.toma.numero_toma|default:'Sin toma' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Último pago</span><strong>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Adeudos de faena</span><strong>{{ c.adeudos_faena }}</strong></p>
@@ -88,8 +96,8 @@
   <nav class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
     <span class="text-slate-500">Página {{ ciudadanos.number }} de {{ ciudadanos.paginator.num_pages }}</span>
     <div class="flex gap-2">
-      {% if ciudadanos.has_previous %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.previous_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Anterior</a>{% endif %}
-      {% if ciudadanos.has_next %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.next_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Siguiente</a>{% endif %}
+      {% if ciudadanos.has_previous %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.previous_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&manzana={{ filtros.manzana }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Anterior</a>{% endif %}
+      {% if ciudadanos.has_next %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.next_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&manzana={{ filtros.manzana }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Siguiente</a>{% endif %}
     </div>
   </nav>
 {% endif %}

@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.urls import reverse
 
 from apps.comites.models import Comite
-from apps.core.models import Ciudadano
+from apps.core.models import Ciudadano, Manzana
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 
 
@@ -84,7 +84,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
             apellido_paterno="García",
             apellido_materno="Ñúñez",
             edad=30,
-            telefono="",
+            numero_contrato=None,
             activo=True,
         )
         self.beto = Ciudadano.objects.create(
@@ -92,7 +92,8 @@ class ExportacionCiudadanosCsvTests(TestCase):
             apellido_paterno="Pérez",
             apellido_materno="López",
             edad=40,
-            telefono="555",
+            numero_contrato="CONT-0055",
+            manzana=Manzana.objects.create(nombre="Manzana 2"),
             activo=False,
         )
         self.maria = Ciudadano.objects.create(
@@ -124,9 +125,9 @@ class ExportacionCiudadanosCsvTests(TestCase):
         self.assertIn(f'filename="ciudadanos_{timezone.localdate().isoformat()}.csv"', response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         rows = self._rows(response)
-        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "Teléfono", "Edad", "Estado", "Fecha de registro"])
+        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "No. de contrato", "Manzana", "Edad", "Estado", "Fecha de registro"])
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:8], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "30", "Activo"])
+        self.assertEqual(rows[1][1:9], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "", "30", "Activo"])
         self.assertNotIn("Beto Pérez López", response.content.decode("utf-8-sig"))
 
     def test_exporta_inactivos_como_inactivo_y_requiere_autenticacion(self):
@@ -134,7 +135,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
         rows = self._rows(response)
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:8], ["Beto", "Pérez", "López", "Beto Pérez López", "555", "40", "Inactivo"])
+        self.assertEqual(rows[1][1:9], ["Beto", "Pérez", "López", "Beto Pérez López", "CONT-0055", "Manzana 2", "40", "Inactivo"])
 
         self.client.logout()
         response = self.client.get(reverse("exportar_ciudadanos_csv"))

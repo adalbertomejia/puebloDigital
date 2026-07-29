@@ -4,7 +4,14 @@ from apps.agua.models import Toma
 from apps.operacion.models import RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
-from .models import Ciudadano
+from .models import Ciudadano, Manzana
+
+
+@admin.register(Manzana)
+class ManzanaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "activa", "created_at")
+    search_fields = ("nombre", "descripcion")
+    list_filter = ("activa",)
 
 
 class PagoInline(admin.TabularInline):
@@ -78,7 +85,8 @@ class CiudadanoAdmin(admin.ModelAdmin):
     list_display = (
         "nombre_completo",
         "edad",
-        "telefono",
+        "numero_contrato",
+        "manzana",
         "activo",
         "numero_toma",
         "estado_toma",
@@ -88,18 +96,20 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "^apellido_paterno",
         "^apellido_materno",
         "^nombre",
-        "telefono",
+        "numero_contrato",
+        "manzana__nombre",
         "direccion",
     )
-    list_filter = ("activo", "edad", "created_at", "registros_faena__estatus", "toma__estado")
+    list_filter = ("activo", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
     ordering = ("apellido_paterno", "apellido_materno", "nombre")
     list_per_page = 50
     save_on_top = True
-    list_select_related = ("toma",)
+    list_select_related = ("toma", "manzana")
     inlines = [TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
     fieldsets = (
         ("Identidad", {"fields": (("nombre", "apellido_paterno", "apellido_materno"), "activo")}),
-        ("Datos de contacto", {"fields": ("edad", "fecha_nacimiento", "telefono", "direccion")}),
+        ("Datos del padrón", {"fields": ("edad", "fecha_nacimiento", "numero_contrato", "manzana", "direccion")}),
+        ("Participación y alta", {"fields": ("labor_social", "motivo_alta")}),
         ("Notas internas", {"fields": ("observaciones",), "classes": ("collapse",)}),
     )
 
@@ -113,4 +123,4 @@ class CiudadanoAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
-        return queryset.select_related("toma")
+        return queryset.select_related("toma", "manzana")

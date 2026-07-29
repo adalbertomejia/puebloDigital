@@ -7,13 +7,44 @@ class TimeStampedModel(models.Model):
     class Meta:
         abstract = True
 
+
+class Manzana(TimeStampedModel):
+    nombre = models.CharField(max_length=100)
+    descripcion = models.TextField(blank=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Manzana"
+        verbose_name_plural = "Manzanas"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
 class Ciudadano(TimeStampedModel):
     nombre = models.CharField(max_length=100)
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
     edad = models.PositiveSmallIntegerField()
     fecha_nacimiento = models.DateField(null=True, blank=True)
-    telefono = models.CharField(max_length=20, blank=True)
+    numero_contrato = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="No. de contrato",
+    )
+    manzana = models.ForeignKey(
+        Manzana,
+        on_delete=models.PROTECT,
+        related_name="ciudadanos",
+        null=True,
+        blank=True,
+    )
+    # Puede convertirse en una entidad independiente si se requieren varias
+    # labores, fechas, estados o evidencias por ciudadano.
+    labor_social = models.TextField(blank=True, verbose_name="Labor social")
+    motivo_alta = models.TextField(blank=True, verbose_name="Motivo de alta")
     direccion = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
