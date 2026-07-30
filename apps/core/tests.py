@@ -5,13 +5,78 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.forms import Select
 from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 
 from apps.comites.models import Comite
+from apps.core.forms import CiudadanoOperativoForm
 from apps.core.models import Ciudadano, Manzana
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
+
+
+class MotivoAltaCiudadanoTests(TestCase):
+    def test_text_choices_contiene_unicamente_los_tres_motivos_permitidos(self):
+        self.assertEqual(
+            list(Ciudadano.MotivosAlta.choices),
+            [
+                ("ESTUDIOS", "Conclusión o interrupción de estudios"),
+                ("MAYORIA_EDAD", "Mayoría de edad"),
+                ("INTEGRACION_COMUNIDAD", "Integración voluntaria a la comunidad"),
+            ],
+        )
+
+    def test_modelo_rechaza_motivo_no_definido(self):
+        ciudadano = Ciudadano(
+            nombre="Ana",
+            apellido_paterno="López",
+            edad=18,
+            motivo_alta="OTRO",
+        )
+
+        with self.assertRaises(ValidationError) as error:
+            ciudadano.full_clean()
+        self.assertIn("motivo_alta", error.exception.message_dict)
+
+    def test_formulario_usa_selector_y_rechaza_motivo_no_definido(self):
+        form = CiudadanoOperativoForm(
+            data={
+                "nombre": "Ana",
+                "apellido_paterno": "López",
+                "apellido_materno": "",
+                "edad": 18,
+                "fecha_nacimiento": "",
+                "numero_contrato": "",
+                "manzana": "",
+                "labor_social": "",
+                "motivo_alta": "OTRO",
+                "direccion": "",
+                "activo": True,
+                "observaciones": "",
+            }
+        )
+
+        self.assertIsInstance(form.fields["motivo_alta"].widget, Select)
+        self.assertFalse(form.is_valid())
+        self.assertIn("motivo_alta", form.errors)
+
+    def test_detalle_muestra_etiqueta_legible(self):
+        ciudadano = Ciudadano(
+            nombre="Ana",
+            apellido_paterno="López",
+            edad=18,
+            motivo_alta=Ciudadano.MotivosAlta.ESTUDIOS,
+        )
+
+        self.assertEqual(
+            ciudadano.get_motivo_alta_display(),
+            "Conclusión o interrupción de estudios",
+        )
+        template = Path("templates/dashboard/perfil_ciudadano.html").read_text()
+        self.assertIn("ciudadano.get_motivo_alta_display", template)
+        self.assertNotIn("ciudadano.motivo_alta|default", template)
 
 
 class ExportacionParticipantesCsvTests(TestCase):

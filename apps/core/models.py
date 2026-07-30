@@ -23,6 +23,14 @@ class Manzana(TimeStampedModel):
 
 
 class Ciudadano(TimeStampedModel):
+    class MotivosAlta(models.TextChoices):
+        ESTUDIOS = "ESTUDIOS", "Conclusión o interrupción de estudios"
+        MAYORIA_EDAD = "MAYORIA_EDAD", "Mayoría de edad"
+        INTEGRACION_COMUNIDAD = (
+            "INTEGRACION_COMUNIDAD",
+            "Integración voluntaria a la comunidad",
+        )
+
     nombre = models.CharField(max_length=100)
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
@@ -44,7 +52,11 @@ class Ciudadano(TimeStampedModel):
     # Puede convertirse en una entidad independiente si se requieren varias
     # labores, fechas, estados o evidencias por ciudadano.
     labor_social = models.TextField(blank=True, verbose_name="Labor social")
-    motivo_alta = models.TextField(blank=True, verbose_name="Motivo de alta")
+    motivo_alta = models.CharField(
+        max_length=22,
+        choices=MotivosAlta.choices,
+        verbose_name="Motivo de alta",
+    )
     direccion = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
