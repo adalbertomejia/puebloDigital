@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="es">
 <head>
@@ -5,21 +6,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Panel de Gestión{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{% static 'css/pueblo-digital.css' %}">
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen">
+<body class="app-shell bg-slate-100 text-slate-800 min-h-screen">
   <div class="min-h-screen lg:flex">
-    <aside class="w-full lg:w-72 bg-slate-950 text-slate-100 px-4 py-5 lg:py-6">
-      <p class="text-xs uppercase tracking-[.2em] text-indigo-300">Pueblo Digital</p>
-      <h1 class="text-xl font-semibold mt-1">Centro de Gestión Comunitaria</h1>
-      <p class="text-sm text-slate-400 mt-1">Información y operación diaria de la delegación.</p>
+    <aside class="app-sidebar w-full lg:w-72 bg-slate-950 text-slate-100 px-4 py-5 lg:py-6">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">PD</span>
+        <div>
+          <p class="text-xs uppercase tracking-[.2em] text-indigo-300">Pueblo Digital</p>
+          <h1 class="text-xl font-semibold mt-1">Centro de Gestión Comunitaria</h1>
+        </div>
+      </div>
+      <p class="text-sm text-slate-400 mt-3">Información y operación diaria de la delegación.</p>
 
       <nav class="mt-6 space-y-2 text-sm">
-        <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'dashboard_operativo' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Inicio</a>
-        <a href="{% url 'padron_ciudadanos' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'padron_ciudadanos' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Ciudadanos</a>
-        <a href="{% url 'control_asistencias' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'control_asistencias' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Control de Asistencias</a>
-        <a href="{% url 'tesoreria_operativa' %}" class="block rounded-lg px-3 py-2 {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">💰 Tesorería</a>
-        <a href="{% url 'control_agua' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'control_agua' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Agua</a>
-        <a href="#actividad-reciente" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Actividad reciente</a>
+        <a href="{% url 'dashboard_operativo' %}" class="nav-link block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'dashboard_operativo' %}is-active bg-slate-800{% else %}hover:bg-slate-800{% endif %}"><span aria-hidden="true">⌂</span> Inicio</a>
+        <a href="{% url 'padron_ciudadanos' %}" class="nav-link block rounded-lg px-3 py-2 {% if 'ciudadano' in request.resolver_match.url_name or request.resolver_match.url_name == 'padron_ciudadanos' %}is-active bg-slate-800{% else %}hover:bg-slate-800{% endif %}"><span aria-hidden="true">◎</span> Ciudadanos</a>
+        <a href="{% url 'control_asistencias' %}" class="nav-link block rounded-lg px-3 py-2 {% if 'asistencia' in request.resolver_match.url_name %}is-active bg-slate-800{% else %}hover:bg-slate-800{% endif %}"><span aria-hidden="true">✓</span> Control de Asistencias</a>
+        <a href="{% url 'control_asistencias' %}#faenas" class="nav-link block rounded-lg px-3 py-2"><span aria-hidden="true">◇</span> Faenas</a>
+        <a href="{% url 'control_asistencias' %}#juntas" class="nav-link block rounded-lg px-3 py-2"><span aria-hidden="true">◉</span> Juntas</a>
+        <a href="{% url 'tesoreria_operativa' %}" class="nav-link block rounded-lg px-3 py-2 {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}is-active bg-slate-800{% else %}hover:bg-slate-800{% endif %}"><span aria-hidden="true">$</span> Tesorería</a>
+        <a href="{% url 'control_agua' %}" class="nav-link block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'control_agua' %}is-active bg-slate-800{% else %}hover:bg-slate-800{% endif %}"><span aria-hidden="true">◌</span> Agua</a>
+        <a href="{% url 'dashboard_operativo' %}#actividad-reciente" class="nav-link block rounded-lg px-3 py-2"><span aria-hidden="true">↻</span> Actividad reciente</a>
       </nav>
 
       <div class="mt-8 border-t border-slate-800 pt-4 space-y-2 text-sm">
@@ -28,10 +37,10 @@
     </aside>
 
     <section class="flex-1 min-w-0">
-      <header class="bg-white border-b sticky top-0 z-10">
+      <header class="app-header bg-white border-b sticky top-0 z-10">
         <div class="px-4 py-3 md:px-6 flex flex-wrap gap-3 items-center justify-between">
           <div>
-            <p class="text-xs uppercase tracking-widest text-slate-500">Inicio</p>
+            <p class="text-xs uppercase tracking-widest text-slate-500">Pueblo Digital</p>
             <h2 class="font-semibold text-lg">Panel de Gestión</h2>
           </div>
           <nav class="flex items-center gap-2 text-sm">
@@ -49,9 +58,21 @@
       </header>
 
       <main class="px-4 md:px-6 py-6">
+        {% if messages %}
+          <div class="system-messages space-y-2 mb-4" role="status" aria-live="polite">
+            {% for message in messages %}<div class="alert {{ message.tags }}">{{ message }}</div>{% endfor %}
+          </div>
+        {% endif %}
         {% block content %}{% endblock %}
       </main>
     </section>
   </div>
+  <nav class="mobile-dock" aria-label="Navegación principal móvil">
+    <a href="{% url 'dashboard_operativo' %}" {% if request.resolver_match.url_name == 'dashboard_operativo' %}aria-current="page"{% endif %}><span aria-hidden="true">⌂</span>Inicio</a>
+    <a href="{% url 'padron_ciudadanos' %}" {% if 'ciudadano' in request.resolver_match.url_name %}aria-current="page"{% endif %}><span aria-hidden="true">◎</span>Ciudadanos</a>
+    <a href="{% url 'control_asistencias' %}" {% if 'asistencia' in request.resolver_match.url_name %}aria-current="page"{% endif %}><span aria-hidden="true">✓</span>Asistencias</a>
+    <a href="{% url 'tesoreria_operativa' %}" {% if 'tesoreria' in request.resolver_match.url_name %}aria-current="page"{% endif %}><span aria-hidden="true">$</span>Tesorería</a>
+    <a href="/admin/"><span aria-hidden="true">⚙</span>Administración</a>
+  </nav>
 </body>
 </html>
