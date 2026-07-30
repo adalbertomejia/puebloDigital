@@ -87,6 +87,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "edad",
         "numero_contrato",
         "manzana",
+        "motivo_alta_legible",
         "activo",
         "numero_toma",
         "estado_toma",
@@ -100,7 +101,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "manzana__nombre",
         "direccion",
     )
-    list_filter = ("activo", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
+    list_filter = ("activo", "motivo_alta", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
     ordering = ("apellido_paterno", "apellido_materno", "nombre")
     list_per_page = 50
     save_on_top = True
@@ -112,6 +113,10 @@ class CiudadanoAdmin(admin.ModelAdmin):
         ("Participación y alta", {"fields": ("labor_social", "motivo_alta")}),
         ("Notas internas", {"fields": ("observaciones",), "classes": ("collapse",)}),
     )
+
+    @admin.display(description="Motivo de alta", ordering="motivo_alta")
+    def motivo_alta_legible(self, obj):
+        return obj.get_motivo_alta_display()
 
     @admin.display(description="Toma", ordering="toma__numero_toma")
     def numero_toma(self, obj):
