@@ -55,6 +55,7 @@ class Ciudadano(TimeStampedModel):
     motivo_alta = models.CharField(
         max_length=22,
         choices=MotivosAlta.choices,
+        blank=True,
         verbose_name="Motivo de alta",
     )
     direccion = models.TextField(blank=True)
