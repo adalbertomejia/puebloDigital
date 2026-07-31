@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
 from django.forms.models import BaseInlineFormSet
 
-from apps.core.models import Manzana
+from .alcance import manzanas_disponibles_para_instancia
 
 from .models import (
     Actividad,
@@ -25,13 +25,19 @@ class AsistenciaJuntaInline(admin.TabularInline):
 
 @admin.register(Junta)
 class JuntaAdmin(admin.ModelAdmin):
-    list_display = ("fecha", "comite", "tipo", "tema", "estado", "total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
-    list_filter = ("estado", "tipo", "comite")
+    list_display = ("fecha", "comite", "tipo", "tema", "alcance", "manzana", "estado", "total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
+    list_filter = ("alcance", "manzana", "estado", "tipo", "comite", "fecha")
     search_fields = ("tema", "comite__nombre")
-    autocomplete_fields = ("comite",)
+    autocomplete_fields = ("comite", "manzana")
+    list_select_related = ("comite", "manzana")
     list_editable = ("estado",)
     date_hierarchy = "fecha"
     inlines = [AsistenciaJuntaInline]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["manzana"].queryset = manzanas_disponibles_para_instancia(obj or Junta())
+        return form
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -143,10 +149,7 @@ class FaenaAdmin(admin.ModelAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-        manzanas = Manzana.objects.filter(activa=True)
-        if obj and obj.manzana_id:
-            manzanas = Manzana.objects.filter(Q(activa=True) | Q(pk=obj.manzana_id))
-        form.base_fields["manzana"].queryset = manzanas.order_by("nombre")
+        form.base_fields["manzana"].queryset = manzanas_disponibles_para_instancia(obj or Faena())
         return form
 
     def get_queryset(self, request):

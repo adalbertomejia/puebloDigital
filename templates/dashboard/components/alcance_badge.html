@@ -1,0 +1,5 @@
+{% if evento.alcance %}
+  <span class="inline-block mt-1 text-xs px-2 py-1 rounded-full bg-cyan-50 text-cyan-800">
+    {% if evento.manzana_id %}{{ evento.manzana }}{% else %}{{ evento.get_alcance_display }}{% endif %}
+  </span>
+{% endif %}

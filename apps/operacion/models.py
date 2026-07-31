@@ -1,9 +1,13 @@
-from django.core.exceptions import ValidationError
 from django.db import models
 from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
+from .alcance import validar_territorio_evento
 
 class Junta(TimeStampedModel):
+    class Alcances(models.TextChoices):
+        GENERAL = "GENERAL", "Toda la comunidad"
+        MANZANA = "MANZANA", "Por manzana"
+
     class Estados(models.TextChoices):
         PROGRAMADA = 'PROGRAMADA', 'Programada'
         REALIZADA = 'REALIZADA', 'Realizada'
@@ -16,6 +20,11 @@ class Junta(TimeStampedModel):
 
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='juntas')
     fecha = models.DateField()
+    alcance = models.CharField(max_length=15, choices=Alcances.choices, default=Alcances.GENERAL, verbose_name="Alcance")
+    manzana = models.ForeignKey(
+        "core.Manzana", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="juntas", verbose_name="Manzana",
+    )
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.ORDINARIA)
     lugar = models.CharField(max_length=150, blank=True)
     tema = models.CharField(max_length=200)
@@ -26,6 +35,19 @@ class Junta(TimeStampedModel):
         verbose_name = '\U0001F465 Junta'
         verbose_name_plural = '\U0001F465 Juntas'
         ordering = ['-fecha']
+        indexes = [
+            models.Index(fields=["alcance", "manzana", "fecha"], name="junta_alc_manz_fecha_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        validar_territorio_evento(
+            instancia=self, registros=AsistenciaJunta.objects.filter(junta_id=self.pk), nombre_entidad="junta"
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.comite} - {self.fecha} - {self.tema}"
@@ -93,25 +115,13 @@ class Faena(TimeStampedModel):
 
     def clean(self):
         super().clean()
-        errors = {}
-        if self.alcance == self.Alcances.MANZANA and not self.manzana_id:
-            errors["manzana"] = "Selecciona una manzana para esta faena."
-        elif self.alcance == self.Alcances.GENERAL and self.manzana_id:
-            errors["manzana"] = "Una faena para toda la comunidad no debe tener una manzana."
+        validar_territorio_evento(
+            instancia=self, registros=RegistroFaena.objects.filter(faena_id=self.pk), nombre_entidad="faena"
+        )
 
-        if self.pk and RegistroFaena.objects.filter(faena_id=self.pk).exists():
-            original = Faena.objects.filter(pk=self.pk).values("alcance", "manzana_id").first()
-            if original and (
-                original["alcance"] != self.alcance
-                or original["manzana_id"] != self.manzana_id
-            ):
-                message = "No puedes cambiar el alcance o la manzana porque esta faena ya tiene participantes generados."
-                if original["alcance"] != self.alcance:
-                    errors["alcance"] = message
-                if original["manzana_id"] != self.manzana_id:
-                    errors["manzana"] = message
-        if errors:
-            raise ValidationError(errors)
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.comite} - {self.fecha} - {self.descripcion}"
