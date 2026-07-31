@@ -113,9 +113,9 @@ class ExportacionParticipantesCsvTests(TestCase):
         self.assertIn(f'filename="faena_{faena.pk}_participantes_2026-06-26.csv"', response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         rows = self._rows(response)
-        self.assertEqual(rows[0], ["Numero", "Nombre completo", "Estado", "Fecha", "Tipo de evento", "Descripcion", "Genera adeudo", "Monto adeudo", "Observaciones"])
+        self.assertEqual(rows[0], ["Numero", "Nombre completo", "Estado", "Fecha", "Tipo de evento", "Descripcion", "Alcance", "Manzana", "Genera adeudo", "Monto adeudo", "Observaciones"])
         self.assertEqual([row[1] for row in rows[1:]], ["Ana García Ruiz", "Juan Pérez López"])
-        self.assertEqual(rows[1][2:8], ["FALTO", "2026-06-26", "Faena", "Limpieza del camino, zona ñ", "Sí", "100.00"])
+        self.assertEqual(rows[1][2:10], ["FALTO", "2026-06-26", "Faena", "Limpieza del camino, zona ñ", "Toda la comunidad", "", "Sí", "100.00"])
         self.assertNotIn("Pedro Martínez Soto", response.content.decode("utf-8-sig"))
 
     def test_exporta_participantes_de_junta_incluyendo_pendientes_y_justificados(self):
@@ -401,6 +401,7 @@ class OperationalEventCreationViewTests(TestCase):
                 "comite": self.comite.pk,
                 "fecha": "2026-07-20",
                 "descripcion": "Limpieza del parque",
+                "alcance": Faena.Alcances.GENERAL,
                 "estado": Faena.Estados.PROGRAMADA,
                 "notas": "Traer herramientas",
             },
