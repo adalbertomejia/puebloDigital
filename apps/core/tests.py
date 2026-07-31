@@ -192,7 +192,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
         rows = self._rows(response)
         self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "No. de contrato", "Manzana", "Edad", "Estado", "Fecha de registro"])
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:9], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "", "30", "Activo"])
+        self.assertEqual(rows[1][1:9], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "Sin asignar", "30", "Activo"])
         self.assertNotIn("Beto Pérez López", response.content.decode("utf-8-sig"))
 
     def test_exporta_inactivos_como_inactivo_y_requiere_autenticacion(self):
@@ -206,6 +206,15 @@ class ExportacionCiudadanosCsvTests(TestCase):
         response = self.client.get(reverse("exportar_ciudadanos_csv"))
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("login"), response["Location"])
+
+    def test_exportacion_respeta_manzana_y_sin_asignar_y_nombra_archivo(self):
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"manzana": self.beto.manzana_id})
+        self.assertEqual([row[1] for row in self._rows(response)[1:]], ["Beto"])
+        self.assertIn(f"ciudadanos_manzana_{self.beto.manzana_id}_", response["Content-Disposition"])
+
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"manzana": "sin_asignar", "page": 2})
+        self.assertCountEqual([row[1] for row in self._rows(response)[1:]], ["Ana María", "María"])
+        self.assertIn("ciudadanos_sin_manzana_", response["Content-Disposition"])
 
 
 class PadronCiudadanosFiltrosTests(TestCase):
@@ -247,7 +256,7 @@ class PadronCiudadanosFiltrosTests(TestCase):
 
     def test_filtros_de_manzana_incluyen_inactiva_y_sin_manzana(self):
         self.assertEqual(self._ids(manzana=str(self.manzana_dos.pk)), [self.beto.pk])
-        self.assertCountEqual(self._ids(manzana="sin_manzana"), [self.carla.pk, self.sin_motivo.pk])
+        self.assertCountEqual(self._ids(manzana="sin_asignar"), [self.carla.pk, self.sin_motivo.pk])
         response = self.client.get(reverse("padron_ciudadanos"))
         self.assertContains(response, "Manzana 2")
         self.assertContains(response, "Sin manzana")
@@ -322,9 +331,57 @@ class PadronCiudadanosFiltrosTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.client.force_login(self.user)
         # El número permanece constante aunque la tabla use manzana y toma.
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(12):
             response = self.client.get(reverse("padron_ciudadanos"))
             list(response.context["ciudadanos"])
+
+    def test_listado_muestra_manzana_sin_asignar_y_metrica(self):
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertContains(response, "Manzana 1")
+        self.assertContains(response, "Sin asignar")
+        self.assertEqual(response.context["metricas"]["sin_manzana"], 2)
+        self.assertEqual(response.context["metricas"]["activos_sin_manzana"], 1)
+
+
+class CiudadanoOperativoManzanaFormTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="edicion-ciudadanos", password="testpass123")
+        self.client.force_login(self.user)
+        self.activa = Manzana.objects.create(nombre="Manzana activa")
+        self.inactiva = Manzana.objects.create(nombre="Manzana histórica", activa=False)
+        self.ciudadano = Ciudadano.objects.create(
+            nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.inactiva
+        )
+
+    def _datos(self, **cambios):
+        datos = {
+            "nombre": "Nueva", "apellido_paterno": "Persona", "apellido_materno": "",
+            "edad": 22, "fecha_nacimiento": "", "numero_contrato": "", "manzana": "",
+            "labor_social": "", "motivo_alta": "", "direccion": "", "activo": "on",
+            "observaciones": "",
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_creacion_ofrece_solo_activas_y_permite_asignar_o_dejar_vacio(self):
+        response = self.client.get(reverse("crear_ciudadano_operativo"))
+        self.assertContains(response, "Sin asignar")
+        self.assertContains(response, self.activa.nombre)
+        self.assertNotContains(response, self.inactiva.nombre)
+
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(manzana=self.activa.pk))
+        self.assertEqual(Ciudadano.objects.get(nombre="Nueva").manzana, self.activa)
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(nombre="Otra"))
+        self.assertIsNone(Ciudadano.objects.get(nombre="Otra").manzana)
+
+    def test_edicion_conserva_manzana_inactiva_y_puede_modificarla(self):
+        url = reverse("editar_ciudadano_operativo", args=[self.ciudadano.pk])
+        response = self.client.get(url)
+        self.assertContains(response, self.inactiva.nombre)
+        response = self.client.post(url, self._datos(nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.activa.pk))
+        self.assertRedirects(response, reverse("perfil_ciudadano", args=[self.ciudadano.pk]))
+        self.ciudadano.refresh_from_db()
+        self.assertEqual(self.ciudadano.manzana, self.activa)
 
 
 class OperationalEventCreationViewTests(TestCase):

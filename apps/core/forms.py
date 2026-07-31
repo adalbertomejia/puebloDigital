@@ -1,8 +1,9 @@
 from django import forms
+from django.db.models import Q
 
 from apps.operacion.models import Faena, Junta
 
-from .models import Ciudadano
+from .models import Ciudadano, Manzana
 
 
 class DashboardFormMixin:
@@ -127,5 +128,10 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        manzanas = Manzana.objects.filter(activa=True)
+        if self.instance.pk and self.instance.manzana_id:
+            manzanas = Manzana.objects.filter(Q(activa=True) | Q(pk=self.instance.manzana_id))
+        self.fields["manzana"].queryset = manzanas.order_by("nombre")
+        self.fields["manzana"].empty_label = "Sin asignar"
         self._apply_dashboard_widgets()
         self.fields["activo"].widget.attrs["class"] = "h-4 w-4 rounded border-slate-300 text-indigo-600"
