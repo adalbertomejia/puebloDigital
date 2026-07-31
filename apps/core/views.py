@@ -18,7 +18,11 @@ from django.urls import reverse
 
 from apps.agua.models import Toma
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
-from apps.operacion.services import generar_participantes_faena
+from apps.operacion.services import (
+    aplicar_filtros_eventos,
+    generar_participantes_faena,
+    generar_participantes_junta,
+)
 from apps.tesoreria.models import Cooperacion, Pago
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
@@ -345,7 +349,7 @@ def dashboard_operativo(request):
     )
     faenas_recientes = list(Faena.objects.select_related("comite").order_by("-fecha", "-created_at")[:5])
     juntas_programadas = (
-        Junta.objects.select_related("comite")
+        Junta.objects.select_related("comite", "manzana")
         .annotate(total_registros=Count("asistencias", distinct=True))
         .filter(estado=Junta.Estados.PROGRAMADA, total_registros=0)
         .order_by("fecha")[:10]
@@ -493,7 +497,7 @@ def editar_faena_operativa(request, faena_id):
 
 @login_required
 def editar_junta_operativa(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
     return _evento_operativo_form_view(
         request,
         JuntaOperativaForm,
@@ -536,7 +540,7 @@ def eliminar_faena_operativa(request, faena_id):
 
 @login_required
 def eliminar_junta_operativa(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
     asistencias = junta.asistencias.all()
     total_asistencias = asistencias.count()
     pendientes = asistencias.filter(estatus=AsistenciaJunta.Estatus.PENDIENTE).count()
@@ -572,37 +576,25 @@ def generar_registros_junta(request, junta_id):
     if request.method != "POST":
         return redirect("dashboard_operativo")
 
-    junta = get_object_or_404(Junta, pk=junta_id)
+    junta = get_object_or_404(Junta.objects.select_related("manzana"), pk=junta_id)
     if junta.estado != Junta.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para juntas programadas.")
         return redirect("dashboard_operativo")
-    if junta.asistencias.exists():
-        messages.info(request, "Esta junta ya tiene registros generados; continúa la captura desde Control de Asistencias.")
-        return redirect("dashboard_operativo")
-    ciudadanos_ids = list(Ciudadano.objects.filter(activo=True).values_list("id", flat=True))
-    existentes_ids = set(
-        AsistenciaJunta.objects.filter(junta=junta, ciudadano_id__in=ciudadanos_ids).values_list(
-            "ciudadano_id", flat=True
-        )
-    )
-
-    nuevos = [
-        AsistenciaJunta(junta=junta, ciudadano_id=cid, estatus=AsistenciaJunta.Estatus.PENDIENTE, asistio=False)
-        for cid in ciudadanos_ids
-        if cid not in existentes_ids
-    ]
-
-    if nuevos:
-        AsistenciaJunta.objects.bulk_create(nuevos, batch_size=500)
-
-    messages.success(request, f"Se generaron {len(nuevos)} registros pendientes para la junta '{junta.tema}'.")
+    creados, existentes, objetivo = generar_participantes_junta(junta)
+    if not objetivo:
+        messages.info(request, "No existen ciudadanos activos para el alcance seleccionado.")
+    elif existentes:
+        messages.success(request, f"Se crearon {creados} participantes. {existentes} registros ya existían.")
+    elif junta.alcance == Junta.Alcances.MANZANA:
+        messages.success(request, f"Se crearon {creados} participantes de {junta.manzana}.")
+    else:
+        messages.success(request, f"Se crearon {creados} participantes para una junta de toda la comunidad.")
     return redirect("dashboard_operativo")
 
 
 def _attendance_queryset(model, relation_name, pending_status):
     """Annotate event querysets with operational attendance metrics."""
-    related = ("comite", "manzana") if model is Faena else ("comite",)
-    return model.objects.select_related(*related).annotate(
+    return model.objects.select_related("comite", "manzana").annotate(
         total_participantes=Count(relation_name, distinct=True),
         asistencias_registradas=Count(
             relation_name,
@@ -702,27 +694,9 @@ def _attendance_years():
 
 
 def _filtrar_eventos_asistencia(queryset, params, description_field, tipo_actividad):
-    q = params.get("q", "").strip()
-    mes = params.get("mes", "todos")
-    anio = params.get("anio", "todos")
-
-    if q:
-        search_filter = (
-            Q(**{f"{description_field}__icontains": q})
-            | Q(comite__nombre__icontains=q)
-            | Q(estado__icontains=q)
-        )
-        if tipo_actividad.lower().startswith(q.lower()) or q.lower() in tipo_actividad.lower():
-            search_filter |= Q(pk__isnull=False)
-        queryset = queryset.filter(search_filter)
-
-    if mes != "todos" and mes.isdigit():
-        queryset = queryset.filter(fecha__month=int(mes))
-
-    if anio != "todos" and anio.isdigit():
-        queryset = queryset.filter(fecha__year=int(anio))
-
-    return queryset.order_by("-fecha", "-created_at")
+    return aplicar_filtros_eventos(
+        queryset, params=params, description_field=description_field, tipo_actividad=tipo_actividad
+    )
 
 
 def _page_querystring(request, page_param, page_number):
@@ -752,10 +726,6 @@ def control_asistencias(request):
     )
     alcance = request.GET.get("alcance", "todos")
     manzana = request.GET.get("manzana", "todas")
-    if alcance in Faena.Alcances.values:
-        faenas_qs = faenas_qs.filter(alcance=alcance)
-    if manzana != "todas" and manzana.isdigit():
-        faenas_qs = faenas_qs.filter(manzana_id=int(manzana))
     juntas_qs = _filtrar_eventos_asistencia(
         _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE),
         request.GET,
@@ -842,7 +812,6 @@ def _exportar_participantes_csv(event, registros, event_type, description):
     response.write("\ufeff")
 
     writer = csv.writer(response)
-    is_faena = isinstance(event, Faena)
     encabezados = [
         "Numero",
         "Nombre completo",
@@ -851,8 +820,7 @@ def _exportar_participantes_csv(event, registros, event_type, description):
         "Tipo de evento",
         "Descripcion",
     ]
-    if is_faena:
-        encabezados += ["Alcance", "Manzana"]
+    encabezados += ["Alcance", "Manzana"]
     encabezados += [
         "Genera adeudo",
         "Monto adeudo",
@@ -875,8 +843,7 @@ def _exportar_participantes_csv(event, registros, event_type, description):
             event_type,
             description,
         ]
-        if is_faena:
-            fila += [event.get_alcance_display(), str(event.manzana) if event.manzana_id else ""]
+        fila += [event.get_alcance_display(), str(event.manzana) if event.manzana_id else ""]
         fila += [
             "Sí" if registro.genera_adeudo else "No",
             registro.monto_adeudo,
@@ -901,7 +868,7 @@ def control_asistencias_faena_detalle(request, faena_id):
 
 @login_required
 def control_asistencias_junta_detalle(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
     context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
     context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk])
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
@@ -919,7 +886,7 @@ def exportar_participantes_faena_csv(request, faena_id):
 
 @login_required
 def exportar_participantes_junta_csv(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
     return _exportar_participantes_csv(junta, junta.asistencias.all(), "Junta", junta.tema)
 
 
@@ -1090,8 +1057,9 @@ def _json_capture_action(request, event, config):
 
 def _captura_asistencia(request, event_kind, event_id):
     config = _capture_config(event_kind)
-    related = ("comite", "manzana") if event_kind == "faena" else ("comite",)
-    event = get_object_or_404(config["event_model"].objects.select_related(*related), pk=event_id)
+    event = get_object_or_404(
+        config["event_model"].objects.select_related("comite", "manzana"), pk=event_id
+    )
     if event.estado != event.Estados.PROGRAMADA:
         messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
         return redirect(config["detail_url"], event.pk)
@@ -1128,8 +1096,9 @@ def _captura_asistencia(request, event_kind, event_id):
 
 def _captura_asistencia_secuencial(request, event_kind, event_id):
     config = _capture_config(event_kind)
-    related = ("comite", "manzana") if event_kind == "faena" else ("comite",)
-    event = get_object_or_404(config["event_model"].objects.select_related(*related), pk=event_id)
+    event = get_object_or_404(
+        config["event_model"].objects.select_related("comite", "manzana"), pk=event_id
+    )
     if event.estado != event.Estados.PROGRAMADA:
         if request.method == "POST":
             return JsonResponse({"ok": False, "error": "Solo se puede capturar asistencia en eventos programados."}, status=403)

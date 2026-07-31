@@ -17,10 +17,10 @@
     <label class="lg:col-span-4 text-sm font-medium text-slate-700">Buscar actividad
       <input type="search" name="q" value="{{ filtros.q }}" placeholder="Descripción, comité, faena o junta" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
     </label>
-    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Alcance de faena
+    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Alcance
       <select name="alcance" class="mt-1 w-full rounded-lg border-slate-300"><option value="todos">Todos</option>{% for value, label in alcances %}<option value="{{ value }}" {% if filtros.alcance == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     </label>
-    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Manzana de faena
+    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Manzana
       <select name="manzana" class="mt-1 w-full rounded-lg border-slate-300"><option value="todas">Todas las manzanas</option>{% for item in manzanas %}<option value="{{ item.pk }}" {% if filtros.manzana == item.pk|stringformat:'s' %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
     </label>
     <label class="lg:col-span-2 text-sm font-medium text-slate-700">Mes

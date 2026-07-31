@@ -10,7 +10,7 @@
           <div>
             <p class="text-sm text-slate-500">{{ evento.fecha }} · {{ evento.comite.nombre }}</p>
             <h5 class="font-semibold text-lg">{{ evento.descripcion_operativa }}</h5>
-            {% if evento.alcance %}<span class="inline-block mt-1 text-xs px-2 py-1 rounded-full bg-cyan-50 text-cyan-800">{% if evento.manzana_id %}{{ evento.manzana }}{% else %}Toda la comunidad{% endif %}</span>{% endif %}
+            {% include "dashboard/components/alcance_badge.html" with evento=evento %}
           </div>
           <span class="text-xs px-2 py-1 rounded-full {% if evento.pendientes %}bg-amber-100 text-amber-800{% elif evento.estado_operacional == 'COMPLETADA' %}bg-emerald-100 text-emerald-700{% else %}bg-indigo-100 text-indigo-700{% endif %}">{{ evento.get_estado_display }} · {{ evento.estado_operacional }}</span>
         </div>
