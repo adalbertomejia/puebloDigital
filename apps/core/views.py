@@ -46,6 +46,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     toma = params.get("toma", "todos")
     adeudo = params.get("adeudo", "todos")
     manzana = params.get("manzana", "todas")
+    motivo_alta = params.get("motivo_alta", "todos")
 
     if q:
         search_filter = (
@@ -53,10 +54,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
             | Q(apellido_paterno__icontains=q)
             | Q(apellido_materno__icontains=q)
             | Q(numero_contrato__icontains=q)
-            | Q(toma__numero_toma__icontains=q)
         )
-        if q.isdigit():
-            search_filter |= Q(id=int(q))
         queryset = queryset.filter(search_filter)
 
     if estado == "activos":
@@ -79,12 +77,18 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     elif manzana.isdigit():
         queryset = queryset.filter(manzana_id=int(manzana))
 
+    motivos_validos = {value for value, _label in Ciudadano.MotivosAlta.choices}
+    if motivo_alta == "sin_motivo":
+        queryset = queryset.filter(Q(motivo_alta="") | Q(motivo_alta__isnull=True))
+    elif motivo_alta in motivos_validos:
+        queryset = queryset.filter(motivo_alta=motivo_alta)
+
     ordering = params.get("orden", "nombre")
     orderings = {
-        "nombre": ["apellido_paterno", "apellido_materno", "nombre"],
-        "estado": ["-activo", "apellido_paterno", "apellido_materno", "nombre"],
-        "adeudos_faena": ["-adeudos_faena", "apellido_paterno", "apellido_materno", "nombre"],
-        "registro": ["-created_at", "apellido_paterno", "apellido_materno", "nombre"],
+        "nombre": ["apellido_paterno", "apellido_materno", "nombre", "pk"],
+        "estado": ["-activo", "apellido_paterno", "apellido_materno", "nombre", "pk"],
+        "adeudos_faena": ["-adeudos_faena", "apellido_paterno", "apellido_materno", "nombre", "pk"],
+        "registro": ["-created_at", "apellido_paterno", "apellido_materno", "nombre", "pk"],
     }
     return queryset.order_by(*orderings.get(ordering, orderings["nombre"]))
 
@@ -94,6 +98,8 @@ def padron_ciudadanos(request):
     ciudadanos_qs = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
     paginator = Paginator(ciudadanos_qs, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
 
     context = {
         "ciudadanos": ciudadanos_page,
@@ -103,9 +109,14 @@ def padron_ciudadanos(request):
             "toma": request.GET.get("toma", "todos"),
             "adeudo": request.GET.get("adeudo", "todos"),
             "manzana": request.GET.get("manzana", "todas"),
+            "motivo_alta": request.GET.get("motivo_alta", "todos"),
             "orden": request.GET.get("orden", "nombre"),
         },
-        "manzanas": Manzana.objects.filter(activa=True),
+        "manzanas": Manzana.objects.all(),
+        "hay_ciudadanos_sin_manzana": Ciudadano.objects.filter(manzana__isnull=True).exists(),
+        "motivos_alta": Ciudadano.MotivosAlta.choices,
+        "motivo_alta_permite_vacio": Ciudadano._meta.get_field("motivo_alta").blank,
+        "pagination_querystring": pagination_params.urlencode(),
         "metricas": {
             "total": Ciudadano.objects.count(),
             "activos": Ciudadano.objects.filter(activo=True).count(),

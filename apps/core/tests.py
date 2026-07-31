@@ -208,6 +208,115 @@ class ExportacionCiudadanosCsvTests(TestCase):
         self.assertIn(reverse("login"), response["Location"])
 
 
+class PadronCiudadanosFiltrosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="secretaria-padron", password="testpass123")
+        self.client.force_login(self.user)
+        self.manzana_uno = Manzana.objects.create(nombre="Manzana 1")
+        self.manzana_dos = Manzana.objects.create(nombre="Manzana 2", activa=False)
+        self.ana = Ciudadano.objects.create(
+            nombre="Ana María", apellido_paterno="Mejía", apellido_materno="López",
+            edad=20, numero_contrato="PD-001", manzana=self.manzana_uno, activo=True,
+            motivo_alta=Ciudadano.MotivosAlta.ESTUDIOS,
+        )
+        self.beto = Ciudadano.objects.create(
+            nombre="Beto", apellido_paterno="Ramírez", apellido_materno="Soto",
+            edad=25, numero_contrato="PD-002", manzana=self.manzana_dos, activo=False,
+            motivo_alta=Ciudadano.MotivosAlta.MAYORIA_EDAD,
+        )
+        self.carla = Ciudadano.objects.create(
+            nombre="Carla", apellido_paterno="Torres", apellido_materno="Mejía",
+            edad=30, numero_contrato="COM-900", activo=True,
+            motivo_alta=Ciudadano.MotivosAlta.INTEGRACION_COMUNIDAD,
+        )
+        self.sin_motivo = Ciudadano.objects.create(
+            nombre="Diego", apellido_paterno="Nava", apellido_materno="", edad=31,
+            numero_contrato="", activo=False, motivo_alta="",
+        )
+
+    def _ids(self, **params):
+        response = self.client.get(reverse("padron_ciudadanos"), params)
+        self.assertEqual(response.status_code, 200)
+        return [ciudadano.pk for ciudadano in response.context["ciudadanos"]]
+
+    def test_busqueda_por_cada_campo_es_parcial_e_insensible_a_mayusculas(self):
+        self.assertEqual(self._ids(q="  ANA mar "), [self.ana.pk])
+        self.assertEqual(self._ids(q="RAM"), [self.beto.pk])
+        self.assertEqual(self._ids(q="soto"), [self.beto.pk])
+        self.assertEqual(self._ids(q="com-9"), [self.carla.pk])
+
+    def test_filtros_de_manzana_incluyen_inactiva_y_sin_manzana(self):
+        self.assertEqual(self._ids(manzana=str(self.manzana_dos.pk)), [self.beto.pk])
+        self.assertCountEqual(self._ids(manzana="sin_manzana"), [self.carla.pk, self.sin_motivo.pk])
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertContains(response, "Manzana 2")
+        self.assertContains(response, "Sin manzana")
+
+    def test_filtros_de_estado_y_motivo_incluido_vacio(self):
+        self.assertCountEqual(self._ids(estado="activos"), [self.ana.pk, self.carla.pk])
+        self.assertCountEqual(self._ids(estado="inactivos"), [self.beto.pk, self.sin_motivo.pk])
+        for ciudadano, motivo in (
+            (self.ana, Ciudadano.MotivosAlta.ESTUDIOS),
+            (self.beto, Ciudadano.MotivosAlta.MAYORIA_EDAD),
+            (self.carla, Ciudadano.MotivosAlta.INTEGRACION_COMUNIDAD),
+        ):
+            self.assertEqual(self._ids(motivo_alta=motivo), [ciudadano.pk])
+        self.assertEqual(self._ids(motivo_alta="sin_motivo"), [self.sin_motivo.pk])
+
+    def test_combina_grupos_con_and(self):
+        self.assertEqual(
+            self._ids(q="Mejía", manzana=self.manzana_uno.pk, estado="activos", motivo_alta="ESTUDIOS"),
+            [self.ana.pk],
+        )
+        self.assertEqual(
+            self._ids(q="Mejía", manzana=self.manzana_uno.pk, estado="inactivos", motivo_alta="ESTUDIOS"),
+            [],
+        )
+
+    def test_conserva_filtros_existentes_y_no_duplica_ciudadanos(self):
+        comite = Comite.objects.create(nombre="Comité", tipo=Comite.Tipos.DELEGACION)
+        faena = Faena.objects.create(comite=comite, fecha=date(2026, 7, 1), descripcion="Faena")
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.ana, genera_adeudo=True)
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.beto, genera_adeudo=False)
+        from apps.agua.models import Toma
+        Toma.objects.create(ciudadano=self.ana, numero_toma="T-1")
+
+        self.assertEqual(self._ids(toma="con_toma", adeudo="con_adeudo", orden="adeudos_faena"), [self.ana.pk])
+        self.assertNotIn(self.ana.pk, self._ids(toma="sin_toma", adeudo="sin_adeudo"))
+        self.assertEqual(self._ids(orden="adeudos_faena").count(self.ana.pk), 1)
+
+    def test_parametros_invalidos_se_ignoran_y_orden_no_llega_al_orm(self):
+        self.assertCountEqual(
+            self._ids(estado="desconocido", manzana="no-es-id", motivo_alta="OTRO", orden="__hack"),
+            [self.ana.pk, self.beto.pk, self.carla.pk, self.sin_motivo.pk],
+        )
+
+    def test_pagina_20_y_enlaces_conservan_todos_los_parametros_codificados(self):
+        for index in range(21):
+            Ciudadano.objects.create(nombre=f"Persona {index:02}", apellido_paterno="Zeta", edad=18)
+        params = {
+            "q": "Persona", "manzana": "todas", "estado": "todos", "motivo_alta": "todos",
+            "toma": "todos", "adeudo": "todos", "orden": "nombre", "extra": "valor seguro",
+        }
+        response = self.client.get(reverse("padron_ciudadanos"), params)
+        self.assertEqual(len(response.context["ciudadanos"]), 20)
+        self.assertEqual(response.context["ciudadanos"].paginator.count, 21)
+        self.assertContains(response, "q=Persona")
+        self.assertContains(response, "motivo_alta=todos")
+        self.assertContains(response, "extra=valor+seguro")
+        self.assertContains(response, "page=2")
+
+    def test_acceso_protegido_y_relaciones_no_generan_n_mas_uno(self):
+        self.client.logout()
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertEqual(response.status_code, 302)
+        self.client.force_login(self.user)
+        # El número permanece constante aunque la tabla use manzana y toma.
+        with self.assertNumQueries(11):
+            response = self.client.get(reverse("padron_ciudadanos"))
+            list(response.context["ciudadanos"])
+
+
 class OperationalEventCreationViewTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="operadora", password="testpass123")
