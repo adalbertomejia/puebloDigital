@@ -31,7 +31,7 @@ class DashboardFormMixin:
 class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Faena
-        fields = ["comite", "fecha", "descripcion", "estado", "notas"]
+        fields = ["comite", "fecha", "descripcion", "alcance", "manzana", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
@@ -46,11 +46,23 @@ class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
         help_texts = {
             "descripcion": "Describe de forma breve el trabajo comunitario a realizar.",
             "notas": "Agrega indicaciones para la secretaría o el equipo operativo si hace falta.",
+            "manzana": "Selecciona una manzana únicamente cuando el alcance sea Por manzana.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        manzanas = Manzana.objects.filter(activa=True)
+        if self.instance.pk and self.instance.manzana_id:
+            manzanas = Manzana.objects.filter(Q(activa=True) | Q(pk=self.instance.manzana_id))
+        self.fields["manzana"].queryset = manzanas.order_by("nombre")
+        self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()
+
+    def clean_manzana(self):
+        manzana = self.cleaned_data.get("manzana")
+        if manzana and not manzana.activa and manzana.pk != self.instance.manzana_id:
+            raise forms.ValidationError("Selecciona una manzana activa.")
+        return manzana
 
 
 class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):

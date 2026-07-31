@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
 from django.forms.models import BaseInlineFormSet
 
+from apps.core.models import Manzana
+
 from .models import (
     Actividad,
     ActividadArchivo,
@@ -106,13 +108,15 @@ class FaenaAdmin(admin.ModelAdmin):
         "fecha",
         "comite",
         "descripcion",
+        "alcance",
+        "manzana",
         "estado",
         "total_registros",
         "total_asistencias",
         "total_adeudos",
         "monto_total_adeudos",
     )
-    list_filter = ("estado", "comite", "fecha")
+    list_filter = ("alcance", "manzana", "estado", "comite", "fecha")
     list_editable = ("estado",)
     search_fields = (
         "descripcion",
@@ -123,19 +127,27 @@ class FaenaAdmin(admin.ModelAdmin):
         "registros__ciudadano__apellido_materno",
     )
     date_hierarchy = "fecha"
-    autocomplete_fields = ("comite",)
+    autocomplete_fields = ("comite", "manzana")
     inlines = [RegistroFaenaInline]
-    list_select_related = ("comite",)
+    list_select_related = ("comite", "manzana")
     list_per_page = 50
     ordering = ("-fecha",)
     save_on_top = True
     readonly_fields = ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
     fieldsets = (
-        ("Datos de la faena", {"fields": ("comite", "fecha", "descripcion", "estado")}),
+        ("Datos de la faena", {"fields": ("comite", "fecha", "descripcion", "alcance", "manzana", "estado")}),
         ("Notas y control", {"fields": ("notas",)}),
         ("Resumen operativo", {"fields": ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")}),
     )
     actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cancelada")
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        manzanas = Manzana.objects.filter(activa=True)
+        if obj and obj.manzana_id:
+            manzanas = Manzana.objects.filter(Q(activa=True) | Q(pk=obj.manzana_id))
+        form.base_fields["manzana"].queryset = manzanas.order_by("nombre")
+        return form
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)

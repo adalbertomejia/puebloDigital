@@ -13,6 +13,7 @@
       <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">{{ event_type }}</p>
       <h3 class="text-2xl font-bold">{{ event_type }}: {{ description }}</h3>
       <p class="text-slate-500">{{ event.fecha }} · {{ event.comite.nombre }}{% if event.lugar %} · {{ event.lugar }}{% endif %}</p>
+      {% if event.alcance %}<p class="mt-1 text-sm font-medium">{% if event.manzana_id %}Manzana: {{ event.manzana }}{% else %}Alcance: Toda la comunidad{% endif %}</p>{% endif %}
       <p class="mt-2 text-sm text-slate-600">Estado: <strong>{{ event.get_estado_display }}</strong> · Registro <span data-metric="actual">{{ capture_metrics.actual }}</span> de <span data-metric="total">{{ capture_metrics.total }}</span> · Pendientes: <span data-metric="pendientes">{{ capture_metrics.pendientes }}</span></p>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
