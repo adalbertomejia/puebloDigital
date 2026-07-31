@@ -1,4 +1,6 @@
+from django.core.validators import RegexValidator
 from django.db import models
+
 
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Creado')
@@ -9,9 +11,33 @@ class TimeStampedModel(models.Model):
 
 
 class Manzana(TimeStampedModel):
-    nombre = models.CharField(max_length=100)
-    descripcion = models.TextField(blank=True)
-    activa = models.BooleanField(default=True)
+    nombre = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
+    clave = models.CharField(
+        max_length=30,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Clave",
+        validators=[
+            RegexValidator(
+                regex=r"^[A-Za-z0-9-]+$",
+                message="La clave solo puede contener letras, números o guiones.",
+            )
+        ],
+    )
+    descripcion = models.TextField(blank=True, verbose_name="Descripción")
+    activa = models.BooleanField(default=True, verbose_name="Activa")
+    responsable = models.ForeignKey(
+        "Ciudadano",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="manzanas_a_cargo",
+        verbose_name="Responsable",
+        help_text=(
+            "El responsable debería pertenecer normalmente a la manzana que representa."
+        ),
+    )
 
     class Meta:
         verbose_name = "Manzana"
@@ -19,6 +45,8 @@ class Manzana(TimeStampedModel):
         ordering = ["nombre"]
 
     def __str__(self):
+        if self.clave:
+            return f"{self.nombre} ({self.clave})"
         return self.nombre
 
 
@@ -43,11 +71,12 @@ class Ciudadano(TimeStampedModel):
         verbose_name="No. de contrato",
     )
     manzana = models.ForeignKey(
-        Manzana,
+        "Manzana",
         on_delete=models.PROTECT,
         related_name="ciudadanos",
         null=True,
         blank=True,
+        verbose_name="Manzana",
     )
     # Puede convertirse en una entidad independiente si se requieren varias
     # labores, fechas, estados o evidencias por ciudadano.
@@ -69,6 +98,7 @@ class Ciudadano(TimeStampedModel):
         indexes = [
             models.Index(fields=['edad']),
             models.Index(fields=['apellido_paterno', 'apellido_materno', 'nombre']),
+            models.Index(fields=["manzana", "activo"], name="ciud_manz_act_idx"),
         ]
 
     @property
