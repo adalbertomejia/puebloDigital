@@ -72,7 +72,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     elif adeudo == "sin_adeudo":
         queryset = queryset.filter(adeudos_faena=0)
 
-    if manzana == "sin_manzana":
+    if manzana == "sin_asignar":
         queryset = queryset.filter(manzana__isnull=True)
     elif manzana.isdigit():
         queryset = queryset.filter(manzana_id=int(manzana))
@@ -112,8 +112,7 @@ def padron_ciudadanos(request):
             "motivo_alta": request.GET.get("motivo_alta", "todos"),
             "orden": request.GET.get("orden", "nombre"),
         },
-        "manzanas": Manzana.objects.all(),
-        "hay_ciudadanos_sin_manzana": Ciudadano.objects.filter(manzana__isnull=True).exists(),
+        "manzanas": Manzana.objects.filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
         "motivos_alta": Ciudadano.MotivosAlta.choices,
         "motivo_alta_permite_vacio": Ciudadano._meta.get_field("motivo_alta").blank,
         "pagination_querystring": pagination_params.urlencode(),
@@ -122,6 +121,8 @@ def padron_ciudadanos(request):
             "activos": Ciudadano.objects.filter(activo=True).count(),
             "inactivos": Ciudadano.objects.filter(activo=False).count(),
             "sin_toma": Ciudadano.objects.filter(toma__isnull=True).count(),
+            "sin_manzana": Ciudadano.objects.filter(manzana__isnull=True).count(),
+            "activos_sin_manzana": Ciudadano.objects.filter(activo=True, manzana__isnull=True).count(),
             "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
         },
         "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
@@ -136,7 +137,14 @@ def padron_ciudadanos(request):
 @login_required
 def exportar_ciudadanos_csv(request):
     ciudadanos = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
-    filename = f"ciudadanos_{timezone.localdate().isoformat()}.csv"
+    manzana = request.GET.get("manzana", "todas")
+    if manzana == "sin_asignar":
+        filename_context = "_sin_manzana"
+    elif manzana.isdigit():
+        filename_context = f"_manzana_{manzana}"
+    else:
+        filename_context = ""
+    filename = f"ciudadanos{filename_context}_{timezone.localdate().isoformat()}.csv"
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     response.write("\ufeff")
@@ -163,7 +171,7 @@ def exportar_ciudadanos_csv(request):
             ciudadano.apellido_materno,
             ciudadano.nombre_completo,
             ciudadano.numero_contrato or "",
-            ciudadano.manzana.nombre if ciudadano.manzana else "",
+            ciudadano.manzana.nombre if ciudadano.manzana else "Sin asignar",
             ciudadano.edad,
             "Activo" if ciudadano.activo else "Inactivo",
             timezone.localtime(ciudadano.created_at).strftime("%Y-%m-%d %H:%M"),
@@ -195,6 +203,28 @@ def crear_ciudadano_operativo(request):
             "cancel_url": reverse("padron_ciudadanos"),
         },
     )
+
+
+@login_required
+def editar_ciudadano_operativo(request, pk):
+    ciudadano = get_object_or_404(Ciudadano, pk=pk)
+    if request.method == "POST":
+        form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
+        if form.is_valid():
+            ciudadano = form.save()
+            messages.success(request, f"Se actualizó correctamente a {ciudadano.nombre_completo}.")
+            return redirect("perfil_ciudadano", ciudadano.pk)
+        messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
+    else:
+        form = CiudadanoOperativoForm(instance=ciudadano)
+
+    return render(request, "dashboard/ciudadano_form.html", {
+        "form": form,
+        "title": "Editar ciudadano",
+        "description": "Actualiza la información y la manzana asignada al ciudadano.",
+        "submit_label": "Guardar cambios",
+        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]),
+    })
 
 
 def _filtrar_tomas_operativas(queryset, params):

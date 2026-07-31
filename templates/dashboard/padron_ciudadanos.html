@@ -8,12 +8,13 @@
   <a href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">⬇️ Exportar CSV</a>
 </section>
 
-<section class="grid md:grid-cols-5 gap-4 mb-6">
+<section class="grid md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total</p><p class="text-2xl font-bold">{{ metricas.total }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Activos</p><p class="text-2xl font-bold text-emerald-700">{{ metricas.activos }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Inactivos</p><p class="text-2xl font-bold text-rose-700">{{ metricas.inactivos }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Sin toma</p><p class="text-2xl font-bold">{{ metricas.sin_toma }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Con adeudo faena</p><p class="text-2xl font-bold">{{ metricas.con_adeudo }}</p></article>
+  <a href="?manzana=sin_asignar" class="block bg-white p-4 rounded-xl border hover:border-indigo-300"><p class="text-xs text-slate-500">Sin manzana</p><p class="text-2xl font-bold text-amber-700">{{ metricas.sin_manzana }}</p><p class="text-xs text-slate-500">{{ metricas.activos_sin_manzana }} activos</p></a>
 </section>
 
 <section class="bg-white rounded-2xl border p-4 mb-6">
@@ -24,7 +25,7 @@
     <div><label for="padron-manzana" class="text-sm font-medium">Manzana</label>
       <select id="padron-manzana" name="manzana" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
         <option value="todas" {% if filtros.manzana == 'todas' %}selected{% endif %}>Todas las manzanas</option>
-        {% if hay_ciudadanos_sin_manzana %}<option value="sin_manzana" {% if filtros.manzana == 'sin_manzana' %}selected{% endif %}>Sin manzana</option>{% endif %}
+        <option value="sin_asignar" {% if filtros.manzana == 'sin_asignar' %}selected{% endif %}>Sin manzana asignada</option>
         {% for manzana in manzanas %}<option value="{{ manzana.pk }}" {% if filtros.manzana == manzana.pk|stringformat:'s' %}selected{% endif %}>{{ manzana }}</option>{% endfor %}
       </select>
     </div>
@@ -84,7 +85,7 @@
         <span class="text-xs px-3 py-1 rounded-full font-medium {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
       </div>
       <div class="grid md:grid-cols-5 gap-3 mt-4 text-sm">
-        <p><span class="block text-xs text-slate-500">Manzana</span><strong>{{ c.manzana|default:'-' }}</strong></p>
+        <p><span class="block text-xs text-slate-500">Manzana</span><strong>{{ c.manzana|default:'Sin asignar' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Motivo de alta</span><strong>{{ c.get_motivo_alta_display|default:'Sin motivo registrado' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Toma de agua</span><strong>{{ c.toma.numero_toma|default:'Sin toma' }}</strong></p>
         <p><span class="block text-xs text-slate-500">Último pago</span><strong>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</strong></p>
@@ -93,12 +94,15 @@
       </div>
       <div class="mt-4 flex flex-wrap gap-2 text-sm">
         <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
-        <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
+        <a href="{% url 'editar_ciudadano_operativo' c.pk %}" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
         <a href="{% url 'control_asistencias' %}" class="px-3 py-2 rounded-lg bg-slate-100">Registrar asistencia de faena</a>
       </div>
     </article>
   {% empty %}
-    <article class="bg-white rounded-xl border p-6 text-slate-500">No se encontraron ciudadanos con los filtros seleccionados.</article>
+    <article class="bg-white rounded-xl border p-6 text-slate-500">
+      <p>{% if filtros.manzana == 'sin_asignar' %}Todos los ciudadanos visibles tienen una manzana asignada.{% else %}No se encontraron ciudadanos con los filtros seleccionados.{% endif %}</p>
+      <a class="inline-block mt-3 text-indigo-700 font-medium" href="{% url 'padron_ciudadanos' %}">Limpiar filtros</a>
+    </article>
   {% endfor %}
 </section>
 
