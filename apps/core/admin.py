@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db.models import Count
 
 from apps.agua.models import Toma
 from apps.operacion.models import RegistroFaena
@@ -9,9 +10,36 @@ from .models import Ciudadano, Manzana
 
 @admin.register(Manzana)
 class ManzanaAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "activa", "created_at")
-    search_fields = ("nombre", "descripcion")
+    list_display = (
+        "nombre",
+        "clave",
+        "responsable",
+        "activa",
+        "cantidad_ciudadanos",
+        "updated_at",
+    )
+    search_fields = (
+        "nombre",
+        "clave",
+        "responsable__nombre",
+        "responsable__apellido_paterno",
+        "responsable__apellido_materno",
+    )
     list_filter = ("activa",)
+    autocomplete_fields = ("responsable",)
+    list_select_related = ("responsable",)
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("responsable")
+            .annotate(_cantidad_ciudadanos=Count("ciudadanos"))
+        )
+
+    @admin.display(description="Cantidad de ciudadanos", ordering="_cantidad_ciudadanos")
+    def cantidad_ciudadanos(self, obj):
+        return obj._cantidad_ciudadanos
 
 
 class PagoInline(admin.TabularInline):
@@ -106,6 +134,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
     list_per_page = 50
     save_on_top = True
     list_select_related = ("toma", "manzana")
+    autocomplete_fields = ("manzana",)
     inlines = [TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
     fieldsets = (
         ("Identidad", {"fields": (("nombre", "apellido_paterno", "apellido_materno"), "activo")}),
