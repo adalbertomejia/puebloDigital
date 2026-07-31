@@ -56,16 +56,16 @@
         <option value="sin_adeudo" {% if filtros.adeudo == 'sin_adeudo' %}selected{% endif %}>Sin adeudo</option>
       </select>
     </div>
-    <div><label for="padron-orden" class="text-sm font-medium">Ordenar por</label>
+    <div><label for="padron-orden" class="text-sm font-medium">Orden de resultados</label>
       <select id="padron-orden" name="orden" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-        <option value="nombre" {% if filtros.orden == 'nombre' %}selected{% endif %}>Nombre</option>
-        <option value="estado" {% if filtros.orden == 'estado' %}selected{% endif %}>Estado</option>
-        <option value="adeudos_faena" {% if filtros.orden == 'adeudos_faena' %}selected{% endif %}>Adeudos de faena</option>
-        <option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Fecha de registro</option>
+        <option value="nombre" {% if filtros.orden == 'nombre' %}selected{% endif %}>Nombre (A–Z)</option>
+        <option value="estado" {% if filtros.orden == 'estado' %}selected{% endif %}>Estado (activos primero)</option>
+        <option value="adeudos_faena" {% if filtros.orden == 'adeudos_faena' %}selected{% endif %}>Adeudos (mayor a menor)</option>
+        <option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Registro (más reciente)</option>
       </select>
     </div>
     <div class="md:col-span-2 lg:col-span-4 flex flex-wrap gap-2">
-      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Filtrar</button>
+      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar filtros y orden</button>
       <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'padron_ciudadanos' %}">Limpiar filtros</a>
     </div>
   </form>
