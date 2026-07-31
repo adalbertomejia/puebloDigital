@@ -291,6 +291,16 @@ class PadronCiudadanosFiltrosTests(TestCase):
             [self.ana.pk, self.beto.pk, self.carla.pk, self.sin_motivo.pk],
         )
 
+    def test_selector_de_orden_explica_direccion_y_como_aplicarlo(self):
+        response = self.client.get(reverse("padron_ciudadanos"))
+
+        self.assertContains(response, "Orden de resultados")
+        self.assertContains(response, "Nombre (A–Z)")
+        self.assertContains(response, "Estado (activos primero)")
+        self.assertContains(response, "Adeudos (mayor a menor)")
+        self.assertContains(response, "Registro (más reciente)")
+        self.assertContains(response, "Aplicar filtros y orden")
+
     def test_pagina_20_y_enlaces_conservan_todos_los_parametros_codificados(self):
         for index in range(21):
             Ciudadano.objects.create(nombre=f"Persona {index:02}", apellido_paterno="Zeta", edad=18)
