@@ -18,6 +18,7 @@ from django.db.models.functions import Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
@@ -1267,27 +1268,50 @@ def editar_estado_evento(request, event_kind, event_id):
 
 @login_required
 def perfil_ciudadano(request, pk):
-    ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma"), pk=pk)
+    from .expediente import (
+        obtener_abonos_ciudadano, obtener_asistencias_ciudadano,
+        obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
+    )
 
-    pagos = ciudadano.pagos.select_related("comite").order_by("-fecha", "-created_at")[:10]
-    cooperaciones = ciudadano.cooperaciones.select_related("comite").order_by("-fecha", "-created_at")[:10]
-    registros_faena = ciudadano.registros_faena.select_related("faena", "faena__comite").order_by("-faena__fecha")[:10]
+    ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma", "manzana", "manzana__responsable"), pk=pk)
+    retorno_solicitado = request.GET.get("return_to", "")
+    retorno_valido = bool(retorno_solicitado and url_has_allowed_host_and_scheme(
+        retorno_solicitado, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ) and retorno_solicitado.startswith("/"))
+    return_to = retorno_solicitado if retorno_valido else reverse("padron_ciudadanos")
+    if return_to.startswith(reverse("resumen_aportaciones")):
+        origen = "Resumen de aportaciones"
+    elif return_to.startswith(reverse("tesoreria_operativa")):
+        origen = "Tesorería"
+    elif return_to.startswith(reverse("control_asistencias")):
+        origen = "Control de Asistencias"
+    else:
+        origen = "Ciudadanos"
 
-    resumen = {
-        "adeudos_faena": ciudadano.registros_faena.filter(genera_adeudo=True).count(),
-        "ultimo_pago": ciudadano.pagos.order_by("-fecha").first(),
-        "ultima_faena": ciudadano.registros_faena.select_related("faena").order_by("-faena__fecha").first(),
-    }
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page")
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page")
+    asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
+    for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
+        params = request.GET.copy()
+        params["return_to"] = return_to
+        page.previous_querystring = ""
+        page.next_querystring = ""
+        if page.has_previous():
+            params[parametro] = page.previous_page_number(); page.previous_querystring = params.urlencode()
+        if page.has_next():
+            params[parametro] = page.next_page_number(); page.next_querystring = params.urlencode()
 
     return render(
         request,
         "dashboard/perfil_ciudadano.html",
         {
             "ciudadano": ciudadano,
-            "pagos": pagos,
-            "cooperaciones": cooperaciones,
-            "registros_faena": registros_faena,
-            "resumen": resumen,
+            "resumen": obtener_resumen_ciudadano(ciudadano),
+            "obligaciones_page": obligaciones_page,
+            "abonos_page": abonos_page,
+            "asistencias_page": asistencias_page,
+            "return_to": return_to,
+            "origen": origen,
             "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),
             "faenas_programadas": Faena.objects.annotate(total_registros=Count("registros", distinct=True)).filter(estado=Faena.Estados.PROGRAMADA, total_registros=0).order_by("fecha")[:10],
             "quick_links": {
@@ -1585,9 +1609,30 @@ def resumen_aportaciones(request):
     export_params = request.GET.copy()
     for parametro in ("page", "conceptos_page", "movimientos_page", *controles):
         export_params.pop(parametro, None)
+    params_retorno = {**{k: v for k, v in filtros.items() if v not in ("", "todos", "todas")}, **controles}
+    return_to = f"{reverse('resumen_aportaciones')}?{urlencode(params_retorno)}"
+    etiquetas_contexto = []
+    if filtros["anio"].isdigit(): etiquetas_contexto.append(f"Año {filtros['anio']}")
+    if filtros["mes"].isdigit() and 1 <= int(filtros["mes"]) <= 12: etiquetas_contexto.append(MESES[int(filtros["mes"]) - 1][1])
+    if filtros["naturaleza"] in dict(ConceptoTesoreria.Naturalezas.choices):
+        etiquetas_contexto.append("Pagos" if filtros["naturaleza"] == "PAGO" else "Cooperaciones")
+    if filtros["alcance"] in dict(ConceptoTesoreria.Alcances.choices): etiquetas_contexto.append(dict(ConceptoTesoreria.Alcances.choices)[filtros["alcance"]])
+    manzana_contexto = Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None
+    comite_contexto = Comite.objects.filter(pk=filtros["comite"]).first() if filtros["comite"].isdigit() else None
+    if manzana_contexto: etiquetas_contexto.append(str(manzana_contexto))
+    if comite_contexto: etiquetas_contexto.append(comite_contexto.nombre)
+    if filtros["concepto"]: etiquetas_contexto.append(f"Concepto: {filtros['concepto']}")
+    if filtros["ciudadano"]: etiquetas_contexto.append(f"Ciudadano: {filtros['ciudadano']}")
+    conceptos_page = _pagina_aportaciones(request, por_concepto, "conceptos_page", 10)
+    for fila in conceptos_page:
+        fila["tesoreria_url"] = reverse("tesoreria_concepto_detalle", args=[fila["obligacion__concepto_id"]])
+    compatibles = {k: v for k, v in filtros.items() if k in {"naturaleza", "alcance", "manzana", "comite", "mes", "anio"} and v not in ("todos", "todas", "")}
+    if fila_general: fila_general["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'GENERAL'})}"
+    for fila in por_manzana:
+        fila["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'MANZANA', 'manzana': fila['manzana_id']})}"
     return render(request, "dashboard/resumen_aportaciones.html", {
         "metricas": metricas,
-        "conceptos_page": _pagina_aportaciones(request, por_concepto, "conceptos_page", 10),
+        "conceptos_page": conceptos_page,
         "manzanas_resumen": por_manzana, "movimientos_recientes": movimientos,
         "fila_general": fila_general,
         "manzanas_mostradas": len(por_manzana),
@@ -1623,6 +1668,8 @@ def resumen_aportaciones(request):
         "campos_control_manzanas": _campos_contexto_aportaciones(
             filtros, controles, excluir=("orden_manzanas", "incluir_manzanas_inactivas"),
         ),
+        "etiquetas_contexto": etiquetas_contexto,
+        "return_to": return_to,
     })
 
 
