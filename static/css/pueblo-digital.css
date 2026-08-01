@@ -239,6 +239,8 @@ a:hover { text-decoration-thickness: .16em; }
 .analytics-card__empty p { margin: 0; }
 .analytics-card__empty .pd-button { margin-top: var(--pd-space-3); }
 .analytics-card__pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pd-space-2); padding: var(--pd-space-4) var(--pd-space-5); border-top: 1px solid var(--pd-color-border-subtle); }
+.analytics-card__pagination form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pd-space-2); }
+.latest-movement-badge { display: inline-block; margin-top: .3rem; padding: .15rem .45rem; border: 1px solid #a7f3d0; border-radius: 999px; background: #ecfdf5; color: #065f46; font-size: .68rem; font-weight: 800; line-height: 1.3; white-space: nowrap; }
 .analytics-card--contributors .analytics-card__header { flex-direction: column; }
 .analytics-card--contributors .analytics-card__heading { width: 100%; padding-left: var(--pd-space-3); border-left: 4px solid var(--pd-color-brand); }
 .analytics-card--contributors .analytics-card__controls { width: 100%; }

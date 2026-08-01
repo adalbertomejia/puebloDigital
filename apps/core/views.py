@@ -1535,7 +1535,7 @@ def _resumen_territorial(base, filtros, incluir_inactivas, orden):
 @login_required
 def resumen_aportaciones(request):
     opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
-    opciones_limite_movimientos = (10, 25, 50, 100)
+    opciones_limite_movimientos = (5, 10, 20, 25, 50, 100)
     opciones_orden_ciudadanos = (
         ("monto", "Mayor monto aportado"),
         ("movimientos", "Mayor cantidad de aportaciones"),
@@ -1545,11 +1545,13 @@ def resumen_aportaciones(request):
         ("monto", "Mayor monto recibido"), ("ciudadanos", "Más ciudadanos"),
         ("movimientos", "Más movimientos"), ("nombre", "Nombre de manzana"),
     )
-    limite_ciudadanos = _opcion_entera(
-        request.GET.get("limite_ciudadanos"), permitidos=opciones_limite_ciudadanos, predeterminado=10,
+    ciudadanos_por_pagina = _opcion_entera(
+        request.GET.get("ciudadanos_por_pagina", request.GET.get("limite_ciudadanos")),
+        permitidos=opciones_limite_ciudadanos, predeterminado=10,
     )
-    limite_movimientos = _opcion_entera(
-        request.GET.get("limite_movimientos"), permitidos=opciones_limite_movimientos, predeterminado=25,
+    movimientos_por_pagina = _opcion_entera(
+        request.GET.get("movimientos_por_pagina", request.GET.get("limite_movimientos")),
+        permitidos=opciones_limite_movimientos, predeterminado=5,
     )
     orden_ciudadanos = _opcion(
         request.GET.get("orden_ciudadanos"),
@@ -1589,25 +1591,36 @@ def resumen_aportaciones(request):
         "movimientos": ("-cantidad_aportaciones", "-total_abonado", "obligacion__ciudadano__nombre", "obligacion__ciudadano_id"),
         "reciente": ("-ultima_aportacion", "-total_abonado", "obligacion__ciudadano_id"),
     }
-    mayores = list(mayores_qs.order_by(*ordenes_ciudadanos[orden_ciudadanos])[:limite_ciudadanos])
-    movimientos = list(base.select_related(
+    mayores_qs = mayores_qs.order_by(*ordenes_ciudadanos[orden_ciudadanos])
+    movimientos_qs = base.select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
         "obligacion__concepto__manzana", "obligacion__concepto__comite",
-    ).order_by("-fecha", "-created_at", "-pk")[:limite_movimientos])
+    ).order_by("-fecha", "-created_at", "-pk")
+    ultimo_movimiento_id = movimientos_qs.values_list("pk", flat=True).first()
+    ciudadanos_page = Paginator(mayores_qs, ciudadanos_por_pagina).get_page(
+        request.GET.get("ciudadanos_pagina")
+    )
+    movimientos_page = Paginator(movimientos_qs, movimientos_por_pagina).get_page(
+        request.GET.get("movimientos_pagina")
+    )
+    mayores = list(ciudadanos_page.object_list)
+    movimientos = list(movimientos_page.object_list)
     filtros = _filtros_aportaciones(request.GET)
     controles = {
-        "limite_ciudadanos": limite_ciudadanos,
+        "ciudadanos_por_pagina": ciudadanos_por_pagina,
         "orden_ciudadanos": orden_ciudadanos,
-        "limite_movimientos": limite_movimientos,
+        "movimientos_por_pagina": movimientos_por_pagina,
         "orden_manzanas": orden_manzanas,
         "incluir_manzanas_inactivas": "1" if incluir_inactivas else "0",
+        "resumen": _opcion(request.GET.get("resumen"), permitidos={"conceptos", "manzanas", "ciudadanos"}, predeterminado="conceptos"),
+        "concepto_indice": max(1, _opcion_entera(request.GET.get("concepto_indice"), permitidos=range(1, max(por_concepto.count(), 1) + 1), predeterminado=1)),
     }
     por_manzana, fila_general = _resumen_territorial(base, filtros, incluir_inactivas, orden_manzanas)
     monto_ciudadanos_visible = sum((fila["total_abonado"] for fila in mayores), Decimal("0.00"))
     aportaciones_ciudadanos_visibles = sum(fila["cantidad_aportaciones"] for fila in mayores)
     monto_movimientos_visible = sum((abono.monto for abono in movimientos), Decimal("0.00"))
     export_params = request.GET.copy()
-    for parametro in ("page", "conceptos_page", "movimientos_page", *controles):
+    for parametro in ("page", "conceptos_page", "ciudadanos_pagina", "movimientos_pagina", *controles, "limite_ciudadanos", "limite_movimientos"):
         export_params.pop(parametro, None)
     params_retorno = {**{k: v for k, v in filtros.items() if v not in ("", "todos", "todas")}, **controles}
     return_to = f"{reverse('resumen_aportaciones')}?{urlencode(params_retorno)}"
@@ -1644,19 +1657,21 @@ def resumen_aportaciones(request):
         "manzanas_mostradas": len(por_manzana),
         "manzanas_sin_movimientos": sum(not fila["cantidad_abonos"] for fila in por_manzana),
         "total_territorial_recibido": sum((fila["total_recibido"] for fila in por_manzana), Decimal("0.00")),
-        # Alias temporal para consumidores del contexto de la Iteración 1; ya no es una Page.
-        "movimientos_page": movimientos,
+        "movimientos_page": movimientos_page,
+        "ciudadanos_page": ciudadanos_page,
         "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
         "anios": Abono.objects.dates("fecha", "year", order="DESC"), "comites": Comite.objects.filter(activo=True),
         "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
         "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
         "export_querystring": export_params.urlencode(),
-        "limite_ciudadanos_actual": limite_ciudadanos,
+        "limite_ciudadanos_actual": ciudadanos_por_pagina,
+        "ciudadanos_por_pagina": ciudadanos_por_pagina,
         "opciones_limite_ciudadanos": opciones_limite_ciudadanos,
         "orden_ciudadanos_actual": orden_ciudadanos,
         "opciones_orden_ciudadanos": opciones_orden_ciudadanos,
         "orden_ciudadanos_etiqueta": dict(opciones_orden_ciudadanos)[orden_ciudadanos],
-        "limite_movimientos_actual": limite_movimientos,
+        "limite_movimientos_actual": movimientos_por_pagina,
+        "movimientos_por_pagina": movimientos_por_pagina,
         "opciones_limite_movimientos": opciones_limite_movimientos,
         "orden_manzanas_actual": orden_manzanas,
         "opciones_orden_manzanas": opciones_orden_manzanas,
@@ -1664,12 +1679,14 @@ def resumen_aportaciones(request):
         "monto_ciudadanos_visible": monto_ciudadanos_visible,
         "aportaciones_ciudadanos_visibles": aportaciones_ciudadanos_visibles,
         "monto_movimientos_visible": monto_movimientos_visible,
-        "fecha_movimiento_mas_reciente": movimientos[0].fecha if movimientos else None,
+        "ultimo_movimiento_id": ultimo_movimiento_id,
+        "resumen_actual": controles["resumen"],
+        "concepto_indice_actual": controles["concepto_indice"],
         "campos_control_ciudadanos": _campos_contexto_aportaciones(
-            filtros, controles, excluir=("limite_ciudadanos", "orden_ciudadanos"),
+            filtros, controles, excluir=("ciudadanos_por_pagina", "orden_ciudadanos", "ciudadanos_pagina"),
         ),
         "campos_control_movimientos": _campos_contexto_aportaciones(
-            filtros, controles, excluir=("limite_movimientos",),
+            filtros, controles, excluir=("movimientos_por_pagina", "movimientos_pagina"),
         ),
         "campos_control_manzanas": _campos_contexto_aportaciones(
             filtros, controles, excluir=("orden_manzanas", "incluir_manzanas_inactivas"),
