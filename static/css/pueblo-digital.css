@@ -192,6 +192,27 @@ a:hover { text-decoration-thickness: .16em; }
 .pd-filter-panel { margin-bottom: var(--pd-space-5); background: #f9fbfd; }
 .pd-cards-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pd-space-4); }
 
+/* Paneles analíticos: una jerarquía compacta, distinta de las métricas generales. */
+.analytics-stack { display: grid; gap: var(--pd-space-5); }
+.analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pd-space-5); }
+.analytics-card { min-width: 0; overflow: hidden; background: #fff; border: 1px solid var(--pd-color-border-subtle); border-radius: var(--pd-radius-card); box-shadow: var(--pd-shadow-soft); }
+.analytics-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--pd-space-4); padding: var(--pd-space-4) var(--pd-space-5); border-bottom: 1px solid var(--pd-color-border-subtle); background: #f8fbfb; }
+.analytics-card__heading { min-width: 0; }
+.analytics-card__title { margin: 0; color: #134e4a; font-size: 1.15rem; line-height: 1.3; }
+.analytics-card__description { max-width: 48rem; margin: .3rem 0 0; color: var(--pd-color-muted); font-size: .9rem; }
+.analytics-card__controls { flex: 0 0 auto; }
+.analytics-card__metrics { display: flex; flex-wrap: wrap; gap: var(--pd-space-2); margin: 0; padding: var(--pd-space-3) var(--pd-space-5); border-bottom: 1px solid var(--pd-color-border-subtle); list-style: none; }
+.analytics-card__metrics li { padding: .35rem .65rem; border: 1px solid #b8d8d5; border-radius: 999px; background: #f0fdfa; color: #315b58; font-size: .82rem; }
+.analytics-card__metrics strong { color: #134e4a; }
+.analytics-card__table { width: 100%; overflow-x: auto; }
+.analytics-card__table table { min-width: 44rem; }
+.analytics-card__table tbody tr { transition: background-color .15s ease; }
+.analytics-card__table tbody tr:hover { background: #f0fdfa; }
+.analytics-card__empty { padding: var(--pd-space-6) var(--pd-space-5); text-align: center; color: var(--pd-color-muted); }
+.analytics-card__empty p { margin: 0; }
+.analytics-card__empty .pd-button { margin-top: var(--pd-space-3); }
+.analytics-card__pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pd-space-2); padding: var(--pd-space-4) var(--pd-space-5); border-top: 1px solid var(--pd-color-border-subtle); }
+
 /* Formularios Django heredados: legibles sin rediseñar sus pantallas. */
 form p > label { display: block; margin: 0 0 .3rem; font-weight: 700; }
 form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p textarea { max-width: 100%; border: 2px solid #697681; padding: .55rem; }
@@ -210,6 +231,7 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
   .pd-grid--dashboard { grid-template-columns: 1fr; }
   .pd-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pd-cards-grid { grid-template-columns: 1fr; }
+  .analytics-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .pd-main { padding: var(--pd-space-4) var(--pd-space-3) 2rem; }
@@ -224,6 +246,9 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
   .pd-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pd-card__footer .pd-actions { align-items: stretch; }
   .pd-card__footer form { width: 100%; }
+  .analytics-card__header { flex-direction: column; padding: var(--pd-space-4); }
+  .analytics-card__controls { width: 100%; }
+  .analytics-card__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: var(--pd-space-3) var(--pd-space-4); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }

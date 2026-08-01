@@ -560,3 +560,47 @@ class ResumenAportacionesTests(TestCase):
         self.assertIn("Toda la comunidad", texto)
         self.assertIn(",Pago,Cuota general,", texto)
         self.assertEqual(len(texto.splitlines()), 32)
+
+    def test_renderiza_cuatro_tarjetas_con_jerarquia_y_datos(self):
+        response = self.get()
+        self.assertContains(response, 'data-analytics-card=', count=4)
+        textos = (
+            ("Aportaciones por concepto", "Agrupa el dinero recibido por concepto, naturaleza y territorio."),
+            ("Resumen por manzana", "Consulta las aportaciones registradas para cada territorio."),
+            ("Movimientos recientes", "Consulta los últimos abonos registrados en Tesorería."),
+            ("Mayores aportaciones registradas", "Consulta los ciudadanos con mayor monto abonado dentro de los filtros seleccionados."),
+        )
+        for titulo, descripcion in textos:
+            self.assertContains(response, titulo)
+            self.assertContains(response, descripcion)
+        self.assertContains(response, "Cuota general")
+        self.assertContains(response, "Ana López Ríos")
+        self.assertContains(response, "Toda la comunidad")
+        self.assertContains(response, reverse("tesoreria_concepto_detalle", args=[self.pago.pk]))
+        self.assertContains(response, reverse("perfil_ciudadano", args=[self.ana.pk]))
+        self.assertContains(response, reverse("exportar_aportaciones_csv"))
+        self.assertContains(response, 'name="naturaleza"')
+        self.assertNotContains(response, "Generar obligaciones")
+        self.assertNotContains(response, "Acreditar abono")
+
+    def test_estados_vacios_son_especificos(self):
+        Abono.objects.all().delete()
+        response = self.get()
+        for mensaje in (
+            "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
+            "Todavía no hay aportaciones territoriales para este periodo.",
+            "No hay movimientos recientes con los filtros seleccionados.",
+            "No se encontraron ciudadanos con aportaciones en este periodo.",
+        ):
+            self.assertContains(response, mensaje)
+
+    def test_componentes_analiticos_admiten_opcionales_ausentes(self):
+        from django.template.loader import render_to_string
+
+        header = render_to_string("dashboard/components/analytics/section_header.html", {
+            "section_id": "demo", "title": "Demo", "description": "Descripción",
+        })
+        metrics = render_to_string("dashboard/components/analytics/section_metrics.html", {"title": "Demo"})
+        self.assertIn("Demo", header)
+        self.assertNotIn("analytics-card__controls", header)
+        self.assertNotIn("analytics-card__metrics", metrics)
