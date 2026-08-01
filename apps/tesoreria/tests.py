@@ -634,7 +634,7 @@ class ResumenAportacionesTests(TestCase):
             ("Aportaciones por concepto", "Agrupa el dinero recibido por concepto, naturaleza y territorio."),
             ("Resumen por manzana", "Consulta las aportaciones registradas para cada territorio."),
             ("Movimientos recientes", "Consulta los últimos abonos registrados en Tesorería."),
-            ("Mayores aportaciones registradas", "Consulta los ciudadanos con mayor monto abonado dentro de los filtros seleccionados."),
+            ("Aportaciones por ciudadano", "Identifica a quienes más han aportado según los filtros aplicados."),
         )
         for titulo, descripcion in textos:
             self.assertContains(response, titulo)
@@ -646,6 +646,7 @@ class ResumenAportacionesTests(TestCase):
         self.assertContains(response, reverse("perfil_ciudadano", args=[self.ana.pk]))
         self.assertContains(response, reverse("exportar_aportaciones_csv"))
         self.assertContains(response, 'name="naturaleza"')
+        self.assertContains(response, "analytics-card--contributors")
         self.assertNotContains(response, "Generar obligaciones")
         self.assertNotContains(response, "Acreditar abono")
 

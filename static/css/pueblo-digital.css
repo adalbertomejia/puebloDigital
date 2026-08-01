@@ -221,6 +221,11 @@ a:hover { text-decoration-thickness: .16em; }
 .analytics-card__empty p { margin: 0; }
 .analytics-card__empty .pd-button { margin-top: var(--pd-space-3); }
 .analytics-card__pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pd-space-2); padding: var(--pd-space-4) var(--pd-space-5); border-top: 1px solid var(--pd-color-border-subtle); }
+.analytics-card--contributors .analytics-card__header { flex-direction: column; }
+.analytics-card--contributors .analytics-card__heading { width: 100%; padding-left: var(--pd-space-3); border-left: 4px solid var(--pd-color-brand); }
+.analytics-card--contributors .analytics-card__controls { width: 100%; }
+.analytics-card--contributors .analytics-local-controls { justify-content: flex-start; }
+.analytics-card--contributors .analytics-local-summary { text-align: left; }
 
 /* Formularios Django heredados: legibles sin rediseñar sus pantallas. */
 form p > label { display: block; margin: 0 0 .3rem; font-weight: 700; }
