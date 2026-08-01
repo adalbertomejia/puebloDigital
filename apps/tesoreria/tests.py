@@ -8,8 +8,10 @@ from django.urls import reverse
 
 from apps.comites.models import Comite
 from apps.core.models import Ciudadano, Manzana
+from apps.core.views import _resumen_territorial
 from apps.tesoreria.forms import ConceptoTesoreriaForm
 from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
+from apps.tesoreria.queries import abonos_filtrados
 
 
 class TesoreriaOperativaTests(TestCase):
@@ -537,10 +539,74 @@ class ResumenAportacionesTests(TestCase):
         self.assertEqual(territorial["total_recibido"], Decimal("75"))
         self.assertEqual(territorial["ciudadanos_distintos"], 2)
         manzanas = list(response.context["manzanas_resumen"])
-        self.assertEqual(len(manzanas), 1)
-        self.assertEqual(manzanas[0]["obligacion__concepto__manzana_id"], self.manzana_historica.pk)
-        self.assertEqual(manzanas[0]["promedio_participante"], Decimal("37.5"))
-        self.assertNotEqual(manzanas[0]["obligacion__concepto__manzana_id"], self.ana.manzana_id)
+        self.assertEqual(len(manzanas), 2)
+        historica = next(m for m in manzanas if m["manzana_id"] == self.manzana_historica.pk)
+        actual_sin_movimientos = next(m for m in manzanas if m["manzana_id"] == self.manzana_actual.pk)
+        self.assertEqual(historica["manzana_id"], self.manzana_historica.pk)
+        self.assertEqual(historica["promedio_participante"], Decimal("37.5"))
+        self.assertEqual(actual_sin_movimientos["total_recibido"], Decimal("0.00"))
+        self.assertEqual(actual_sin_movimientos["cantidad_abonos"], 0)
+        self.assertEqual(response.context["fila_general"]["total_recibido"], Decimal("25"))
+        self.assertEqual(response.context["fila_general"]["ciudadanos_distintos"], 1)
+        self.assertNotEqual(historica["manzana_id"], self.ana.manzana_id)
+
+    def test_alcance_y_manzana_global_controlan_las_filas(self):
+        general = self.get({"alcance": "GENERAL"}).context
+        self.assertIsNotNone(general["fila_general"])
+        self.assertEqual(general["manzanas_resumen"], [])
+        territorial = self.get({"alcance": "MANZANA"}).context
+        self.assertIsNone(territorial["fila_general"])
+        self.assertEqual(len(territorial["manzanas_resumen"]), 2)
+        seleccionada = self.get({"manzana": str(self.manzana_historica.pk)}).context
+        self.assertIsNone(seleccionada["fila_general"])
+        self.assertEqual([m["manzana_id"] for m in seleccionada["manzanas_resumen"]], [self.manzana_historica.pk])
+
+    def test_inactivas_validacion_metricas_y_estado_sin_movimientos(self):
+        inactiva = Manzana.objects.create(nombre="Manzana antigua", activa=False)
+        contexto = self.get().context
+        self.assertNotIn(inactiva.pk, [m["manzana_id"] for m in contexto["manzanas_resumen"]])
+        contexto = self.get({"incluir_manzanas_inactivas": "1"}).context
+        fila = next(m for m in contexto["manzanas_resumen"] if m["manzana_id"] == inactiva.pk)
+        self.assertFalse(fila["activa"])
+        self.assertEqual(fila["promedio_participante"], Decimal("0.00"))
+        self.assertEqual(contexto["manzanas_mostradas"], 3)
+        self.assertEqual(contexto["manzanas_sin_movimientos"], 2)
+        self.assertEqual(contexto["total_territorial_recibido"], Decimal("75"))
+        self.assertFalse(self.get({"incluir_manzanas_inactivas": "tal-vez"}).context["incluir_manzanas_inactivas"])
+
+    def test_ordenamientos_territoriales(self):
+        tercera = Manzana.objects.create(nombre="A primera")
+        concepto = ConceptoTesoreria.objects.create(
+            naturaleza="PAGO", alcance="MANZANA", manzana=tercera, comite=self.comite,
+            concepto="Obra", monto_individual=Decimal("100"), fecha=date(2026, 8, 3),
+        )
+        obligacion = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.ana, monto_asignado=Decimal("100"))
+        Abono.objects.create(obligacion=obligacion, monto=Decimal("80"), fecha=date(2026, 8, 4))
+        esperados = {
+            "monto": [tercera.pk, self.manzana_historica.pk, self.manzana_actual.pk],
+            "ciudadanos": [self.manzana_historica.pk, tercera.pk, self.manzana_actual.pk],
+            "movimientos": [self.manzana_historica.pk, tercera.pk, self.manzana_actual.pk],
+            "nombre": [tercera.pk, self.manzana_actual.pk, self.manzana_historica.pk],
+        }
+        for orden, ids in esperados.items():
+            with self.subTest(orden=orden):
+                filas = self.get({"orden_manzanas": orden}).context["manzanas_resumen"]
+                self.assertEqual([fila["manzana_id"] for fila in filas], ids)
+        self.assertEqual(self.get({"orden_manzanas": "invalido"}).context["orden_manzanas_actual"], "monto")
+
+    def test_agregacion_territorial_mantiene_tres_consultas(self):
+        filtros = {
+            "mes": "todos", "anio": "todos", "naturaleza": "todos", "alcance": "todos",
+            "manzana": "todas", "comite": "todos", "concepto": "", "ciudadano": "",
+        }
+        with self.assertNumQueries(3):
+            filas, general = _resumen_territorial(abonos_filtrados({}), filtros, False, "monto")
+        self.assertEqual(len(filas), 2)
+        self.assertEqual(general["total_recibido"], Decimal("25"))
+        Manzana.objects.bulk_create([Manzana(nombre=f"Extra {i}") for i in range(20)])
+        with self.assertNumQueries(3):
+            filas, general = _resumen_territorial(abonos_filtrados({}), filtros, False, "monto")
+        self.assertEqual(len(filas), 22)
 
     def test_movimientos_y_mayores_estan_ordenados_y_filtrados(self):
         response = self.get({"naturaleza": "COOPERACION"})
@@ -588,7 +654,7 @@ class ResumenAportacionesTests(TestCase):
         response = self.get()
         for mensaje in (
             "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
-            "Todavía no hay aportaciones territoriales para este periodo.",
+            "Sin movimientos registrados",
             "No hay movimientos recientes con los filtros seleccionados.",
             "No se encontraron ciudadanos con aportaciones para los filtros seleccionados.",
         ):
@@ -637,5 +703,6 @@ class ResumenAportacionesTests(TestCase):
         self.client.login(username="consulta", password="pw")
         response = self.client.get(reverse("exportar_aportaciones_csv"), {
             "limite_ciudadanos": "5", "orden_ciudadanos": "reciente", "limite_movimientos": "10",
+            "orden_manzanas": "nombre", "incluir_manzanas_inactivas": "1",
         })
         self.assertEqual(len(response.content.decode("utf-8-sig").splitlines()), 4)
