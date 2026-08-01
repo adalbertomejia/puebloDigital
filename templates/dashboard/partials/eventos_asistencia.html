@@ -36,9 +36,9 @@
         <footer class="pd-card__footer">
           <div class="pd-actions">
             <a href="{{ evento.detail_url }}" class="pd-button pd-button--secondary">Ver detalle</a>
-            {% if evento.total_participantes == 0 %}<form method="post" action="{{ evento.generate_url }}">{% csrf_token %}<button class="pd-button pd-button--primary" type="submit">Generar registros</button></form>{% elif evento.pendientes > 0 and evento.can_capture %}<a href="{{ evento.capture_url }}" class="pd-button pd-button--primary">Capturar asistencia</a><a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Captura presencial</a>{% elif evento.pendientes == 0 %}<a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Ver resumen</a><span class="pd-tag pd-tag--success">Captura completada</span>{% endif %}
-            <a href="{{ evento.estado_edit_url }}" class="pd-button pd-button--secondary">Editar estado</a>
-            <a href="{{ evento.admin_change_url }}" class="pd-button pd-button--secondary">Editar evento</a>
+            {% if evento.total_participantes == 0 %}<form method="post" action="{{ evento.generate_url }}">{% csrf_token %}<button class="pd-button pd-button--success" type="submit">Generar registros</button></form>{% elif evento.pendientes > 0 and evento.can_capture %}<a href="{{ evento.capture_url }}" class="pd-button pd-button--warning">Capturar asistencia</a><a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Captura presencial</a>{% elif evento.pendientes == 0 %}<a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Ver resumen</a><span class="pd-tag pd-tag--success">Captura completada</span>{% endif %}
+            <a href="{{ evento.estado_edit_url }}" class="pd-button pd-button--warning">Editar estado</a>
+            <a href="{{ evento.admin_change_url }}" class="pd-button pd-button--warning">Editar evento</a>
           </div>
         </footer>
       </article>
