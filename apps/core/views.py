@@ -13,8 +13,8 @@ from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, Max, Prefetch, Q, Sum, Subquery
-from django.db.models.functions import ExtractYear
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, FloatField, Max, Prefetch, Q, Sum, Subquery, Value
+from django.db.models.functions import Cast, Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
@@ -31,6 +31,7 @@ from apps.operacion.services import (
 from apps.tesoreria.models import Cooperacion, Pago
 from apps.tesoreria.services import generar_obligaciones_faltantes
 from apps.tesoreria.queries import (
+    abonos_filtrados,
     aplicar_filtros_obligaciones,
     anotar_conceptos,
     anotar_obligaciones,
@@ -1395,6 +1396,110 @@ def exportar_tesoreria_csv(request):
             c.anio_periodo or c.fecha.year, c.monto_individual, c.cantidad_obligaciones, c.cantidad_pagada,
             c.cantidad_pendiente, c.cantidad_cancelada, c.total_asignado, c.total_abonado,
             c.saldo_pendiente, _etiqueta_estado_general(c.estado_general)])
+    return response
+
+
+def _pagina_aportaciones(request, queryset, parametro, cantidad):
+    pagina = Paginator(queryset, cantidad).get_page(request.GET.get(parametro))
+    pagina.previous_querystring = _page_querystring(request, parametro, pagina.previous_page_number()) if pagina.has_previous() else ""
+    pagina.next_querystring = _page_querystring(request, parametro, pagina.next_page_number()) if pagina.has_next() else ""
+    return pagina
+
+
+def _filtros_aportaciones(params):
+    return {
+        "mes": params.get("mes", "todos"), "anio": params.get("anio", "todos"),
+        "naturaleza": params.get("naturaleza", "todos"), "alcance": params.get("alcance", "todos"),
+        "manzana": params.get("manzana", "todas"), "comite": params.get("comite", "todos"),
+        "concepto": params.get("concepto", "").strip(), "ciudadano": params.get("ciudadano", "").strip(),
+    }
+
+
+@login_required
+def resumen_aportaciones(request):
+    base = abonos_filtrados(request.GET)
+    dinero = DecimalField(max_digits=14, decimal_places=2)
+    cero = Value(Decimal("0.00"), output_field=dinero)
+    metricas = base.aggregate(
+        total_recibido=Coalesce(Sum("monto"), cero),
+        pagos_recibidos=Coalesce(Sum("monto", filter=Q(obligacion__concepto__naturaleza=ConceptoTesoreria.Naturalezas.PAGO)), cero),
+        cooperaciones_recibidas=Coalesce(Sum("monto", filter=Q(obligacion__concepto__naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION)), cero),
+        ciudadanos_con_aportaciones=Count("obligacion__ciudadano", distinct=True),
+    )
+    por_concepto = base.values(
+        "obligacion__concepto_id", "obligacion__concepto__concepto", "obligacion__concepto__naturaleza",
+        "obligacion__concepto__comite__nombre", "obligacion__concepto__alcance", "obligacion__concepto__manzana__nombre",
+    ).annotate(
+        total_recibido=Coalesce(Sum("monto"), cero), cantidad_abonos=Count("pk"),
+        ciudadanos_distintos=Count("obligacion__ciudadano", distinct=True), ultimo_movimiento=Max("fecha"),
+    ).order_by("-total_recibido", "obligacion__concepto__concepto")
+    por_manzana = base.filter(
+        obligacion__concepto__alcance=ConceptoTesoreria.Alcances.MANZANA,
+        obligacion__concepto__manzana__isnull=False,
+    ).values("obligacion__concepto__manzana_id", "obligacion__concepto__manzana__nombre").annotate(
+        total_recibido=Coalesce(Sum("monto"), cero), cantidad_abonos=Count("pk"),
+        ciudadanos_distintos=Count("obligacion__ciudadano", distinct=True), ultimo_movimiento=Max("fecha"),
+    ).annotate(
+        promedio_participante=ExpressionWrapper(
+            Cast(F("total_recibido"), FloatField()) / F("ciudadanos_distintos"), output_field=dinero,
+        )
+    ).order_by("-total_recibido", "obligacion__concepto__manzana__nombre")
+    mayores = base.values(
+        "obligacion__ciudadano_id", "obligacion__ciudadano__nombre", "obligacion__ciudadano__apellido_paterno",
+        "obligacion__ciudadano__apellido_materno", "obligacion__ciudadano__manzana__nombre",
+    ).annotate(
+        total_abonado=Coalesce(Sum("monto"), cero), cantidad_aportaciones=Count("pk"), ultima_aportacion=Max("fecha"),
+    ).order_by("-total_abonado", "obligacion__ciudadano__apellido_paterno")[:10]
+    movimientos = base.select_related(
+        "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
+        "obligacion__concepto__manzana", "obligacion__concepto__comite",
+    ).order_by("-fecha", "-created_at", "-pk")
+    filtros = _filtros_aportaciones(request.GET)
+    export_params = request.GET.copy()
+    for parametro in ("page", "conceptos_page", "movimientos_page"):
+        export_params.pop(parametro, None)
+    return render(request, "dashboard/resumen_aportaciones.html", {
+        "metricas": metricas,
+        "conceptos_page": _pagina_aportaciones(request, por_concepto, "conceptos_page", 10),
+        "manzanas_resumen": por_manzana, "movimientos_page": _pagina_aportaciones(request, movimientos, "movimientos_page", 25),
+        "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
+        "anios": Abono.objects.dates("fecha", "year", order="DESC"), "comites": Comite.objects.filter(activo=True),
+        "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
+        "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
+        "export_querystring": export_params.urlencode(),
+    })
+
+
+@login_required
+def exportar_aportaciones_csv(request):
+    abonos = abonos_filtrados(request.GET).select_related(
+        "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
+        "obligacion__concepto__manzana", "obligacion__concepto__comite",
+    ).order_by("-fecha", "-created_at", "-pk")
+    partes = ["aportaciones"]
+    naturaleza = request.GET.get("naturaleza")
+    if naturaleza in dict(ConceptoTesoreria.Naturalezas.choices):
+        partes.append(dict(ConceptoTesoreria.Naturalezas.choices)[naturaleza])
+    if request.GET.get("manzana", "").isdigit():
+        manzana = Manzana.objects.filter(pk=request.GET["manzana"]).first()
+        if manzana:
+            partes.append(str(manzana))
+    nombre = slugify("_".join(partes))[:90] or "aportaciones"
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow(["ID de abono", "Fecha", "Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Naturaleza", "Concepto", "Comité", "Alcance", "Manzana del concepto", "Monto abonado", "Estado de la obligación"])
+    for abono in abonos.iterator(chunk_size=1000):
+        obligacion, concepto, ciudadano = abono.obligacion, abono.obligacion.concepto, abono.obligacion.ciudadano
+        writer.writerow([
+            abono.pk, abono.fecha.isoformat(), ciudadano.nombre_completo, ciudadano.nombre,
+            ciudadano.apellido_paterno, ciudadano.apellido_materno or "Sin información",
+            ciudadano.numero_contrato or "Sin asignar", str(ciudadano.manzana) if ciudadano.manzana_id else "Sin asignar",
+            concepto.get_naturaleza_display(), concepto.concepto, concepto.comite.nombre,
+            concepto.get_alcance_display(), str(concepto.manzana) if concepto.manzana_id else "Sin asignar",
+            abono.monto, obligacion.get_estado_display(),
+        ])
     return response
 
 

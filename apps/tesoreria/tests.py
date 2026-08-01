@@ -482,3 +482,81 @@ class TesoreriaFiltrosCsvTests(TestCase):
         concepto = self.concepto()
         self.assertEqual(self.client.get(reverse("exportar_tesoreria_csv")).status_code, 302)
         self.assertEqual(self.client.get(reverse("exportar_obligaciones_tesoreria_csv", args=[concepto.pk])).status_code, 302)
+
+
+class ResumenAportacionesTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("consulta", password="pw")
+        self.comite = Comite.objects.create(nombre="Comité comunitario", tipo=Comite.Tipos.DELEGACION)
+        self.otro_comite = Comite.objects.create(nombre="Comité feria", tipo=Comite.Tipos.FERIA)
+        self.manzana_historica = Manzana.objects.create(nombre="Manzana 4")
+        self.manzana_actual = Manzana.objects.create(nombre="Manzana 2")
+        self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="Ríos", numero_contrato="C-10", manzana=self.manzana_actual)
+        self.beto = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", manzana=self.manzana_historica)
+        self.pago = ConceptoTesoreria.objects.create(naturaleza="PAGO", alcance="GENERAL", comite=self.comite, concepto="Cuota general", monto_individual=Decimal("1000"), fecha=date(2026, 7, 1))
+        self.cooperacion = ConceptoTesoreria.objects.create(naturaleza="COOPERACION", alcance="MANZANA", manzana=self.manzana_historica, comite=self.otro_comite, concepto="Feria de manzana", monto_individual=Decimal("1000"), fecha=date(2026, 8, 1))
+        op = ObligacionCiudadano.objects.create(concepto=self.pago, ciudadano=self.ana, monto_asignado=Decimal("1000"))
+        oc1 = ObligacionCiudadano.objects.create(concepto=self.cooperacion, ciudadano=self.ana, monto_asignado=Decimal("1000"))
+        oc2 = ObligacionCiudadano.objects.create(concepto=self.cooperacion, ciudadano=self.beto, monto_asignado=Decimal("1000"))
+        self.a1 = Abono.objects.create(obligacion=op, monto=Decimal("25"), fecha=date(2026, 7, 20))
+        self.a2 = Abono.objects.create(obligacion=oc1, monto=Decimal("40"), fecha=date(2026, 8, 1))
+        self.a3 = Abono.objects.create(obligacion=oc2, monto=Decimal("35"), fecha=date(2026, 8, 2))
+
+    def get(self, params=None):
+        self.client.login(username="consulta", password="pw")
+        return self.client.get(reverse("resumen_aportaciones"), params or {})
+
+    def test_vista_y_csv_requieren_autenticacion(self):
+        self.assertEqual(self.client.get(reverse("resumen_aportaciones")).status_code, 302)
+        self.assertEqual(self.client.get(reverse("exportar_aportaciones_csv")).status_code, 302)
+
+    def test_metricas_parten_de_abonos_y_ciudadanos_distintos(self):
+        metricas = self.get().context["metricas"]
+        self.assertEqual(metricas["total_recibido"], Decimal("100"))
+        self.assertEqual(metricas["pagos_recibidos"], Decimal("25"))
+        self.assertEqual(metricas["cooperaciones_recibidas"], Decimal("75"))
+        self.assertEqual(metricas["ciudadanos_con_aportaciones"], 2)
+
+    def test_filtros_individuales_y_combinados(self):
+        casos = [
+            ({"mes": "7"}, Decimal("25")), ({"anio": "2026"}, Decimal("100")),
+            ({"naturaleza": "COOPERACION"}, Decimal("75")), ({"alcance": "GENERAL"}, Decimal("25")),
+            ({"manzana": str(self.manzana_historica.pk)}, Decimal("75")),
+            ({"comite": str(self.otro_comite.pk)}, Decimal("75")), ({"concepto": "Cuota"}, Decimal("25")),
+            ({"ciudadano": "López C-10"}, Decimal("65")),
+            ({"mes": "8", "naturaleza": "COOPERACION", "manzana": str(self.manzana_historica.pk), "ciudadano": "Ana"}, Decimal("40")),
+        ]
+        for params, esperado in casos:
+            with self.subTest(params=params):
+                self.assertEqual(self.get(params).context["metricas"]["total_recibido"], esperado)
+
+    def test_resumenes_y_territorio_historico(self):
+        response = self.get()
+        conceptos = list(response.context["conceptos_page"].object_list)
+        territorial = next(c for c in conceptos if c["obligacion__concepto_id"] == self.cooperacion.pk)
+        self.assertEqual(territorial["total_recibido"], Decimal("75"))
+        self.assertEqual(territorial["ciudadanos_distintos"], 2)
+        manzanas = list(response.context["manzanas_resumen"])
+        self.assertEqual(len(manzanas), 1)
+        self.assertEqual(manzanas[0]["obligacion__concepto__manzana_id"], self.manzana_historica.pk)
+        self.assertEqual(manzanas[0]["promedio_participante"], Decimal("37.5"))
+        self.assertNotEqual(manzanas[0]["obligacion__concepto__manzana_id"], self.ana.manzana_id)
+
+    def test_movimientos_y_mayores_estan_ordenados_y_filtrados(self):
+        response = self.get({"naturaleza": "COOPERACION"})
+        self.assertEqual([a.pk for a in response.context["movimientos_page"]], [self.a3.pk, self.a2.pk])
+        mayores = list(response.context["mayores_aportaciones"])
+        self.assertEqual(mayores[0]["obligacion__ciudadano_id"], self.ana.pk)
+        self.assertEqual(mayores[0]["total_abonado"], Decimal("40"))
+
+    def test_csv_columnas_etiquetas_filtros_y_todas_las_paginas(self):
+        obligacion = self.a1.obligacion
+        for i in range(30):
+            Abono.objects.create(obligacion=obligacion, monto=Decimal("1"), fecha=date(2026, 7, 21))
+        self.client.login(username="consulta", password="pw")
+        response = self.client.get(reverse("exportar_aportaciones_csv"), {"naturaleza": "PAGO", "page": "2"})
+        texto = response.content.decode("utf-8-sig")
+        self.assertIn("ID de abono,Fecha,Ciudadano,Nombre,Apellido paterno", texto)
+        self.assertIn("Toda la comunidad", texto)
+        self.assertIn(",Pago,Cuota general,", texto)
+        self.assertEqual(len(texto.splitlines()), 32)
