@@ -112,7 +112,8 @@ class TomaInline(admin.StackedInline):
 class CiudadanoAdmin(admin.ModelAdmin):
     list_display = (
         "nombre_completo",
-        "edad",
+        "edad_actual",
+        "sexo",
         "numero_contrato",
         "manzana",
         "motivo_alta_legible",
@@ -129,7 +130,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
         "manzana__nombre",
         "direccion",
     )
-    list_filter = ("activo", "motivo_alta", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
+    list_filter = ("activo", "sexo", "motivo_alta", "manzana", "edad", "created_at", "registros_faena__estatus", "toma__estado")
     ordering = ("apellido_paterno", "apellido_materno", "nombre")
     list_per_page = 50
     save_on_top = True
@@ -138,7 +139,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
     inlines = [TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
     fieldsets = (
         ("Identidad", {"fields": (("nombre", "apellido_paterno", "apellido_materno"), "activo")}),
-        ("Datos del padrón", {"fields": ("edad", "fecha_nacimiento", "numero_contrato", "manzana", "direccion")}),
+        ("Datos del padrón", {"fields": ("fecha_nacimiento", "edad", "sexo", "numero_contrato", "manzana", "direccion")}),
         ("Participación y alta", {"fields": ("labor_social", "motivo_alta")}),
         ("Notas internas", {"fields": ("observaciones",), "classes": ("collapse",)}),
     )

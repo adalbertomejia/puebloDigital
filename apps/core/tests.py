@@ -190,9 +190,9 @@ class ExportacionCiudadanosCsvTests(TestCase):
         self.assertIn(f'filename="ciudadanos_{timezone.localdate().isoformat()}.csv"', response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         rows = self._rows(response)
-        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "No. de contrato", "Manzana", "Edad", "Estado", "Fecha de registro"])
+        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "No. de contrato", "Manzana", "Fecha de nacimiento", "Edad registrada", "Edad actual", "Sexo", "Motivo de alta", "Labor social", "Estado", "Fecha de registro"])
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:9], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "Sin asignar", "30", "Activo"])
+        self.assertEqual(rows[1][1:14], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "Sin asignar", "", "30", "30", "No especificado", "Sin motivo registrado", "", "Activo"])
         self.assertNotIn("Beto Pérez López", response.content.decode("utf-8-sig"))
 
     def test_exporta_inactivos_como_inactivo_y_requiere_autenticacion(self):
@@ -200,7 +200,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
         rows = self._rows(response)
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:9], ["Beto", "Pérez", "López", "Beto Pérez López", "CONT-0055", "Manzana 2", "40", "Inactivo"])
+        self.assertEqual(rows[1][1:14], ["Beto", "Pérez", "López", "Beto Pérez López", "CONT-0055", "Manzana 2", "", "40", "40", "No especificado", "Sin motivo registrado", "", "Inactivo"])
 
         self.client.logout()
         response = self.client.get(reverse("exportar_ciudadanos_csv"))
@@ -596,3 +596,53 @@ class SecureDeletionFlowTests(TestCase):
         response = self.client.post(reverse("eliminar_concepto_tesoreria", args=[concepto.pk]))
         self.assertRedirects(response, reverse("tesoreria_operativa"), fetch_redirect_response=False)
         self.assertFalse(ConceptoTesoreria.objects.filter(pk=concepto.pk).exists())
+
+class DemografiaCiudadanoTests(TestCase):
+    def test_edad_actual_prioriza_fecha_y_respeta_cumpleanos(self):
+        hoy = date.today()
+        ya_cumplio = Ciudadano(fecha_nacimiento=date(hoy.year - 65, 1, 1), edad=20)
+        cumple_despues = Ciudadano(fecha_nacimiento=date(hoy.year - 65, 12, 31), edad=90)
+        self.assertEqual(ya_cumplio.edad_actual, 65)
+        self.assertEqual(cumple_despues.edad_actual, 64)
+        self.assertEqual(Ciudadano(edad=42).edad_actual, 42)
+        self.assertIsNone(Ciudadano().edad_actual)
+
+    def test_rechaza_fecha_futura_y_edad_fuera_de_rango(self):
+        with self.assertRaises(ValidationError):
+            Ciudadano(fecha_nacimiento=date.today().replace(year=date.today().year + 1)).full_clean()
+        with self.assertRaises(ValidationError):
+            Ciudadano(edad=131).full_clean()
+
+    def test_sexo_predeterminado_y_etiquetas(self):
+        ciudadano = Ciudadano.objects.create(nombre="N", apellido_paterno="E", edad=20)
+        self.assertEqual(ciudadano.sexo, Ciudadano.Sexos.NO_ESPECIFICADO)
+        self.assertEqual(ciudadano.get_sexo_display(), "No especificado")
+
+
+class FiltrosDemograficosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="demografia", password="x")
+        self.client.force_login(self.user)
+        hoy = date.today()
+        self.por_fecha = Ciudadano.objects.create(
+            nombre="Fecha", apellido_paterno="Mayor", edad=20,
+            fecha_nacimiento=date(hoy.year - 70, 1, 1), sexo=Ciudadano.Sexos.MUJER,
+        )
+        self.por_edad = Ciudadano.objects.create(
+            nombre="Manual", apellido_paterno="Mayor", edad=66,
+            sexo=Ciudadano.Sexos.HOMBRE,
+        )
+        self.joven = Ciudadano.objects.create(nombre="Joven", apellido_paterno="Uno", edad=25)
+        self.sin_info = Ciudadano.objects.create(nombre="Sin", apellido_paterno="Info")
+
+    def ids(self, **params):
+        from apps.core.views import _ciudadanos_operativos_queryset, _filtrar_ciudadanos_operativos
+        return set(_filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), params).values_list("pk", flat=True))
+
+    def test_65_mas_combina_fecha_y_edad_manual(self):
+        self.assertEqual(self.ids(rango_edad="65_mas"), {self.por_fecha.pk, self.por_edad.pk})
+
+    def test_sin_info_sin_fecha_y_sexo(self):
+        self.assertEqual(self.ids(rango_edad="sin_informacion"), {self.sin_info.pk})
+        self.assertEqual(self.ids(fecha_nacimiento="sin_fecha"), {self.por_edad.pk, self.joven.pk, self.sin_info.pk})
+        self.assertEqual(self.ids(sexo=Ciudadano.Sexos.MUJER), {self.por_fecha.pk})
