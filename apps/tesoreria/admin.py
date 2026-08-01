@@ -1,4 +1,6 @@
 from django.contrib import admin
+from apps.operacion.alcance import manzanas_disponibles_para_instancia
+
 from .models import Abono, ConceptoTesoreria, Cooperacion, ObligacionCiudadano, Pago
 
 
@@ -10,10 +12,18 @@ class AbonoInline(admin.TabularInline):
 
 @admin.register(ConceptoTesoreria)
 class ConceptoTesoreriaAdmin(admin.ModelAdmin):
-    list_display = ("fecha", "naturaleza", "concepto", "comite", "monto_individual", "registros_generados")
-    list_filter = ("naturaleza", "origen", "comite", "fecha", "registros_generados")
+    list_display = ("fecha", "naturaleza", "alcance", "manzana", "concepto", "comite", "monto_individual", "registros_generados")
+    list_filter = ("naturaleza", "alcance", "manzana", "origen", "comite", "fecha", "registros_generados")
     search_fields = ("concepto", "descripcion", "comite__nombre")
-    autocomplete_fields = ("comite",)
+    autocomplete_fields = ("comite", "manzana")
+    list_select_related = ("manzana", "comite")
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["manzana"].queryset = manzanas_disponibles_para_instancia(
+            obj or ConceptoTesoreria()
+        )
+        return form
 
 
 @admin.register(ObligacionCiudadano)

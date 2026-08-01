@@ -7,7 +7,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.comites.models import Comite
-from apps.core.models import Ciudadano
+from apps.core.models import Ciudadano, Manzana
+from apps.tesoreria.forms import ConceptoTesoreriaForm
 from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 
@@ -22,6 +23,85 @@ class TesoreriaOperativaTests(TestCase):
         self.activo1 = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="A", edad=30, activo=True)
         self.activo2 = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", apellido_materno="B", edad=31, activo=True)
         self.inactivo = Ciudadano.objects.create(nombre="Ciro", apellido_paterno="Ruiz", apellido_materno="C", edad=32, activo=False)
+
+    def test_territorio_y_monto_se_validan_en_el_modelo(self):
+        manzana = Manzana.objects.create(nombre="Manzana 4")
+        general = self.concepto()
+        self.assertEqual(general.alcance, ConceptoTesoreria.Alcances.GENERAL)
+        self.assertEqual(general.alcance_legible, "Toda la comunidad")
+
+        for alcance, bloque, monto in [
+            (ConceptoTesoreria.Alcances.GENERAL, manzana, Decimal("100")),
+            (ConceptoTesoreria.Alcances.MANZANA, None, Decimal("100")),
+            (ConceptoTesoreria.Alcances.GENERAL, None, Decimal("0")),
+            (ConceptoTesoreria.Alcances.GENERAL, None, Decimal("-1")),
+        ]:
+            with self.assertRaises(ValidationError):
+                self.concepto(alcance=alcance, manzana=bloque, monto_individual=monto)
+
+        territorial = self.concepto(
+            alcance=ConceptoTesoreria.Alcances.MANZANA,
+            manzana=manzana,
+            concepto="Cuota Manzana 4",
+        )
+        self.assertEqual(territorial.alcance_legible, "Manzana 4")
+
+    def test_formulario_ofrece_activas_y_manzana_historica(self):
+        activa = Manzana.objects.create(nombre="Manzana activa")
+        historica = Manzana.objects.create(nombre="Manzana histórica", activa=False)
+        otra_inactiva = Manzana.objects.create(nombre="Otra inactiva", activa=False)
+        self.assertQuerySetEqual(
+            ConceptoTesoreriaForm().fields["manzana"].queryset,
+            [activa],
+        )
+        concepto = self.concepto(alcance=ConceptoTesoreria.Alcances.MANZANA, manzana=historica)
+        disponibles = ConceptoTesoreriaForm(instance=concepto).fields["manzana"].queryset
+        self.assertIn(activa, disponibles)
+        self.assertIn(historica, disponibles)
+        self.assertNotIn(otra_inactiva, disponibles)
+
+    def test_configuracion_financiera_se_protege_con_obligaciones(self):
+        concepto = self.concepto()
+        manzana = Manzana.objects.create(nombre="Manzana 2")
+        concepto.naturaleza = ConceptoTesoreria.Naturalezas.COOPERACION
+        concepto.alcance = ConceptoTesoreria.Alcances.MANZANA
+        concepto.manzana = manzana
+        concepto.monto_individual = Decimal("120.00")
+        concepto.save()
+
+        ObligacionCiudadano.objects.create(
+            concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("120.00")
+        )
+        self.assertFalse(concepto.registros_generados)
+        cambios = {
+            "naturaleza": ConceptoTesoreria.Naturalezas.PAGO,
+            "alcance": ConceptoTesoreria.Alcances.GENERAL,
+            "manzana": None,
+            "monto_individual": Decimal("121.00"),
+        }
+        for campo, valor in cambios.items():
+            concepto.refresh_from_db()
+            setattr(concepto, campo, valor)
+            with self.assertRaises(ValidationError):
+                concepto.save()
+
+        concepto.refresh_from_db()
+        concepto.descripcion = "Corrección descriptiva permitida"
+        concepto.save()
+        self.assertEqual(concepto.descripcion, "Corrección descriptiva permitida")
+
+    def test_tarjetas_muestran_alcance_legible(self):
+        manzana = Manzana.objects.create(nombre="Manzana 7")
+        self.concepto(concepto="General")
+        self.concepto(
+            concepto="Territorial",
+            alcance=ConceptoTesoreria.Alcances.MANZANA,
+            manzana=manzana,
+        )
+        self.login()
+        response = self.client.get(reverse("tesoreria_operativa"))
+        self.assertContains(response, "Toda la comunidad")
+        self.assertContains(response, "Manzana 7")
 
     def login(self, user=None):
         self.client.login(username=(user or self.user).username, password="pw")
@@ -148,13 +228,16 @@ class TesoreriaOperativaTests(TestCase):
         concepto = self.concepto(); self.generar(concepto); self.login()
         response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]) + "?q=Ana&estado=PENDIENTE&page=1")
         self.assertContains(response, "Ana López")
-        self.assertContains(response, "q=Ana")
+        self.assertContains(response, 'name="q" value="Ana"')
 
     def test_sidebar_tesoreria_order_and_active(self):
         self.login()
         response = self.client.get(reverse("tesoreria_operativa"))
         html = response.content.decode()
-        self.assertLess(html.index("Control de Asistencias"), html.index("Tesorería"))
+        self.assertLess(
+            html.index("✓</span> Control de Asistencias"),
+            html.index("$</span> Tesorería"),
+        )
         self.assertContains(response, "Tesorería")
         self.assertContains(response, "bg-slate-800")
 
@@ -280,4 +363,3 @@ class TesoreriaOperativaTests(TestCase):
         self.assertEqual(metricas["pendientes"], 47)
         self.assertEqual(metricas["pagadas"], 4)
         self.assertEqual(response.context["concepto"].cantidad_pendiente + response.context["concepto"].cantidad_pagada + response.context["concepto"].cantidad_cancelada, 51)
-

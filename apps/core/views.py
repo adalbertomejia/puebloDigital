@@ -1234,7 +1234,7 @@ def _can_delete_tesoreria(user):
 
 
 def _tesoreria_conceptos_queryset(params):
-    qs = ConceptoTesoreria.objects.select_related("comite").annotate(
+    qs = ConceptoTesoreria.objects.select_related("comite", "manzana").annotate(
         cantidad_obligaciones=Count("obligaciones", distinct=True),
         cantidad_pagada=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PAGADO), distinct=True),
         cantidad_pendiente=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE), distinct=True),
@@ -1341,7 +1341,7 @@ def crear_concepto_tesoreria(request, pk=None):
 
 @login_required
 def eliminar_concepto_tesoreria(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite"), pk=pk)
+    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
     if not _can_delete_tesoreria(request.user):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
@@ -1386,7 +1386,7 @@ def generar_obligaciones_tesoreria(request, pk):
 
 @login_required
 def tesoreria_concepto_detalle(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite"), pk=pk)
+    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
     obligaciones_base = ObligacionCiudadano.objects.filter(concepto=concepto)
 
     total_obligaciones = obligaciones_base.count()
