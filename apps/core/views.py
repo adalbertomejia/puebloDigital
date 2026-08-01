@@ -13,8 +13,8 @@ from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, FloatField, Max, Prefetch, Q, Sum, Subquery, Value
-from django.db.models.functions import Cast, Coalesce, ExtractYear
+from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum, Subquery, Value
+from django.db.models.functions import Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
@@ -1438,6 +1438,76 @@ def _campos_contexto_aportaciones(filtros, controles, *, excluir=()):
     ]
 
 
+def _resumen_territorial(base, filtros, incluir_inactivas, orden):
+    """Combina territorios seleccionados con agregados SQL, sin consultas por fila."""
+    alcance = filtros["alcance"]
+    manzana_seleccionada = filtros["manzana"]
+    mostrar_manzanas = alcance != ConceptoTesoreria.Alcances.GENERAL
+    mostrar_general = (
+        alcance != ConceptoTesoreria.Alcances.MANZANA
+        and not manzana_seleccionada.isdigit()
+    )
+
+    manzanas_qs = Manzana.objects.none()
+    if mostrar_manzanas:
+        manzanas_qs = Manzana.objects.all()
+        if manzana_seleccionada.isdigit():
+            manzanas_qs = manzanas_qs.filter(pk=int(manzana_seleccionada))
+        elif not incluir_inactivas:
+            manzanas_qs = manzanas_qs.filter(activa=True)
+    manzanas = list(manzanas_qs.order_by("nombre", "pk"))
+
+    agregados = base.filter(
+        obligacion__concepto__alcance=ConceptoTesoreria.Alcances.MANZANA,
+        obligacion__concepto__manzana_id__in=[manzana.pk for manzana in manzanas],
+    ).values("obligacion__concepto__manzana_id").annotate(
+        total_recibido=Sum("monto"), cantidad_abonos=Count("pk"),
+        ciudadanos_distintos=Count("obligacion__ciudadano_id", distinct=True),
+        ultimo_movimiento=Max("fecha"),
+    )
+    por_id = {fila["obligacion__concepto__manzana_id"]: fila for fila in agregados}
+    filas = []
+    for manzana in manzanas:
+        agregado = por_id.get(manzana.pk, {})
+        total = agregado.get("total_recibido") or Decimal("0.00")
+        ciudadanos = agregado.get("ciudadanos_distintos") or 0
+        filas.append({
+            "key": ("manzana", manzana.pk), "manzana_id": manzana.pk,
+            "nombre": manzana.nombre, "activa": manzana.activa,
+            "total_recibido": total,
+            "cantidad_abonos": agregado.get("cantidad_abonos") or 0,
+            "ciudadanos_distintos": ciudadanos,
+            "promedio_participante": total / ciudadanos if ciudadanos else Decimal("0.00"),
+            "ultimo_movimiento": agregado.get("ultimo_movimiento"),
+        })
+
+    ordenes = {
+        "monto": lambda fila: (-fila["total_recibido"], fila["nombre"].casefold(), fila["manzana_id"]),
+        "ciudadanos": lambda fila: (-fila["ciudadanos_distintos"], -fila["total_recibido"], fila["nombre"].casefold(), fila["manzana_id"]),
+        "movimientos": lambda fila: (-fila["cantidad_abonos"], -fila["total_recibido"], fila["nombre"].casefold(), fila["manzana_id"]),
+        "nombre": lambda fila: (fila["nombre"].casefold(), fila["manzana_id"]),
+    }
+    filas.sort(key=ordenes[orden])
+
+    general = None
+    if mostrar_general:
+        datos = base.filter(
+            obligacion__concepto__alcance=ConceptoTesoreria.Alcances.GENERAL,
+        ).aggregate(
+            total_recibido=Sum("monto"), cantidad_abonos=Count("pk"),
+            ciudadanos_distintos=Count("obligacion__ciudadano_id", distinct=True),
+            ultimo_movimiento=Max("fecha"),
+        )
+        total = datos["total_recibido"] or Decimal("0.00")
+        ciudadanos = datos["ciudadanos_distintos"] or 0
+        general = {
+            "key": ("general", None), "nombre": "Toda la comunidad", "activa": True,
+            **datos, "total_recibido": total,
+            "promedio_participante": total / ciudadanos if ciudadanos else Decimal("0.00"),
+        }
+    return filas, general
+
+
 @login_required
 def resumen_aportaciones(request):
     opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
@@ -1446,6 +1516,10 @@ def resumen_aportaciones(request):
         ("monto", "Mayor monto aportado"),
         ("movimientos", "Mayor cantidad de aportaciones"),
         ("reciente", "Aportación más reciente"),
+    )
+    opciones_orden_manzanas = (
+        ("monto", "Mayor monto recibido"), ("ciudadanos", "Más ciudadanos"),
+        ("movimientos", "Más movimientos"), ("nombre", "Nombre de manzana"),
     )
     limite_ciudadanos = _opcion_entera(
         request.GET.get("limite_ciudadanos"), permitidos=opciones_limite_ciudadanos, predeterminado=10,
@@ -1457,6 +1531,13 @@ def resumen_aportaciones(request):
         request.GET.get("orden_ciudadanos"),
         permitidos={valor for valor, _ in opciones_orden_ciudadanos}, predeterminado="monto",
     )
+    orden_manzanas = _opcion(
+        request.GET.get("orden_manzanas"),
+        permitidos={valor for valor, _ in opciones_orden_manzanas}, predeterminado="monto",
+    )
+    incluir_inactivas = _opcion(
+        request.GET.get("incluir_manzanas_inactivas"), permitidos={"0", "1"}, predeterminado="0",
+    ) == "1"
     base = abonos_filtrados(request.GET)
     dinero = DecimalField(max_digits=14, decimal_places=2)
     cero = Value(Decimal("0.00"), output_field=dinero)
@@ -1473,17 +1554,6 @@ def resumen_aportaciones(request):
         total_recibido=Coalesce(Sum("monto"), cero), cantidad_abonos=Count("pk"),
         ciudadanos_distintos=Count("obligacion__ciudadano", distinct=True), ultimo_movimiento=Max("fecha"),
     ).order_by("-total_recibido", "obligacion__concepto__concepto")
-    por_manzana = base.filter(
-        obligacion__concepto__alcance=ConceptoTesoreria.Alcances.MANZANA,
-        obligacion__concepto__manzana__isnull=False,
-    ).values("obligacion__concepto__manzana_id", "obligacion__concepto__manzana__nombre").annotate(
-        total_recibido=Coalesce(Sum("monto"), cero), cantidad_abonos=Count("pk"),
-        ciudadanos_distintos=Count("obligacion__ciudadano", distinct=True), ultimo_movimiento=Max("fecha"),
-    ).annotate(
-        promedio_participante=ExpressionWrapper(
-            Cast(F("total_recibido"), FloatField()) / F("ciudadanos_distintos"), output_field=dinero,
-        )
-    ).order_by("-total_recibido", "obligacion__concepto__manzana__nombre")
     mayores_qs = base.values(
         "obligacion__ciudadano_id", "obligacion__ciudadano__nombre", "obligacion__ciudadano__apellido_paterno",
         "obligacion__ciudadano__apellido_materno", "obligacion__ciudadano__manzana__nombre",
@@ -1505,7 +1575,10 @@ def resumen_aportaciones(request):
         "limite_ciudadanos": limite_ciudadanos,
         "orden_ciudadanos": orden_ciudadanos,
         "limite_movimientos": limite_movimientos,
+        "orden_manzanas": orden_manzanas,
+        "incluir_manzanas_inactivas": "1" if incluir_inactivas else "0",
     }
+    por_manzana, fila_general = _resumen_territorial(base, filtros, incluir_inactivas, orden_manzanas)
     monto_ciudadanos_visible = sum((fila["total_abonado"] for fila in mayores), Decimal("0.00"))
     aportaciones_ciudadanos_visibles = sum(fila["cantidad_aportaciones"] for fila in mayores)
     monto_movimientos_visible = sum((abono.monto for abono in movimientos), Decimal("0.00"))
@@ -1516,6 +1589,10 @@ def resumen_aportaciones(request):
         "metricas": metricas,
         "conceptos_page": _pagina_aportaciones(request, por_concepto, "conceptos_page", 10),
         "manzanas_resumen": por_manzana, "movimientos_recientes": movimientos,
+        "fila_general": fila_general,
+        "manzanas_mostradas": len(por_manzana),
+        "manzanas_sin_movimientos": sum(not fila["cantidad_abonos"] for fila in por_manzana),
+        "total_territorial_recibido": sum((fila["total_recibido"] for fila in por_manzana), Decimal("0.00")),
         # Alias temporal para consumidores del contexto de la Iteración 1; ya no es una Page.
         "movimientos_page": movimientos,
         "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
@@ -1530,6 +1607,9 @@ def resumen_aportaciones(request):
         "orden_ciudadanos_etiqueta": dict(opciones_orden_ciudadanos)[orden_ciudadanos],
         "limite_movimientos_actual": limite_movimientos,
         "opciones_limite_movimientos": opciones_limite_movimientos,
+        "orden_manzanas_actual": orden_manzanas,
+        "opciones_orden_manzanas": opciones_orden_manzanas,
+        "incluir_manzanas_inactivas": incluir_inactivas,
         "monto_ciudadanos_visible": monto_ciudadanos_visible,
         "aportaciones_ciudadanos_visibles": aportaciones_ciudadanos_visibles,
         "monto_movimientos_visible": monto_movimientos_visible,
@@ -1539,6 +1619,9 @@ def resumen_aportaciones(request):
         ),
         "campos_control_movimientos": _campos_contexto_aportaciones(
             filtros, controles, excluir=("limite_movimientos",),
+        ),
+        "campos_control_manzanas": _campos_contexto_aportaciones(
+            filtros, controles, excluir=("orden_manzanas", "incluir_manzanas_inactivas"),
         ),
     })
 
