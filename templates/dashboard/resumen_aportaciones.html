@@ -5,7 +5,7 @@
 
 <div class="mb-5 flex flex-wrap gap-2">
   <a href="{% url 'tesoreria_operativa' %}" class="pd-button pd-button--secondary">Volver a Tesorería</a>
-  <a href="{% url 'exportar_aportaciones_csv' %}{% if export_querystring %}?{{ export_querystring }}{% endif %}" class="pd-button pd-button--primary">Exportar aportaciones</a>
+  <a href="{% url 'exportar_aportaciones_csv' %}{% if export_querystring %}?{{ export_querystring }}{% endif %}" class="pd-button pd-button--complementary">Exportar aportaciones</a>
 </div>
 
 <section class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6" aria-label="Métricas globales de aportaciones">

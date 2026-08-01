@@ -12,10 +12,10 @@
       <span class="inline-block mt-3 text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">{{ event.get_estado_display }} · {{ estado_operacional }}</span>
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
-      {% if can_capture %}<a href="{{ capture_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Capturar asistencia</a><a href="{{ sequential_capture_url }}" class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Captura presencial</a>{% endif %}
-      {% if metricas.total_participantes %}<a href="{{ export_csv_url }}" class="px-3 py-2 rounded-lg bg-cyan-100 text-cyan-800">Exportar participantes CSV</a>{% else %}<span class="px-3 py-2 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed" title="No hay participantes para exportar">Exportar participantes CSV</span>{% endif %}
-      <a href="{{ estado_edit_url }}" class="px-3 py-2 rounded-lg bg-amber-100 text-amber-800">Editar estado</a>
-      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Editar evento</a>
+      {% if can_capture %}<a href="{{ capture_url }}" class="pd-button pd-button--warning pd-button--sm">Capturar asistencia</a><a href="{{ sequential_capture_url }}" class="pd-button pd-button--success pd-button--sm">Captura presencial</a>{% endif %}
+      {% if metricas.total_participantes %}<a href="{{ export_csv_url }}" class="pd-button pd-button--complementary pd-button--sm">Exportar participantes CSV</a>{% else %}<span class="pd-button pd-button--complementary pd-button--sm" aria-disabled="true" title="No hay participantes para exportar">Exportar participantes CSV</span>{% endif %}
+      <a href="{{ estado_edit_url }}" class="pd-button pd-button--warning pd-button--sm">Editar estado</a>
+      <a href="{{ admin_change_url }}" class="pd-button pd-button--secondary pd-button--sm">Editar evento</a>
     </div>
   </div>
 </section>
