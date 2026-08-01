@@ -1,114 +1,68 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Panel de Gestión{% endblock %}
 {% block content %}
-{% if messages %}
-  <div class="space-y-2 mb-4">
-    {% for message in messages %}
-      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
-    {% endfor %}
-  </div>
-{% endif %}
-<section class="grid xl:grid-cols-4 gap-4 mb-6">
-  <article class="xl:col-span-2 bg-white rounded-2xl border p-3 md:p-4">
-    <h3 class="font-semibold">Buscador global de ciudadanos</h3>
-    <p class="text-sm text-slate-500 mb-2">Acceso rápido a expediente y operaciones comunitarias.</p>
-    <form method="get" class="flex flex-wrap gap-2">
-      <input type="text" name="q" value="{{ q }}" placeholder="Nombre, contrato, toma..." class="flex-1 min-w-52 rounded-lg border px-3 py-1.5">
-      <button class="rounded-lg bg-indigo-600 text-white px-4 py-1.5">Buscar</button>
+<header class="pd-page-heading">
+  <div><h1>Resumen operativo</h1><p>Consulta información de la comunidad y accede a las tareas frecuentes.</p></div>
+</header>
+
+<section class="pd-grid pd-grid--dashboard" aria-label="Herramientas principales">
+  <article class="pd-panel pd-panel--accent">
+    <h2 class="pd-section-title">Buscar ciudadanos</h2>
+    <form method="get" role="search">
+      <div class="pd-form-group">
+        <label for="dashboard-q">Nombre, contrato o toma</label>
+        <span id="dashboard-q-hint" class="pd-hint">Escribe uno o varios datos para localizar un expediente.</span>
+        <input class="pd-input" id="dashboard-q" type="search" name="q" value="{{ q }}" aria-describedby="dashboard-q-hint">
+      </div>
+      <div class="pd-actions" style="margin-top: 1rem"><button class="pd-button pd-button--primary" type="submit">Buscar ciudadano</button></div>
     </form>
   </article>
-  <article class="xl:col-span-2 bg-white rounded-2xl border p-4 md:p-5">
-    <h4 class="font-semibold mb-2">Acciones rápidas</h4>
-    <div class="space-y-2 text-sm">
-      <a class="block rounded-lg bg-indigo-50 text-indigo-700 px-3 py-2" href="{% url 'control_asistencias' %}">Abrir Control de Asistencias</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.captura_faenas }}">Captura de asistencias de Faenas</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.captura_juntas }}">Captura de asistencias de Juntas</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.faena_add }}">+ Crear nueva faena</a>
-      <a class="block rounded-lg bg-slate-100 px-3 py-2" href="{{ quick_links.junta_add }}">+ Crear nueva junta</a>
-    </div>
+  <article class="pd-panel">
+    <h2 class="pd-section-title">Acciones rápidas</h2>
+    <ul class="pd-action-list">
+      <li><a href="{% url 'control_asistencias' %}">Abrir Control de Asistencias</a></li>
+      <li><a href="{{ quick_links.captura_faenas }}">Capturar asistencias de Faenas</a></li>
+      <li><a href="{{ quick_links.captura_juntas }}">Capturar asistencias de Juntas</a></li>
+      <li><a href="{{ quick_links.faena_add }}">Crear nueva faena</a></li>
+      <li><a href="{{ quick_links.junta_add }}">Crear nueva junta</a></li>
+    </ul>
   </article>
 </section>
 
-<section class="grid md:grid-cols-5 gap-4 mb-6">
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Ciudadanos</p><p class="text-2xl font-bold">{{ metricas.total_ciudadanos }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Activos</p><p class="text-2xl font-bold">{{ metricas.ciudadanos_activos }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Morosos faena</p><p class="text-2xl font-bold">{{ metricas.morosos_faena }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Tomas suspendidas</p><p class="text-2xl font-bold">{{ metricas.tomas_suspendidas }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pagos del mes</p><p class="text-2xl font-bold">{{ metricas.pagos_mes }}</p></article>
+<h2 class="pd-section-title" style="margin-top: 2rem">Indicadores de la comunidad</h2>
+<section class="pd-metrics" aria-label="Indicadores de la comunidad">
+  <article class="pd-metric"><p class="pd-metric__label">Ciudadanos</p><p class="pd-metric__value">{{ metricas.total_ciudadanos }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Activos</p><p class="pd-metric__value">{{ metricas.ciudadanos_activos }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Con adeudos de faena</p><p class="pd-metric__value">{{ metricas.morosos_faena }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Tomas suspendidas</p><p class="pd-metric__value">{{ metricas.tomas_suspendidas }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Pagos del mes</p><p class="pd-metric__value">{{ metricas.pagos_mes }}</p></article>
 </section>
 
-<section class="grid lg:grid-cols-3 gap-6">
-  <div class="lg:col-span-2 space-y-4">
+<section class="pd-grid pd-grid--dashboard">
+  <div class="pd-stack">
+    <h2 class="pd-section-title">Resultados de ciudadanos</h2>
     {% for c in ciudadanos %}
-      <article class="bg-white rounded-xl border p-4">
-        <div class="flex justify-between items-start gap-2">
-          <div>
-            <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
-            <p class="text-sm text-slate-500">{{ c.edad }} años · Contrato: {{ c.numero_contrato|default:'-' }} · Manzana: {{ c.manzana|default:'-' }}</p>
-          </div>
-          <span class="text-xs px-2 py-1 rounded-full {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
+      <article class="pd-panel">
+        <div class="flex flex-wrap justify-between gap-3">
+          <div><h3 style="margin-bottom: .25rem">{{ c.nombre_completo }}</h3><p class="pd-muted">{{ c.edad }} años · Contrato: {{ c.numero_contrato|default:'Sin registro' }} · Manzana: {{ c.manzana|default:'Sin asignar' }}</p></div>
+          <span class="pd-tag {% if c.activo %}pd-tag--active{% else %}pd-tag--inactive{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
         </div>
-        <div class="grid md:grid-cols-4 gap-2 mt-3 text-sm">
-          <p><strong>Último pago:</strong> {{ c.ultimo_pago_fecha|default:'Sin registro' }}</p>
-          <p><strong>Adeudos faena:</strong> {{ c.adeudos_faena }}</p>
-          <p><strong>Última faena:</strong> {{ c.ultima_faena_fecha|default:'Sin registro' }}</p>
-          <p><strong>Toma:</strong> {{ c.toma.numero_toma|default:'Sin toma' }}</p>
+        <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm">
+          <p><strong>Último pago:</strong><br>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</p>
+          <p><strong>Adeudos faena:</strong><br>{{ c.adeudos_faena }}</p>
+          <p><strong>Última faena:</strong><br>{{ c.ultima_faena_fecha|default:'Sin registro' }}</p>
+          <p><strong>Toma:</strong><br>{{ c.toma.numero_toma|default:'Sin toma' }}</p>
         </div>
-        <div class="mt-3 flex flex-wrap gap-2 text-sm">
-          <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
-          <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
-        </div>
+        <div class="pd-actions"><a href="{% url 'perfil_ciudadano' c.pk %}" class="pd-button pd-button--primary">Ver expediente</a><a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="pd-button pd-button--secondary">Editar ciudadano</a></div>
       </article>
-    {% empty %}
-      <article class="bg-white rounded-xl border p-6 text-slate-500">No se encontraron ciudadanos para este criterio.</article>
-    {% endfor %}
+    {% empty %}<div class="pd-panel"><p>No se encontraron ciudadanos para este criterio.</p></div>{% endfor %}
   </div>
 
-  <aside id="actividad-reciente" class="space-y-4">
-    <article class="bg-white rounded-xl border p-4">
-      <h4 class="font-semibold mb-2">Actividad reciente</h4>
-      <ul class="space-y-2 text-sm">
-        {% for item in actividad_reciente %}
-          <li><span class="font-medium">{{ item.tipo }}</span> · {{ item.label }} <span class="text-slate-500">({{ item.fecha }})</span></li>
-        {% empty %}<li class="text-slate-500">Sin actividad reciente.</li>{% endfor %}
-      </ul>
-    </article>
-
-    <article class="bg-white rounded-xl border p-4">
-      <h4 class="font-semibold mb-2">Acción masiva: Faenas</h4>
-      <p class="text-sm text-slate-500 mb-2">Genera registros pendientes para todos los ciudadanos activos.</p>
-      <div class="space-y-2">
-        {% for faena in faenas_programadas %}
-          <form method="post" action="{% url 'generar_registros_faena' faena.id %}" class="flex items-center justify-between gap-2">
-            {% csrf_token %}
-            <span class="text-sm">{{ faena.fecha }} · {{ faena.descripcion }}</span>
-            <button class="rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-sm">Generar</button>
-          </form>
-        {% empty %}
-          <p class="text-sm text-slate-500">No hay faenas programadas.</p>
-        {% endfor %}
-      </div>
-    </article>
-    <article class="bg-white rounded-xl border p-4">
-      <h4 class="font-semibold mb-2">Acción masiva: Juntas</h4>
-      <p class="text-sm text-slate-500 mb-2">Genera registros pendientes para todos los ciudadanos activos.</p>
-      <div class="space-y-2">
-        {% for junta in juntas_programadas %}
-          <form method="post" action="{% url 'generar_registros_junta' junta.id %}" class="flex items-center justify-between gap-2">
-            {% csrf_token %}
-            <span class="text-sm">{{ junta.fecha }} · {{ junta.tema }}</span>
-            <button class="rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-sm">Generar</button>
-          </form>
-        {% empty %}
-          <p class="text-sm text-slate-500">No hay juntas programadas.</p>
-        {% endfor %}
-      </div>
-    </article>
-    <article class="bg-white rounded-xl border p-4">
-      <h4 class="font-semibold mb-2">Agua</h4>
-      <p class="text-sm">Tomas pendientes/suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p>
-      <p class="text-sm">Ciudadanos con pagos de servicio registrados: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p>
-    </article>
+  <aside id="actividad-reciente" class="pd-stack" aria-label="Actividad y acciones masivas">
+    <article class="pd-panel"><h2 class="pd-section-title">Actividad reciente</h2><ul class="space-y-3 text-sm">{% for item in actividad_reciente %}<li><strong>{{ item.tipo }}</strong> · {{ item.label }} <span class="pd-muted">({{ item.fecha }})</span></li>{% empty %}<li>Sin actividad reciente.</li>{% endfor %}</ul></article>
+    <article class="pd-panel"><h2 class="pd-section-title">Acción masiva: Faenas</h2><p class="pd-muted">Genera registros pendientes para ciudadanos activos.</p><div class="pd-stack">{% for faena in faenas_programadas %}<form method="post" action="{% url 'generar_registros_faena' faena.id %}">{% csrf_token %}<p>{{ faena.fecha }} · {{ faena.descripcion }}</p><button class="pd-button pd-button--primary" type="submit">Generar registros</button></form>{% empty %}<p>No hay faenas programadas.</p>{% endfor %}</div></article>
+    <article class="pd-panel"><h2 class="pd-section-title">Acción masiva: Juntas</h2><p class="pd-muted">Genera registros pendientes para ciudadanos activos.</p><div class="pd-stack">{% for junta in juntas_programadas %}<form method="post" action="{% url 'generar_registros_junta' junta.id %}">{% csrf_token %}<p>{{ junta.fecha }} · {{ junta.tema }}</p><button class="pd-button pd-button--primary" type="submit">Generar registros</button></form>{% empty %}<p>No hay juntas programadas.</p>{% endfor %}</div></article>
+    <article class="pd-panel"><h2 class="pd-section-title">Agua</h2><p>Tomas pendientes o suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p><p>Ciudadanos con pagos de servicio: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p></article>
   </aside>
 </section>
 {% endblock %}
