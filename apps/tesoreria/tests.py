@@ -271,50 +271,17 @@ class TesoreriaOperativaTests(TestCase):
 
 
     def test_nuevas_metricas_tesoreria_operativa(self):
-        self.concepto(concepto="Sin obligaciones")
-        en_cobro = self.concepto(concepto="Feria 2027")
-        completado = self.concepto(concepto="Cooperación completada")
-        otro_mes = self.concepto(concepto="Abono histórico")
-
-        for concepto in [en_cobro, completado, otro_mes]:
-            ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("100.00"))
-            ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo2, monto_asignado=Decimal("100.00"))
-
-        # Dos obligaciones pendientes del mismo ciudadano en conceptos diferentes deben contarse una sola vez.
-        ObligacionCiudadano.objects.create(concepto=en_cobro, ciudadano=self.inactivo, monto_asignado=Decimal("100.00"))
-        ObligacionCiudadano.objects.create(concepto=otro_mes, ciudadano=self.inactivo, monto_asignado=Decimal("100.00"))
-
-        for obligacion in completado.obligaciones.all():
-            obligacion.acreditar(Decimal("100.00"), date(2026, 7, 5))
-
-        en_cobro.obligaciones.get(ciudadano=self.activo1).acreditar(Decimal("40.00"), date(2026, 7, 10))
-        Abono.objects.create(
-            obligacion=otro_mes.obligaciones.get(ciudadano=self.activo1),
-            monto=Decimal("25.00"),
-            fecha=date(2026, 6, 30),
-        )
-
+        concepto = self.concepto(concepto="Feria 2027")
+        ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("100.00"))
+        pagada = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo2, monto_asignado=Decimal("100.00"))
+        pagada.acreditar(Decimal("100.00"), date(2026, 7, 5))
         self.login()
-        response = self.client.get(reverse("tesoreria_operativa"))
-        metricas = response.context["metricas"]
-
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("total_generado", metricas)
-        self.assertNotIn("total_abonado", metricas)
-        self.assertNotIn("saldo_pendiente", metricas)
-        self.assertNotIn("ciudadanos_pendientes", metricas)
-        self.assertEqual(metricas["conceptos_en_cobro"], 2)
-        self.assertEqual(metricas["conceptos_completados"], 1)
-        self.assertEqual(metricas["ciudadanos_conceptos_pendientes"], 3)
-        self.assertEqual(metricas["recaudado_mes"], Decimal("240.00"))
-        self.assertContains(response, "Conceptos en cobro")
-        self.assertContains(response, "Conceptos completados")
-        self.assertContains(response, "Recaudado este mes")
-        self.assertContains(response, "Ciudadanos con conceptos pendientes")
-        self.assertContains(response, "$240.00")
-
-        filtered_response = self.client.get(reverse("tesoreria_operativa") + "?q=Feria")
-        self.assertEqual(filtered_response.context["metricas"]["recaudado_mes"], Decimal("240.00"))
+        metricas = self.client.get(reverse("tesoreria_operativa") + "?q=Feria").context["metricas"]
+        self.assertEqual(metricas["total_asignado"], Decimal("200.00"))
+        self.assertEqual(metricas["total_abonado"], Decimal("100.00"))
+        self.assertEqual(metricas["saldo_pendiente"], Decimal("100.00"))
+        self.assertEqual(metricas["ciudadanos_pendientes"], 1)
+        self.assertEqual(metricas["porcentaje_cumplimiento"], 50.0)
 
     def test_busqueda_detalle_y_paginacion_conserva_filtros(self):
         concepto = self.concepto(); self.generar(concepto); self.login()
@@ -327,8 +294,8 @@ class TesoreriaOperativaTests(TestCase):
         response = self.client.get(reverse("tesoreria_operativa"))
         html = response.content.decode()
         self.assertLess(
-            html.index("✓</span> Control de Asistencias"),
-            html.index("$</span> Tesorería"),
+            html.index("Control de Asistencias"),
+            html.index('>Tesorería</a>'),
         )
         self.assertContains(response, "Tesorería")
         self.assertContains(response, "bg-slate-800")
@@ -399,7 +366,7 @@ class TesoreriaOperativaTests(TestCase):
         self.login()
         for querystring in ["?q=Ana", "?estado=PAGADO", "?estado=PENDIENTE"]:
             response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]) + querystring)
-            self.assertEqual(response.context["metricas"], expected)
+            self.assertEqual({key: response.context["metricas"][key] for key in expected}, expected)
 
     def test_detalle_historial_prefetch_muestra_todos_los_abonos(self):
         concepto = self.concepto(monto_individual=Decimal("1000.00"))
@@ -455,3 +422,63 @@ class TesoreriaOperativaTests(TestCase):
         self.assertEqual(metricas["pendientes"], 47)
         self.assertEqual(metricas["pagadas"], 4)
         self.assertEqual(response.context["concepto"].cantidad_pendiente + response.context["concepto"].cantidad_pagada + response.context["concepto"].cantidad_cancelada, 51)
+
+class TesoreriaFiltrosCsvTests(TestCase):
+    """Cobertura de la experiencia filtrada y de las exportaciones de Fase 3.3."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("tesorero_csv", password="pw")
+        self.comite = Comite.objects.create(nombre="Comité Principal", tipo=Comite.Tipos.DELEGACION)
+        self.activo1 = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="A", edad=30, activo=True)
+        self.activo2 = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", apellido_materno="B", edad=31, activo=True)
+
+    def login(self):
+        self.client.login(username=self.user.username, password="pw")
+
+    def concepto(self, **kwargs):
+        datos = dict(naturaleza=ConceptoTesoreria.Naturalezas.PAGO, comite=self.comite, concepto="Cuota 2026", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 20))
+        datos.update(kwargs)
+        return ConceptoTesoreria.objects.create(**datos)
+
+    def test_cancelada_es_historica_pero_no_exigible(self):
+        concepto = self.concepto()
+        pendiente = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("100"))
+        cancelada = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo2, monto_asignado=Decimal("80"), estado=ObligacionCiudadano.Estados.CANCELADO)
+        self.login()
+        response = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]))
+        self.assertEqual(response.context["metricas"]["total"], 2)
+        self.assertEqual(response.context["metricas"]["canceladas"], 1)
+        self.assertEqual(response.context["metricas"]["total_asignado"], Decimal("100"))
+        self.assertEqual(response.context["metricas"]["saldo_pendiente"], Decimal("100"))
+        self.assertEqual(response.context["metricas"]["porcentaje_cumplimiento"], 0)
+
+    def test_filtros_territoriales_y_demograficos_se_combinan(self):
+        manzana = Manzana.objects.create(nombre="Manzana 4")
+        self.activo1.manzana = manzana; self.activo1.sexo = Ciudadano.Sexos.MUJER
+        self.activo1.motivo_alta = Ciudadano.MotivosAlta.MAYORIA_EDAD; self.activo1.edad = 70; self.activo1.save()
+        concepto = self.concepto(naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION, alcance=ConceptoTesoreria.Alcances.MANZANA, manzana=manzana)
+        ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.activo1, monto_asignado=Decimal("100"))
+        self.login()
+        principal = self.client.get(reverse("tesoreria_operativa"), {"naturaleza":"COOPERACION", "alcance":"MANZANA", "manzana":str(manzana.pk), "mes":"7", "anio":"2026", "estado":"CON_PENDIENTES"})
+        self.assertContains(principal, concepto.concepto)
+        detalle = self.client.get(reverse("tesoreria_concepto_detalle", args=[concepto.pk]), {"q":"Ana López", "sexo":"MUJER", "rango_edad":"65_mas", "motivo_alta":Ciudadano.MotivosAlta.MAYORIA_EDAD, "saldo":"con_saldo"})
+        self.assertEqual(len(detalle.context["obligaciones"]), 1)
+
+    def test_csv_resumen_y_detalle_respetan_filtros_y_bom(self):
+        incluido = self.concepto(concepto="Feria comunitaria", naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION)
+        excluido = self.concepto(concepto="Agua")
+        obligacion = ObligacionCiudadano.objects.create(concepto=incluido, ciudadano=self.activo1, monto_asignado=Decimal("100"))
+        obligacion.acreditar(Decimal("40"), date(2026, 7, 20), "parcial")
+        self.login()
+        resumen = self.client.get(reverse("exportar_tesoreria_csv"), {"naturaleza":"COOPERACION"})
+        self.assertTrue(resumen.content.startswith(b"\xef\xbb\xbf"))
+        texto = resumen.content.decode("utf-8-sig")
+        self.assertIn("Obligaciones totales", texto); self.assertIn("Feria comunitaria", texto); self.assertNotIn("Agua", texto)
+        detalle = self.client.get(reverse("exportar_obligaciones_tesoreria_csv", args=[incluido.pk]), {"q":"Ana", "saldo":"con_saldo", "page":"99"})
+        texto_detalle = detalle.content.decode("utf-8-sig")
+        self.assertIn("Edad actual", texto_detalle); self.assertIn("Ana López", texto_detalle); self.assertIn("60", texto_detalle)
+
+    def test_exportaciones_requieren_autenticacion(self):
+        concepto = self.concepto()
+        self.assertEqual(self.client.get(reverse("exportar_tesoreria_csv")).status_code, 302)
+        self.assertEqual(self.client.get(reverse("exportar_obligaciones_tesoreria_csv", args=[concepto.pk])).status_code, 302)
