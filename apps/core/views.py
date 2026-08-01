@@ -1,4 +1,6 @@
 import csv
+import calendar
+from datetime import date
 from decimal import Decimal
 from itertools import chain
 from urllib.parse import urlencode
@@ -45,6 +47,40 @@ def _ciudadanos_operativos_queryset():
     )
 
 
+def _anios_antes(fecha, anios):
+    """Return a birthday cutoff, including Feb 29 safely."""
+    year = fecha.year - anios
+    return fecha.replace(year=year, day=min(fecha.day, calendar.monthrange(year, fecha.month)[1]))
+
+
+def _filtro_edad_efectiva(rango, hoy=None):
+    """Build an ORM-only filter, preferring birth date over manual age."""
+    hoy = hoy or timezone.localdate()
+    sin_fecha = Q(fecha_nacimiento__isnull=True)
+    rangos = {
+        "menores_18": (0, 17),
+        "18_29": (18, 29),
+        "30_49": (30, 49),
+        "50_64": (50, 64),
+        "65_mas": (65, None),
+    }
+    if rango == "sin_informacion":
+        return sin_fecha & Q(edad__isnull=True)
+    if rango == "sin_fecha":
+        return sin_fecha
+    if rango not in rangos:
+        return None
+
+    minimo, maximo = rangos[rango]
+    fecha_q = Q(fecha_nacimiento__lte=_anios_antes(hoy, minimo))
+    manual_q = Q(edad__gte=minimo)
+    if maximo is not None:
+        # Someone older than maximo+1 has a birth date on or before this cutoff.
+        fecha_q &= Q(fecha_nacimiento__gt=_anios_antes(hoy, maximo + 1))
+        manual_q &= Q(edad__lte=maximo)
+    return fecha_q | (sin_fecha & manual_q)
+
+
 def _filtrar_ciudadanos_operativos(queryset, params):
     q = params.get("q", "").strip()
     estado = params.get("estado", "todos")
@@ -52,6 +88,9 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     adeudo = params.get("adeudo", "todos")
     manzana = params.get("manzana", "todas")
     motivo_alta = params.get("motivo_alta", "todos")
+    sexo = params.get("sexo", "todos")
+    rango_edad = params.get("rango_edad", "todas")
+    fecha_nacimiento = params.get("fecha_nacimiento", "todas")
 
     if q:
         search_filter = (
@@ -88,6 +127,19 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     elif motivo_alta in motivos_validos:
         queryset = queryset.filter(motivo_alta=motivo_alta)
 
+    sexos_validos = {value for value, _label in Ciudadano.Sexos.choices}
+    if sexo in sexos_validos:
+        queryset = queryset.filter(sexo=sexo)
+
+    filtro_edad = _filtro_edad_efectiva(rango_edad)
+    if filtro_edad is not None:
+        queryset = queryset.filter(filtro_edad)
+
+    if fecha_nacimiento == "con_fecha":
+        queryset = queryset.filter(fecha_nacimiento__isnull=False)
+    elif fecha_nacimiento == "sin_fecha":
+        queryset = queryset.filter(fecha_nacimiento__isnull=True)
+
     ordering = params.get("orden", "nombre")
     orderings = {
         "nombre": ["apellido_paterno", "apellido_materno", "nombre", "pk"],
@@ -115,10 +167,14 @@ def padron_ciudadanos(request):
             "adeudo": request.GET.get("adeudo", "todos"),
             "manzana": request.GET.get("manzana", "todas"),
             "motivo_alta": request.GET.get("motivo_alta", "todos"),
+            "sexo": request.GET.get("sexo", "todos"),
+            "rango_edad": request.GET.get("rango_edad", "todas"),
+            "fecha_nacimiento": request.GET.get("fecha_nacimiento", "todas"),
             "orden": request.GET.get("orden", "nombre"),
         },
         "manzanas": Manzana.objects.filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
         "motivos_alta": Ciudadano.MotivosAlta.choices,
+        "sexos": Ciudadano.Sexos.choices,
         "motivo_alta_permite_vacio": Ciudadano._meta.get_field("motivo_alta").blank,
         "pagination_querystring": pagination_params.urlencode(),
         "metricas": {
@@ -163,7 +219,12 @@ def exportar_ciudadanos_csv(request):
         "Nombre completo",
         "No. de contrato",
         "Manzana",
-        "Edad",
+        "Fecha de nacimiento",
+        "Edad registrada",
+        "Edad actual",
+        "Sexo",
+        "Motivo de alta",
+        "Labor social",
         "Estado",
         "Fecha de registro",
     ])
@@ -177,7 +238,12 @@ def exportar_ciudadanos_csv(request):
             ciudadano.nombre_completo,
             ciudadano.numero_contrato or "",
             ciudadano.manzana.nombre if ciudadano.manzana else "Sin asignar",
-            ciudadano.edad,
+            ciudadano.fecha_nacimiento.isoformat() if ciudadano.fecha_nacimiento else "",
+            ciudadano.edad if ciudadano.edad is not None else "",
+            ciudadano.edad_actual if ciudadano.edad_actual is not None else "Sin información",
+            ciudadano.get_sexo_display(),
+            ciudadano.get_motivo_alta_display() or "Sin motivo registrado",
+            ciudadano.labor_social,
             "Activo" if ciudadano.activo else "Inactivo",
             timezone.localtime(ciudadano.created_at).strftime("%Y-%m-%d %H:%M"),
         ])

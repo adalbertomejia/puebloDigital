@@ -107,6 +107,7 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "apellido_materno",
             "edad",
             "fecha_nacimiento",
+            "sexo",
             "numero_contrato",
             "manzana",
             "labor_social",
@@ -124,7 +125,7 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "nombre": "Nombre",
             "apellido_paterno": "Apellido paterno",
             "apellido_materno": "Apellido materno",
-            "edad": "Edad",
+            "edad": "Edad registrada",
             "fecha_nacimiento": "Fecha de nacimiento",
             "numero_contrato": "No. de contrato",
             "motivo_alta": "Motivo de alta",
@@ -133,8 +134,8 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "observaciones": "Observaciones",
         }
         help_texts = {
-            "edad": "Dato requerido para identificar correctamente a la persona.",
-            "fecha_nacimiento": "Opcional; úsala si la secretaría cuenta con la fecha exacta.",
+            "edad": "Dato heredado opcional; se usa solo cuando no hay fecha de nacimiento.",
+            "fecha_nacimiento": "Cuando existe, determina automáticamente la edad actual.",
             "numero_contrato": "Opcional; admite letras, guiones y ceros iniciales.",
             "manzana": "Opcional; selecciona la manzana identificada para el ciudadano.",
             "motivo_alta": "Selecciona la razón por la que la persona se incorpora al padrón.",
