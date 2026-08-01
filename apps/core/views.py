@@ -1623,16 +1623,22 @@ def resumen_aportaciones(request):
     if comite_contexto: etiquetas_contexto.append(comite_contexto.nombre)
     if filtros["concepto"]: etiquetas_contexto.append(f"Concepto: {filtros['concepto']}")
     if filtros["ciudadano"]: etiquetas_contexto.append(f"Ciudadano: {filtros['ciudadano']}")
-    conceptos_page = _pagina_aportaciones(request, por_concepto, "conceptos_page", 10)
-    for fila in conceptos_page:
+    # El resumen por concepto es una agregación compacta: no carga obligaciones ni
+    # ciudadanos individuales y permite recorrer el conjunto sin consultas N+1.
+    conceptos_resumen = list(por_concepto)
+    for fila in conceptos_resumen:
         fila["tesoreria_url"] = reverse("tesoreria_concepto_detalle", args=[fila["obligacion__concepto_id"]])
+    conceptos_page = _pagina_aportaciones(request, conceptos_resumen, "conceptos_page", 10)
     compatibles = {k: v for k, v in filtros.items() if k in {"naturaleza", "alcance", "manzana", "comite", "mes", "anio"} and v not in ("todos", "todas", "")}
     if fila_general: fila_general["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'GENERAL'})}"
     for fila in por_manzana:
         fila["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'MANZANA', 'manzana': fila['manzana_id']})}"
     return render(request, "dashboard/resumen_aportaciones.html", {
         "metricas": metricas,
+        "conceptos_resumen": conceptos_resumen,
+        # Alias conservado para integraciones que consumían el contexto anterior.
         "conceptos_page": conceptos_page,
+        "cantidad_conceptos": len(conceptos_resumen),
         "manzanas_resumen": por_manzana, "movimientos_recientes": movimientos,
         "fila_general": fila_general,
         "manzanas_mostradas": len(por_manzana),
