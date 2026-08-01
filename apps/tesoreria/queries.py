@@ -117,3 +117,37 @@ def aplicar_filtros_obligaciones(queryset, params):
     elif params.get("saldo") == "sin_saldo":
         queryset = queryset.filter(saldo_pendiente_calc=0)
     return queryset.order_by("ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk")
+
+
+def aplicar_filtros_aportaciones(queryset, params):
+    """Aplica una única interpretación de los filtros a movimientos de Abono."""
+    if params.get("mes", "todos").isdigit():
+        queryset = queryset.filter(fecha__month=int(params["mes"]))
+    if params.get("anio", "todos").isdigit():
+        queryset = queryset.filter(fecha__year=int(params["anio"]))
+    if params.get("naturaleza") in dict(ConceptoTesoreria.Naturalezas.choices):
+        queryset = queryset.filter(obligacion__concepto__naturaleza=params["naturaleza"])
+    if params.get("alcance") in dict(ConceptoTesoreria.Alcances.choices):
+        queryset = queryset.filter(obligacion__concepto__alcance=params["alcance"])
+    if params.get("manzana", "todas").isdigit():
+        # El territorio es el conservado por el concepto, no el domicilio actual.
+        queryset = queryset.filter(obligacion__concepto__manzana_id=int(params["manzana"]))
+    if params.get("comite", "todos").isdigit():
+        queryset = queryset.filter(obligacion__concepto__comite_id=int(params["comite"]))
+    concepto = params.get("concepto", "").strip()
+    if concepto:
+        queryset = queryset.filter(obligacion__concepto__concepto__icontains=concepto)
+    ciudadano = params.get("ciudadano", "").strip()
+    for termino in ciudadano.split():
+        queryset = queryset.filter(
+            Q(obligacion__ciudadano__nombre__icontains=termino)
+            | Q(obligacion__ciudadano__apellido_paterno__icontains=termino)
+            | Q(obligacion__ciudadano__apellido_materno__icontains=termino)
+            | Q(obligacion__ciudadano__numero_contrato__icontains=termino)
+        )
+    return queryset
+
+
+def abonos_filtrados(params):
+    """QuerySet base reutilizado por la vista, sus agregados y el CSV."""
+    return aplicar_filtros_aportaciones(Abono.objects.all(), params)
