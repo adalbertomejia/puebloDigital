@@ -590,7 +590,7 @@ class ResumenAportacionesTests(TestCase):
             "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
             "Todavía no hay aportaciones territoriales para este periodo.",
             "No hay movimientos recientes con los filtros seleccionados.",
-            "No se encontraron ciudadanos con aportaciones en este periodo.",
+            "No se encontraron ciudadanos con aportaciones para los filtros seleccionados.",
         ):
             self.assertContains(response, mensaje)
 
@@ -604,3 +604,38 @@ class ResumenAportacionesTests(TestCase):
         self.assertIn("Demo", header)
         self.assertNotIn("analytics-card__controls", header)
         self.assertNotIn("analytics-card__metrics", metrics)
+
+    def test_controles_locales_validan_limites_y_son_independientes(self):
+        for limite in (5, 10, 20, 50, 100):
+            with self.subTest(limite=limite):
+                self.assertEqual(self.get({"limite_ciudadanos": str(limite)}).context["limite_ciudadanos_actual"], limite)
+        for invalido in ("7", "-5", "texto"):
+            with self.subTest(invalido=invalido):
+                self.assertEqual(self.get({"limite_ciudadanos": invalido}).context["limite_ciudadanos_actual"], 10)
+        for limite in (10, 25, 50, 100):
+            with self.subTest(limite=limite):
+                self.assertEqual(self.get({"limite_movimientos": str(limite)}).context["limite_movimientos_actual"], limite)
+        contexto = self.get({"limite_ciudadanos": "20", "orden_ciudadanos": "reciente", "limite_movimientos": "50"}).context
+        self.assertEqual(contexto["limite_ciudadanos_actual"], 20)
+        self.assertEqual(contexto["orden_ciudadanos_actual"], "reciente")
+        self.assertEqual(contexto["limite_movimientos_actual"], 50)
+
+    def test_totales_visibles_y_contexto_seguro_de_formularios(self):
+        response = self.get({
+            "naturaleza": "COOPERACION", "limite_ciudadanos": "5",
+            "orden_ciudadanos": "movimientos", "limite_movimientos": "10", "desconocido": "no reenviar",
+        })
+        self.assertEqual(response.context["monto_ciudadanos_visible"], Decimal("75"))
+        self.assertEqual(response.context["aportaciones_ciudadanos_visibles"], 2)
+        self.assertEqual(response.context["monto_movimientos_visible"], Decimal("75"))
+        nombres = {campo["name"] for campo in response.context["campos_control_movimientos"]}
+        self.assertIn("limite_ciudadanos", nombres)
+        self.assertIn("orden_ciudadanos", nombres)
+        self.assertNotIn("desconocido", nombres)
+
+    def test_csv_no_se_limita_por_controles_locales(self):
+        self.client.login(username="consulta", password="pw")
+        response = self.client.get(reverse("exportar_aportaciones_csv"), {
+            "limite_ciudadanos": "5", "orden_ciudadanos": "reciente", "limite_movimientos": "10",
+        })
+        self.assertEqual(len(response.content.decode("utf-8-sig").splitlines()), 4)
