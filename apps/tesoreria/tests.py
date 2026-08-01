@@ -129,6 +129,98 @@ class TesoreriaOperativaTests(TestCase):
         self.generar(concepto)
         self.assertEqual(concepto.obligaciones.count(), 2)
 
+    def test_generacion_territorial_excluye_fuera_del_alcance(self):
+        manzana_4 = Manzana.objects.create(nombre="Manzana 4")
+        otra = Manzana.objects.create(nombre="Manzana 2")
+        self.activo1.manzana = manzana_4
+        self.activo1.save()
+        self.activo2.manzana = otra
+        self.activo2.save()
+        inactivo_local = Ciudadano.objects.create(
+            nombre="Dora", apellido_paterno="Local", edad=40, activo=False, manzana=manzana_4
+        )
+        sin_manzana = Ciudadano.objects.create(
+            nombre="Eva", apellido_paterno="Sin manzana", edad=40, activo=True
+        )
+        concepto = self.concepto(
+            alcance=ConceptoTesoreria.Alcances.MANZANA,
+            manzana=manzana_4,
+            monto_individual=Decimal("500.00"),
+        )
+
+        response = self.generar(concepto)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertQuerySetEqual(
+            concepto.obligaciones.values_list("ciudadano_id", flat=True),
+            [self.activo1.pk],
+            transform=lambda value: value,
+            ordered=False,
+        )
+        obligacion = concepto.obligaciones.get()
+        self.assertEqual(obligacion.monto_asignado, Decimal("500.00"))
+        self.assertEqual(obligacion.estado, ObligacionCiudadano.Estados.PENDIENTE)
+        self.assertNotIn(inactivo_local.pk, [obligacion.ciudadano_id])
+        self.assertNotIn(sin_manzana.pk, [obligacion.ciudadano_id])
+        self.assertIn("Manzana 4", list(response.wsgi_request._messages)[0].message)
+
+    def test_regenerar_preserva_historial_y_crea_solo_el_faltante(self):
+        concepto = self.concepto()
+        concepto.registros_generados = True
+        concepto.save()
+        self.generar(concepto)
+        obligacion = concepto.obligaciones.get(ciudadano=self.activo1)
+        obligacion.monto_asignado = Decimal("80.00")
+        obligacion.notas = "Convenio histórico"
+        obligacion.save()
+        abono = obligacion.acreditar(Decimal("20.00"))
+        nuevo = Ciudadano.objects.create(
+            nombre="Fabián", apellido_paterno="Nuevo", edad=25, activo=True
+        )
+
+        self.generar(concepto)
+
+        obligacion.refresh_from_db()
+        self.assertEqual(concepto.obligaciones.count(), 3)
+        self.assertEqual(obligacion.monto_asignado, Decimal("80.00"))
+        self.assertEqual(obligacion.estado, ObligacionCiudadano.Estados.PENDIENTE)
+        self.assertEqual(obligacion.notas, "Convenio histórico")
+        self.assertTrue(Abono.objects.filter(pk=abono.pk).exists())
+        self.assertEqual(concepto.obligaciones.get(ciudadano=nuevo).monto_asignado, Decimal("100.00"))
+
+    def test_bandera_falsa_no_duplica_y_cambios_del_ciudadano_no_borran(self):
+        manzana = Manzana.objects.create(nombre="Manzana 4")
+        self.activo1.manzana = manzana
+        self.activo1.save()
+        concepto = self.concepto(alcance=ConceptoTesoreria.Alcances.MANZANA, manzana=manzana)
+        ObligacionCiudadano.objects.create(
+            concepto=concepto, ciudadano=self.activo1, monto_asignado=concepto.monto_individual
+        )
+        self.activo1.manzana = None
+        self.activo1.activo = False
+        self.activo1.save()
+
+        self.generar(concepto)
+
+        self.assertFalse(concepto.registros_generados)
+        self.assertEqual(concepto.obligaciones.filter(ciudadano=self.activo1).count(), 1)
+
+    def test_accion_es_post_autenticada_y_mensajes_vacios_o_existentes(self):
+        concepto = self.concepto()
+        url = reverse("generar_obligaciones_tesoreria", args=[concepto.pk])
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.assertEqual(concepto.obligaciones.count(), 0)
+        self.login()
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.generar(concepto)
+        response = self.generar(concepto)
+        self.assertIn("ya estaban generadas", list(response.wsgi_request._messages)[-1].message)
+
+        Ciudadano.objects.update(activo=False)
+        vacio = self.concepto(concepto="Vacío")
+        response = self.generar(vacio)
+        self.assertIn("No existen ciudadanos activos", list(response.wsgi_request._messages)[-1].message)
+
     def test_pago_completo_y_estado_pagado(self):
         concepto = self.concepto()
         self.generar(concepto)
