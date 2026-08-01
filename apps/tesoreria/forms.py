@@ -3,16 +3,19 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.core.forms import DashboardFormMixin
+from apps.operacion.alcance import manzanas_disponibles_para_instancia
 from .models import Abono, ConceptoTesoreria
 
 
 class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = ConceptoTesoreria
-        fields = ["naturaleza", "comite", "concepto", "descripcion", "monto_individual", "fecha", "anio_periodo"]
+        fields = ["naturaleza", "alcance", "manzana", "comite", "concepto", "descripcion", "monto_individual", "fecha", "anio_periodo"]
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "descripcion": forms.Textarea(attrs={"rows": 4})}
         labels = {
             "naturaleza": "Pago o Cooperación",
+            "alcance": "Alcance",
+            "manzana": "Manzana",
             "comite": "Comité",
             "concepto": "Concepto",
             "descripcion": "Descripción",
@@ -23,6 +26,8 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
+        self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()
 
 
