@@ -16,7 +16,7 @@
   <a href="?manzana=sin_asignar" class="pd-metric"><p class="pd-metric__label">Sin manzana</p><p class="pd-metric__value">{{ metricas.sin_manzana }}</p><span class="pd-muted">{{ metricas.activos_sin_manzana }} activos</span></a>
 </section>
 
-<section class="pd-panel" style="margin-bottom: 1.5rem" aria-labelledby="filtros-title">
+<section class="pd-panel pd-filter-panel" aria-labelledby="filtros-title">
   <h2 id="filtros-title" class="pd-section-title">Filtrar y ordenar resultados</h2>
   <form method="get" class="pd-form-grid">
     <div class="pd-form-group pd-form-group--wide"><label for="padron-q">Búsqueda principal</label><span id="padron-q-hint" class="pd-hint">Busca por nombre, apellidos o número de contrato.</span><input class="pd-input" id="padron-q" type="search" name="q" value="{{ filtros.q }}" aria-describedby="padron-q-hint"></div>

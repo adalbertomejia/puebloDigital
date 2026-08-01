@@ -42,18 +42,10 @@
   <div class="pd-stack">
     <h2 class="pd-section-title">Resultados de ciudadanos</h2>
     {% for c in ciudadanos %}
-      <article class="pd-panel">
-        <div class="flex flex-wrap justify-between gap-3">
-          <div><h3 style="margin-bottom: .25rem">{{ c.nombre_completo }}</h3><p class="pd-muted">{{ c.edad }} años · Contrato: {{ c.numero_contrato|default:'Sin registro' }} · Manzana: {{ c.manzana|default:'Sin asignar' }}</p></div>
-          <span class="pd-tag {% if c.activo %}pd-tag--active{% else %}pd-tag--inactive{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
-        </div>
-        <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm">
-          <p><strong>Último pago:</strong><br>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</p>
-          <p><strong>Adeudos faena:</strong><br>{{ c.adeudos_faena }}</p>
-          <p><strong>Última faena:</strong><br>{{ c.ultima_faena_fecha|default:'Sin registro' }}</p>
-          <p><strong>Toma:</strong><br>{{ c.toma.numero_toma|default:'Sin toma' }}</p>
-        </div>
-        <div class="pd-actions"><a href="{% url 'perfil_ciudadano' c.pk %}" class="pd-button pd-button--primary">Ver expediente</a><a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="pd-button pd-button--secondary">Editar ciudadano</a></div>
+      <article class="pd-card">
+        <header class="pd-card__header"><div class="flex flex-wrap justify-between gap-3"><div><p class="pd-card__eyebrow">Ciudadano</p><h3 class="pd-card__title">{{ c.nombre_completo }}</h3><p class="pd-card__meta">{{ c.edad }} años · Contrato {{ c.numero_contrato|default:'Sin registro' }}</p></div><span class="pd-tag {% if c.activo %}pd-tag--success{% else %}pd-tag--danger{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span></div></header>
+        <div class="pd-card__body"><div class="pd-info-grid"><div class="pd-info-item"><span class="pd-info-item__label">Manzana</span><span class="pd-info-item__value">{{ c.manzana|default:'Sin asignar' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Toma de agua</span><span class="pd-info-item__value">{{ c.toma.numero_toma|default:'Sin toma' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Último pago</span><span class="pd-info-item__value">{{ c.ultimo_pago_fecha|default:'Sin registro' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Última faena</span><span class="pd-info-item__value">{{ c.ultima_faena_fecha|default:'Sin registro' }}</span></div></div><div class="pd-card__metrics"><div class="pd-metric"><p class="pd-metric__label">Adeudos de faena</p><p class="pd-metric__value">{{ c.adeudos_faena }}</p></div></div></div>
+        <footer class="pd-card__footer"><div class="pd-actions"><a href="{% url 'perfil_ciudadano' c.pk %}" class="pd-button pd-button--primary">Ver expediente</a><a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="pd-button pd-button--secondary">Editar ciudadano</a></div></footer>
       </article>
     {% empty %}<div class="pd-panel"><p>No se encontraron ciudadanos para este criterio.</p></div>{% endfor %}
   </div>
