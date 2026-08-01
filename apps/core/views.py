@@ -1415,8 +1415,48 @@ def _filtros_aportaciones(params):
     }
 
 
+def _opcion_entera(valor, *, permitidos, predeterminado):
+    """Devuelve solamente límites conocidos para evitar cargas arbitrarias."""
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return predeterminado
+    return numero if numero in permitidos else predeterminado
+
+
+def _opcion(valor, *, permitidos, predeterminado):
+    return valor if valor in permitidos else predeterminado
+
+
+def _campos_contexto_aportaciones(filtros, controles, *, excluir=()):
+    """Campos GET validados que un formulario local puede reenviar con seguridad."""
+    campos = {**filtros, **controles}
+    return [
+        {"name": nombre, "value": valor}
+        for nombre, valor in campos.items()
+        if nombre not in excluir and valor not in (None, "")
+    ]
+
+
 @login_required
 def resumen_aportaciones(request):
+    opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
+    opciones_limite_movimientos = (10, 25, 50, 100)
+    opciones_orden_ciudadanos = (
+        ("monto", "Mayor monto aportado"),
+        ("movimientos", "Mayor cantidad de aportaciones"),
+        ("reciente", "Aportación más reciente"),
+    )
+    limite_ciudadanos = _opcion_entera(
+        request.GET.get("limite_ciudadanos"), permitidos=opciones_limite_ciudadanos, predeterminado=10,
+    )
+    limite_movimientos = _opcion_entera(
+        request.GET.get("limite_movimientos"), permitidos=opciones_limite_movimientos, predeterminado=25,
+    )
+    orden_ciudadanos = _opcion(
+        request.GET.get("orden_ciudadanos"),
+        permitidos={valor for valor, _ in opciones_orden_ciudadanos}, predeterminado="monto",
+    )
     base = abonos_filtrados(request.GET)
     dinero = DecimalField(max_digits=14, decimal_places=2)
     cero = Value(Decimal("0.00"), output_field=dinero)
@@ -1444,29 +1484,62 @@ def resumen_aportaciones(request):
             Cast(F("total_recibido"), FloatField()) / F("ciudadanos_distintos"), output_field=dinero,
         )
     ).order_by("-total_recibido", "obligacion__concepto__manzana__nombre")
-    mayores = base.values(
+    mayores_qs = base.values(
         "obligacion__ciudadano_id", "obligacion__ciudadano__nombre", "obligacion__ciudadano__apellido_paterno",
         "obligacion__ciudadano__apellido_materno", "obligacion__ciudadano__manzana__nombre",
     ).annotate(
         total_abonado=Coalesce(Sum("monto"), cero), cantidad_aportaciones=Count("pk"), ultima_aportacion=Max("fecha"),
-    ).order_by("-total_abonado", "obligacion__ciudadano__apellido_paterno")[:10]
-    movimientos = base.select_related(
+    )
+    ordenes_ciudadanos = {
+        "monto": ("-total_abonado", "-cantidad_aportaciones", "obligacion__ciudadano__nombre", "obligacion__ciudadano_id"),
+        "movimientos": ("-cantidad_aportaciones", "-total_abonado", "obligacion__ciudadano__nombre", "obligacion__ciudadano_id"),
+        "reciente": ("-ultima_aportacion", "-total_abonado", "obligacion__ciudadano_id"),
+    }
+    mayores = list(mayores_qs.order_by(*ordenes_ciudadanos[orden_ciudadanos])[:limite_ciudadanos])
+    movimientos = list(base.select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
         "obligacion__concepto__manzana", "obligacion__concepto__comite",
-    ).order_by("-fecha", "-created_at", "-pk")
+    ).order_by("-fecha", "-created_at", "-pk")[:limite_movimientos])
     filtros = _filtros_aportaciones(request.GET)
+    controles = {
+        "limite_ciudadanos": limite_ciudadanos,
+        "orden_ciudadanos": orden_ciudadanos,
+        "limite_movimientos": limite_movimientos,
+    }
+    monto_ciudadanos_visible = sum((fila["total_abonado"] for fila in mayores), Decimal("0.00"))
+    aportaciones_ciudadanos_visibles = sum(fila["cantidad_aportaciones"] for fila in mayores)
+    monto_movimientos_visible = sum((abono.monto for abono in movimientos), Decimal("0.00"))
     export_params = request.GET.copy()
-    for parametro in ("page", "conceptos_page", "movimientos_page"):
+    for parametro in ("page", "conceptos_page", "movimientos_page", *controles):
         export_params.pop(parametro, None)
     return render(request, "dashboard/resumen_aportaciones.html", {
         "metricas": metricas,
         "conceptos_page": _pagina_aportaciones(request, por_concepto, "conceptos_page", 10),
-        "manzanas_resumen": por_manzana, "movimientos_page": _pagina_aportaciones(request, movimientos, "movimientos_page", 25),
+        "manzanas_resumen": por_manzana, "movimientos_recientes": movimientos,
+        # Alias temporal para consumidores del contexto de la Iteración 1; ya no es una Page.
+        "movimientos_page": movimientos,
         "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
         "anios": Abono.objects.dates("fecha", "year", order="DESC"), "comites": Comite.objects.filter(activo=True),
         "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
         "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
         "export_querystring": export_params.urlencode(),
+        "limite_ciudadanos_actual": limite_ciudadanos,
+        "opciones_limite_ciudadanos": opciones_limite_ciudadanos,
+        "orden_ciudadanos_actual": orden_ciudadanos,
+        "opciones_orden_ciudadanos": opciones_orden_ciudadanos,
+        "orden_ciudadanos_etiqueta": dict(opciones_orden_ciudadanos)[orden_ciudadanos],
+        "limite_movimientos_actual": limite_movimientos,
+        "opciones_limite_movimientos": opciones_limite_movimientos,
+        "monto_ciudadanos_visible": monto_ciudadanos_visible,
+        "aportaciones_ciudadanos_visibles": aportaciones_ciudadanos_visibles,
+        "monto_movimientos_visible": monto_movimientos_visible,
+        "fecha_movimiento_mas_reciente": movimientos[0].fecha if movimientos else None,
+        "campos_control_ciudadanos": _campos_contexto_aportaciones(
+            filtros, controles, excluir=("limite_ciudadanos", "orden_ciudadanos"),
+        ),
+        "campos_control_movimientos": _campos_contexto_aportaciones(
+            filtros, controles, excluir=("limite_movimientos",),
+        ),
     })
 
 
