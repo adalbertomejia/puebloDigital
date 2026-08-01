@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
@@ -17,6 +18,7 @@ from django.db.models.functions import ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from apps.agua.models import Toma
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
@@ -26,6 +28,7 @@ from apps.operacion.services import (
     generar_participantes_junta,
 )
 from apps.tesoreria.models import Cooperacion, Pago
+from apps.tesoreria.services import generar_obligaciones_faltantes
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
@@ -1431,22 +1434,35 @@ def eliminar_concepto_tesoreria(request, pk):
 
 
 @login_required
+@require_POST
 def generar_obligaciones_tesoreria(request, pk):
-    if request.method != "POST":
-        return redirect("tesoreria_operativa")
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para generar obligaciones.")
         return redirect("tesoreria_operativa")
-    concepto = get_object_or_404(ConceptoTesoreria, pk=pk)
-    with transaction.atomic():
-        ids = list(Ciudadano.objects.filter(activo=True).values_list("id", flat=True))
-        existentes = set(ObligacionCiudadano.objects.filter(concepto=concepto, ciudadano_id__in=ids).values_list("ciudadano_id", flat=True))
-        nuevos = [ObligacionCiudadano(concepto=concepto, ciudadano_id=i, monto_asignado=concepto.monto_individual) for i in ids if i not in existentes]
-        if nuevos:
-            ObligacionCiudadano.objects.bulk_create(nuevos, batch_size=500)
-        concepto.registros_generados = True
-        concepto.save(update_fields=["registros_generados", "updated_at"])
-    messages.success(request, f"Se crearon {len(nuevos)} obligaciones. {len(existentes)} obligaciones ya existían y fueron omitidas.")
+    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("manzana"), pk=pk)
+    try:
+        resultado = generar_obligaciones_faltantes(concepto)
+    except ValidationError as error:
+        detalle = "; ".join(error.messages)
+        messages.error(request, f"No se generaron obligaciones: {detalle}")
+        return redirect("tesoreria_operativa")
+
+    if resultado.total_objetivo == 0:
+        messages.warning(request, "No existen ciudadanos activos para el alcance seleccionado.")
+    elif resultado.creados == 0:
+        messages.info(request, "Todas las obligaciones del alcance seleccionado ya estaban generadas.")
+    elif resultado.existentes:
+        messages.success(
+            request,
+            f"Se crearon {resultado.creados} obligaciones. {resultado.existentes} ya existían.",
+        )
+    else:
+        territorio = (
+            str(concepto.manzana)
+            if concepto.alcance == concepto.Alcances.MANZANA
+            else "toda la comunidad"
+        )
+        messages.success(request, f"Se crearon {resultado.creados} obligaciones para {territorio}.")
     return redirect("tesoreria_operativa")
 
 
