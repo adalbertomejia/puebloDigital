@@ -343,3 +343,28 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
   .contributions-chart { height: clamp(19rem, 60vw, 26rem); }
 }
 @media (max-width: 639px) { .contributions-chart { height: 20rem; padding: .75rem; } }
+
+/* Búsqueda operativa de movimientos. */
+.search-contributions__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; padding: 1.25rem; border: 1px solid #c7d2fe; border-radius: 1rem; background: #eef2ff; }
+.search-contributions__header h1 { color: #312e81; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; }
+.search-contributions__header p { color: #475569; }
+.search-contributions__eyebrow { color: #4338ca !important; font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.search-contributions__form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; align-items: end; }
+.search-contributions__primary { grid-column: 1 / -1; }
+.search-contributions__primary label { display: block; margin-bottom: .3rem; font-weight: 800; }
+.search-contributions__primary input { font-size: 1.05rem; border-color: #a5b4fc; }
+.search-contributions__actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.search-contributions__loading { display: none; color: #475569; font-size: .85rem; }
+.is-loading .search-contributions__loading { display: inline; }
+.search-context { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #c7d2fe; border-radius: .75rem; background: #eef2ff; color: #312e81; font-size: .9rem; }
+.search-context a { flex: none; font-weight: 700; text-decoration: underline; }
+.search-results-table { overflow-x: auto; }
+.search-results-table table { min-width: 70rem; }
+.search-status { display: inline-flex; padding: .2rem .55rem; border-radius: 999px; background: #f1f5f9; color: #334155; font-size: .75rem; font-weight: 800; }
+.search-status--pagado { background: #dcfce7; color: #166534; }
+.search-status--pendiente { background: #fef3c7; color: #92400e; }
+.search-status--cancelado { background: #fee2e2; color: #991b1b; }
+.search-dynamic-error { margin-bottom: .75rem; padding: .75rem; border-radius: .75rem; background: #fff1f2; color: #9f1239; }
+@media (max-width: 900px) { .search-contributions__form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .search-contributions__header { align-items: stretch; flex-direction: column; } .search-contributions__form { grid-template-columns: 1fr; } .search-context { flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { .search-contributions__loading { animation: none; } }

@@ -24,7 +24,7 @@
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#faenas">Faenas</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#juntas">Juntas</a>
           <a class="pd-navigation__link {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% endif %}" href="{% url 'tesoreria_operativa' %}" {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}aria-current="page"{% endif %}>Tesorería</a>
-          <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
+          <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' or request.resolver_match.url_name == 'buscar_aportaciones' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
           <a class="pd-navigation__link" href="{% url 'control_agua' %}" {% if request.resolver_match.url_name == 'control_agua' %}aria-current="page"{% endif %}>Agua</a>
         </nav>
       </div>

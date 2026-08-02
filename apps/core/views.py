@@ -37,7 +37,9 @@ from apps.tesoreria.queries import (
     anotar_conceptos,
     anotar_obligaciones,
     conceptos_filtrados,
+    buscar_movimientos_aportaciones,
 )
+from apps.tesoreria.forms import BuscarAportacionesForm
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
@@ -1532,6 +1534,67 @@ def _resumen_territorial(base, filtros, incluir_inactivas, orden):
     return filas, general
 
 
+def _querystring_sin_pagina(params, **cambios):
+    copia = params.copy()
+    copia.pop("pagina", None)
+    for clave, valor in cambios.items():
+        copia[clave] = valor
+    return copia.urlencode()
+
+
+@login_required
+def buscar_aportaciones(request):
+    """Coordina la búsqueda SSR y su respuesta parcial progresiva."""
+    manzanas = list(Manzana.objects.order_by("nombre"))
+    comites = list(Comite.objects.filter(activo=True).order_by("nombre"))
+    anios = {fecha.year for fecha in Abono.objects.dates("fecha", "year", order="DESC")}
+    if request.GET.get("anio", "").isdigit():
+        anios.add(int(request.GET["anio"]))
+    datos = request.GET.copy()
+    datos.setdefault("mes", "todos"); datos.setdefault("anio", "todos")
+    datos.setdefault("naturaleza", "todos"); datos.setdefault("alcance", "todos")
+    datos.setdefault("manzana", "todas"); datos.setdefault("comite", "todos")
+    datos.setdefault("estado", "todos"); datos.setdefault("orden", "reciente")
+    datos.setdefault("por_pagina", "25")
+    form = BuscarAportacionesForm(
+        datos, anios=sorted(anios, reverse=True), manzanas=manzanas,
+        comites=comites, meses=MESES,
+    )
+    filtros = form.cleaned_data if form.is_valid() else {}
+    movimientos = buscar_movimientos_aportaciones(filtros) if form.is_valid() else Abono.objects.none()
+    total = movimientos.count()
+    por_pagina = int(filtros.get("por_pagina") or 25) if form.is_valid() else 25
+    pagina = Paginator(movimientos, por_pagina).get_page(request.GET.get("pagina"))
+    params = request.GET.copy(); params.pop("pagina", None)
+    etiquetas = []
+    if filtros.get("anio") and filtros["anio"] != "todos": etiquetas.append(f"Año {filtros['anio']}")
+    if filtros.get("mes") and filtros["mes"] != "todos": etiquetas.append(dict((str(v), n) for v, n in MESES).get(filtros["mes"], filtros["mes"]))
+    if filtros.get("naturaleza") in dict(ConceptoTesoreria.Naturalezas.choices): etiquetas.append(dict(ConceptoTesoreria.Naturalezas.choices)[filtros["naturaleza"]])
+    if filtros.get("manzana") and filtros["manzana"] != "todas": etiquetas.append(next((str(m) for m in manzanas if str(m.pk) == filtros["manzana"]), ""))
+    if filtros.get("concepto"): etiquetas.append(f"Concepto: {filtros['concepto']}")
+    if filtros.get("estado") in dict(ObligacionCiudadano.Estados.choices): etiquetas.append(dict(ObligacionCiudadano.Estados.choices)[filtros["estado"]])
+    if filtros.get("fecha_inicial"): etiquetas.append(f"Desde {filtros['fecha_inicial'].strftime('%d/%m/%Y')}")
+    if filtros.get("fecha_final"): etiquetas.append(f"Hasta {filtros['fecha_final'].strftime('%d/%m/%Y')}")
+    if filtros.get("importe_minimo") is not None: etiquetas.append(f"Importe desde ${filtros['importe_minimo']:.2f}")
+    if filtros.get("importe_maximo") is not None: etiquetas.append(f"Importe hasta ${filtros['importe_maximo']:.2f}")
+    resumen_params = {
+        k: request.GET[k] for k in ("mes", "anio", "naturaleza", "alcance", "manzana", "comite", "concepto")
+        if request.GET.get(k) not in (None, "", "todos", "todas")
+    }
+    contexto = {
+        "form": form, "pagina": pagina, "cantidad_resultados": total,
+        "etiquetas_contexto": [e for e in etiquetas if e], "texto_busqueda": filtros.get("q", ""),
+        "hay_parametros": any(k not in {"orden", "por_pagina"} for k in request.GET),
+        "querystring": params.urlencode(),
+        "previous_querystring": _querystring_sin_pagina(request.GET, pagina=pagina.previous_page_number()) if pagina.has_previous() else "",
+        "next_querystring": _querystring_sin_pagina(request.GET, pagina=pagina.next_page_number()) if pagina.has_next() else "",
+        "resumen_querystring": urlencode(resumen_params),
+    }
+    if request.headers.get("HX-Request") == "true" or request.GET.get("parcial") == "1":
+        return render(request, "dashboard/partials/buscar_aportaciones_resultados.html", contexto)
+    return render(request, "dashboard/buscar_aportaciones.html", contexto)
+
+
 @login_required
 def resumen_aportaciones(request):
     opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
@@ -1622,6 +1685,13 @@ def resumen_aportaciones(request):
     export_params = request.GET.copy()
     for parametro in ("page", "conceptos_page", "ciudadanos_pagina", "movimientos_pagina", *controles, "limite_ciudadanos", "limite_movimientos"):
         export_params.pop(parametro, None)
+    buscar_params = {
+        k: v for k, v in filtros.items()
+        if k in {"mes", "anio", "naturaleza", "alcance", "manzana", "comite", "concepto"}
+        and v not in ("", "todos", "todas")
+    }
+    if filtros["ciudadano"]:
+        buscar_params["q"] = filtros["ciudadano"]
     params_retorno = {**{k: v for k, v in filtros.items() if v not in ("", "todos", "todas")}, **controles}
     return_to = f"{reverse('resumen_aportaciones')}?{urlencode(params_retorno)}"
     etiquetas_contexto = []
@@ -1697,6 +1767,7 @@ def resumen_aportaciones(request):
         "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
         "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
         "export_querystring": export_params.urlencode(),
+        "buscar_querystring": urlencode(buscar_params),
         "limite_ciudadanos_actual": ciudadanos_por_pagina,
         "ciudadanos_por_pagina": ciudadanos_por_pagina,
         "opciones_limite_ciudadanos": opciones_limite_ciudadanos,

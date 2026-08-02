@@ -39,6 +39,7 @@ from apps.core.views import (
     exportar_obligaciones_tesoreria_csv,
     resumen_aportaciones,
     exportar_aportaciones_csv,
+    buscar_aportaciones,
 )
 
 urlpatterns = [
@@ -55,6 +56,7 @@ urlpatterns = [
     path('agua/', control_agua, name='control_agua'),
     path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),
+    path('tesoreria/aportaciones/buscar/', buscar_aportaciones, name='buscar_aportaciones'),
     path('tesoreria/aportaciones/exportar-csv/', exportar_aportaciones_csv, name='exportar_aportaciones_csv'),
     path('tesoreria/nuevo/', crear_concepto_tesoreria, name='crear_concepto_tesoreria'),
     path('tesoreria/exportar-csv/', exportar_tesoreria_csv, name='exportar_tesoreria_csv'),

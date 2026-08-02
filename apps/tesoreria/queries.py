@@ -151,3 +151,47 @@ def aplicar_filtros_aportaciones(queryset, params):
 def abonos_filtrados(params):
     """QuerySet base reutilizado por la vista, sus agregados y el CSV."""
     return aplicar_filtros_aportaciones(Abono.objects.all(), params)
+
+
+def buscar_movimientos_aportaciones(filtros):
+    """Devuelve abonos reales filtrados; no mezcla obligaciones con movimientos."""
+    queryset = Abono.objects.select_related(
+        "obligacion__ciudadano", "obligacion__ciudadano__manzana",
+        "obligacion__concepto", "obligacion__concepto__manzana",
+    )
+    params = {
+        clave: str(valor) if valor is not None else ""
+        for clave, valor in filtros.items()
+        if clave in {"mes", "anio", "naturaleza", "alcance", "manzana", "comite", "concepto"}
+    }
+    queryset = aplicar_filtros_aportaciones(queryset, params)
+    texto = (filtros.get("q") or "").strip()
+    for termino in texto.split():
+        coincidencia = (
+            Q(obligacion__ciudadano__nombre__icontains=termino)
+            | Q(obligacion__ciudadano__apellido_paterno__icontains=termino)
+            | Q(obligacion__ciudadano__apellido_materno__icontains=termino)
+            | Q(obligacion__ciudadano__numero_contrato__icontains=termino)
+            | Q(obligacion__concepto__concepto__icontains=termino)
+            | Q(obligacion__concepto__descripcion__icontains=termino)
+        )
+        if termino.isdigit():
+            coincidencia |= Q(pk=int(termino))
+        queryset = queryset.filter(coincidencia)
+    if filtros.get("estado") in dict(ObligacionCiudadano.Estados.choices):
+        queryset = queryset.filter(obligacion__estado=filtros["estado"])
+    if filtros.get("fecha_inicial"):
+        queryset = queryset.filter(fecha__gte=filtros["fecha_inicial"])
+    if filtros.get("fecha_final"):
+        queryset = queryset.filter(fecha__lte=filtros["fecha_final"])
+    if filtros.get("importe_minimo") is not None:
+        queryset = queryset.filter(monto__gte=filtros["importe_minimo"])
+    if filtros.get("importe_maximo") is not None:
+        queryset = queryset.filter(monto__lte=filtros["importe_maximo"])
+    ordenes = {
+        "reciente": ("-fecha", "-pk"), "antiguo": ("fecha", "pk"),
+        "mayor_importe": ("-monto", "-fecha", "-pk"), "menor_importe": ("monto", "-fecha", "-pk"),
+        "ciudadano": ("obligacion__ciudadano__apellido_paterno", "obligacion__ciudadano__apellido_materno", "obligacion__ciudadano__nombre", "-fecha"),
+        "concepto": ("obligacion__concepto__concepto", "-fecha", "-pk"),
+    }
+    return queryset.order_by(*ordenes.get(filtros.get("orden"), ordenes["reciente"]))
