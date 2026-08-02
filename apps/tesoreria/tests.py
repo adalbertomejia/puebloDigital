@@ -752,8 +752,20 @@ class ResumenAportacionesTests(TestCase):
         self.assertTemplateUsed(partial, "dashboard/partials/buscar_aportaciones_resultados.html")
         self.assertNotContains(partial, "<h1>Buscar aportaciones</h1>", html=True)
         empty = self.buscar({"q": "persona inexistente"})
-        self.assertContains(empty, "No encontramos aportaciones que coincidan con estos filtros.")
-        self.assertContains(empty, "Limpiar filtros")
+        self.assertContains(empty, "No encontramos aportaciones que coincidan con esta búsqueda.")
+        self.assertContains(empty, "Limpiar búsqueda")
+        self.assertNotContains(empty, "Filtros aplicados:")
+
+        filtered = self.buscar({"q": "persona inexistente", "estado": "PENDIENTE"})
+        self.assertContains(filtered, "Filtros aplicados:")
+        self.assertContains(filtered, "Limpiar filtros y búsqueda")
+
+    def test_formulario_busqueda_tiene_destino_estable(self):
+        response = self.buscar({"q": "Ana"})
+        self.assertContains(
+            response,
+            f'action="{reverse("buscar_aportaciones")}"',
+        )
 
     def test_volver_al_resumen_conserva_filtros_generales(self):
         response = self.buscar({"anio": "2026", "naturaleza": "PAGO", "q": "Ana", "por_pagina": "10"})
