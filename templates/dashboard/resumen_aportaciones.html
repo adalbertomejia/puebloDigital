@@ -1,4 +1,5 @@
 {% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
 {% block title %}Resumen de aportaciones{% endblock %}
 {% block content %}
 <section class="mb-6 rounded-2xl border border-teal-200 bg-teal-50 p-4 md:p-5"><div class="flex items-start gap-3"><span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-xl text-teal-700" aria-hidden="true">↗</span><div><h1 class="text-2xl md:text-3xl font-bold text-teal-950">Resumen de aportaciones</h1><p class="mt-1 text-sm md:text-base text-teal-800/80">Consulta la participación económica registrada en la comunidad.</p></div></div></section>
@@ -15,9 +16,11 @@
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs font-semibold text-slate-500">Ciudadanos con aportaciones</p><p class="text-2xl font-bold">{{ metricas.ciudadanos_con_aportaciones }}</p><p class="text-xs text-slate-500">Personas distintas con al menos un abono registrado.</p></article>
 </section>
 
-<section class="bg-white rounded-2xl border p-4 md:p-5 mb-3" aria-labelledby="filters-title">
+<section class="contributions-layout" data-contributions-workspace>
+  <div class="contributions-layout__filters">
+<section class="contributions-filters bg-white rounded-2xl border p-4 md:p-5" aria-labelledby="filters-title">
   <h2 id="filters-title" class="font-bold">Filtros generales</h2><p class="text-sm text-slate-600 mb-3">Modifican toda la vista.</p>
-  <form method="get" class="grid md:grid-cols-2 xl:grid-cols-4 gap-3 items-end">
+  <form method="get" class="grid sm:grid-cols-2 gap-3 items-end">
     <input type="hidden" name="ciudadanos_por_pagina" value="{{ ciudadanos_por_pagina }}">
     <input type="hidden" name="orden_ciudadanos" value="{{ orden_ciudadanos_actual }}">
     <input type="hidden" name="movimientos_por_pagina" value="{{ movimientos_por_pagina }}">
@@ -37,8 +40,14 @@
   </form>
 </section>
 <aside class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-3" aria-label="Contexto analítico"><p class="text-sm text-teal-950"><strong>Analizando:</strong> {% if etiquetas_contexto %}{{ etiquetas_contexto|join:' · ' }}{% else %}toda la información disponible.{% endif %}</p><a href="{% url 'resumen_aportaciones' %}" class="font-semibold text-sm text-teal-800 underline">Limpiar filtros</a></aside>
-
-<section class="contributions-workspace" data-contributions-workspace>
+  </div>
+  <div class="contributions-layout__recent">
+    <article class="analytics-card recent-contributions" data-analytics-card="movimientos" aria-labelledby="movimientos-title">
+      <header class="analytics-card__header"><div class="analytics-card__heading"><h2 id="movimientos-title" class="analytics-card__title">Aportaciones recientes</h2><p class="analytics-card__description">Consulta los últimos abonos registrados en Tesorería.</p></div>{% if movimientos_recientes %}<form method="get" class="analytics-card__controls analytics-local-controls">{% for campo in campos_control_movimientos %}<input type="hidden" name="{{ campo.name }}" value="{{ campo.value }}">{% endfor %}<label>Mostrar <select name="movimientos_por_pagina" onchange="this.form.submit()">{% for cantidad in opciones_limite_movimientos %}<option value="{{ cantidad }}" {% if cantidad == movimientos_por_pagina %}selected{% endif %}>{{ cantidad }}</option>{% endfor %}</select> movimientos</label><noscript><button class="pd-button pd-button--secondary" type="submit">Actualizar</button></noscript></form>{% endif %}</header>
+      {% if movimientos_recientes %}<ul class="analytics-card__metrics"><li><strong>{{ movimientos_recientes|length }}</strong> movimientos</li><li><strong>${{ monto_movimientos_visible|floatformat:2 }}</strong> visibles</li></ul><div class="analytics-card__table recent-contributions__scroll"><table class="min-w-full text-sm"><thead><tr><th>Fecha</th><th>Ciudadano</th><th>Concepto</th><th>Monto</th></tr></thead><tbody>{% for a in movimientos_recientes %}<tr><td>{{ a.fecha|date:'d/m/Y' }}{% if a.pk == ultimo_movimiento_id %}<span class="latest-movement-badge">Último movimiento</span>{% endif %}</td><td><a href="{% url 'perfil_ciudadano' a.obligacion.ciudadano_id %}?return_to={{ return_to|urlencode }}">{{ a.obligacion.ciudadano.nombre_completo }}</a></td><td><a href="{% url 'tesoreria_concepto_detalle' a.obligacion.concepto_id %}">{{ a.obligacion.concepto.concepto }}</a></td><td>${{ a.monto|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div>{% if movimientos_page.has_other_pages %}<nav class="analytics-card__pagination" aria-label="Páginas de movimientos"><form method="get">{% for campo in campos_control_movimientos %}<input type="hidden" name="{{ campo.name }}" value="{{ campo.value }}">{% endfor %}<input type="hidden" name="movimientos_por_pagina" value="{{ movimientos_por_pagina }}">{% if movimientos_page.has_previous %}<button class="pd-button pd-button--secondary" name="movimientos_pagina" value="{{ movimientos_page.previous_page_number }}">Anterior</button>{% endif %}<span>Página {{ movimientos_page.number }} de {{ movimientos_page.paginator.num_pages }}</span>{% if movimientos_page.has_next %}<button class="pd-button pd-button--secondary" name="movimientos_pagina" value="{{ movimientos_page.next_page_number }}">Siguiente</button>{% endif %}</form></nav>{% endif %}{% else %}{% include 'dashboard/components/analytics/empty_state.html' with message='No hay movimientos recientes con los filtros seleccionados.' %}{% endif %}
+    </article>
+  </div>
+  <div class="contributions-layout__summary">
   <div class="summary-switcher" aria-label="Seleccionar resumen">
     <p class="summary-switcher__label" id="summary-switcher-label">Resumen mostrado</p>
     <div class="summary-switcher__tabs" role="tablist" aria-labelledby="summary-switcher-label">
@@ -47,8 +56,6 @@
       <button type="button" role="tab" id="tab-ciudadanos" aria-controls="panel-ciudadanos" aria-selected="{% if resumen_actual == 'ciudadanos' %}true{% else %}false{% endif %}" {% if resumen_actual != 'ciudadanos' %}tabindex="-1"{% endif %} data-summary-tab="ciudadanos">Por ciudadano</button>
     </div>
   </div>
-
-  <div class="contributions-workspace__grid">
     <div class="summary-panels">
       <article class="analytics-card summary-panel" id="panel-conceptos" role="tabpanel" aria-labelledby="tab-conceptos" data-summary-panel="conceptos" data-analytics-card="conceptos" {% if resumen_actual != 'conceptos' %}hidden{% endif %}>
         {% include 'dashboard/components/analytics/section_header.html' with section_id='conceptos' title='Aportaciones por concepto' description='Agrupa el dinero recibido por concepto, naturaleza y territorio.' %}
@@ -86,36 +93,21 @@
         {% if ciudadanos_page.has_other_pages %}<nav class="analytics-card__pagination" aria-label="Páginas de ciudadanos"><form method="get">{% for campo in campos_control_ciudadanos %}<input type="hidden" name="{{ campo.name }}" value="{{ campo.value }}">{% endfor %}<input type="hidden" name="ciudadanos_por_pagina" value="{{ ciudadanos_por_pagina }}">{% if ciudadanos_page.has_previous %}<button class="pd-button pd-button--secondary" name="ciudadanos_pagina" value="{{ ciudadanos_page.previous_page_number }}">Anterior</button>{% endif %}<span>Página {{ ciudadanos_page.number }} de {{ ciudadanos_page.paginator.num_pages }}</span>{% if ciudadanos_page.has_next %}<button class="pd-button pd-button--secondary" name="ciudadanos_pagina" value="{{ ciudadanos_page.next_page_number }}">Siguiente</button>{% endif %}</form></nav>{% endif %}
       </article>
     </div>
-
-    <article class="analytics-card recent-contributions" data-analytics-card="movimientos" aria-labelledby="movimientos-title">
-      <header class="analytics-card__header"><div class="analytics-card__heading"><h2 id="movimientos-title" class="analytics-card__title">Aportaciones recientes</h2><p class="analytics-card__description">Consulta los últimos abonos registrados en Tesorería.</p></div>{% if movimientos_recientes %}<form method="get" class="analytics-card__controls analytics-local-controls">{% for campo in campos_control_movimientos %}<input type="hidden" name="{{ campo.name }}" value="{{ campo.value }}">{% endfor %}<label>Mostrar <select name="movimientos_por_pagina" onchange="this.form.submit()">{% for cantidad in opciones_limite_movimientos %}<option value="{{ cantidad }}" {% if cantidad == movimientos_por_pagina %}selected{% endif %}>{{ cantidad }}</option>{% endfor %}</select> movimientos</label><noscript><button class="pd-button pd-button--secondary" type="submit">Actualizar</button></noscript></form>{% endif %}</header>
-      {% if movimientos_recientes %}<ul class="analytics-card__metrics"><li><strong>{{ movimientos_recientes|length }}</strong> movimientos</li><li><strong>${{ monto_movimientos_visible|floatformat:2 }}</strong> visibles</li></ul><div class="analytics-card__table recent-contributions__scroll"><table class="min-w-full text-sm"><thead><tr><th>Fecha</th><th>Ciudadano</th><th>Concepto</th><th>Monto</th></tr></thead><tbody>{% for a in movimientos_recientes %}<tr><td>{{ a.fecha|date:'d/m/Y' }}{% if a.pk == ultimo_movimiento_id %}<span class="latest-movement-badge">Último movimiento</span>{% endif %}</td><td><a href="{% url 'perfil_ciudadano' a.obligacion.ciudadano_id %}?return_to={{ return_to|urlencode }}">{{ a.obligacion.ciudadano.nombre_completo }}</a></td><td><a href="{% url 'tesoreria_concepto_detalle' a.obligacion.concepto_id %}">{{ a.obligacion.concepto.concepto }}</a></td><td>${{ a.monto|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div>{% if movimientos_page.has_other_pages %}<nav class="analytics-card__pagination" aria-label="Páginas de movimientos"><form method="get">{% for campo in campos_control_movimientos %}<input type="hidden" name="{{ campo.name }}" value="{{ campo.value }}">{% endfor %}<input type="hidden" name="movimientos_por_pagina" value="{{ movimientos_por_pagina }}">{% if movimientos_page.has_previous %}<button class="pd-button pd-button--secondary" name="movimientos_pagina" value="{{ movimientos_page.previous_page_number }}">Anterior</button>{% endif %}<span>Página {{ movimientos_page.number }} de {{ movimientos_page.paginator.num_pages }}</span>{% if movimientos_page.has_next %}<button class="pd-button pd-button--secondary" name="movimientos_pagina" value="{{ movimientos_page.next_page_number }}">Siguiente</button>{% endif %}</form></nav>{% endif %}{% else %}{% include 'dashboard/components/analytics/empty_state.html' with message='No hay movimientos recientes con los filtros seleccionados.' %}{% endif %}
-    </article>
   </div>
+  <article class="contributions-chart-card" aria-labelledby="contributions-chart-title">
+    <header class="analytics-card__header">
+      <div class="analytics-card__heading">
+        <h2 id="contributions-chart-title" class="analytics-card__title" data-chart-title>Avance del concepto</h2>
+        <p class="analytics-card__description" data-chart-description>Distribución del monto aportado frente al objetivo del concepto.</p>
+      </div>
+    </header>
+    <div class="contributions-chart" data-chart-container>
+      <canvas data-contributions-chart role="img" aria-label="Gráfica complementaria del resumen seleccionado"></canvas>
+      <div class="contributions-chart__empty" data-chart-empty hidden role="status"></div>
+    </div>
+  </article>
 </section>
-<script>
-(() => {
-  const root = document.querySelector('[data-contributions-workspace]');
-  if (!root) return;
-  const tabs = [...root.querySelectorAll('[data-summary-tab]')];
-  const panels = [...root.querySelectorAll('[data-summary-panel]')];
-  const remember = (name, value) => { const url = new URL(window.location.href); url.searchParams.set(name, value); history.replaceState({}, '', url); document.querySelectorAll(`input[name="${name}"]`).forEach(input => input.value = value); };
-  const selectSummary = (name, focus = false) => {
-    tabs.forEach(tab => { const active = tab.dataset.summaryTab === name; tab.setAttribute('aria-selected', active); tab.tabIndex = active ? 0 : -1; if (focus && active) tab.focus(); });
-    panels.forEach(panel => panel.hidden = panel.dataset.summaryPanel !== name);
-    remember('resumen', name);
-  };
-  tabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => selectSummary(tab.dataset.summaryTab));
-    tab.addEventListener('keydown', event => { if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); let next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length; selectSummary(tabs[next].dataset.summaryTab, true); });
-  });
-  const carousel = root.querySelector('[data-concept-carousel]');
-  if (!carousel) return;
-  const slides = [...carousel.querySelectorAll('[data-concept-slide]')], previous = carousel.querySelector('[data-concept-previous]'), next = carousel.querySelector('[data-concept-next]'), status = carousel.querySelector('[data-concept-status]');
-  let current = slides.findIndex(slide => !slide.hidden); if (current < 0) current = 0;
-  const show = index => { current = index; slides.forEach((slide, i) => slide.hidden = i !== current); previous.disabled = current === 0; next.disabled = current === slides.length - 1; status.textContent = `Concepto ${current + 1} de ${slides.length}`; remember('concepto_indice', current + 1); };
-  show(current);
-  previous.addEventListener('click', () => show(current - 1)); next.addEventListener('click', () => show(current + 1));
-})();
-</script>
+{{ datos_grafica|json_script:"contributions-chart-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+<script src="{% static 'js/resumen-aportaciones.js' %}" defer></script>
 {% endblock %}
