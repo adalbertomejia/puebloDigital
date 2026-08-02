@@ -17,6 +17,44 @@ from apps.core.models import Ciudadano, Manzana
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 
 
+class BusquedaDinamicaCiudadanosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="busqueda", password="testpass123")
+        self.client.force_login(self.user)
+        self.ana = Ciudadano.objects.create(
+            nombre="Ana", apellido_paterno="López", edad=30, numero_contrato="CONT-ANA"
+        )
+        Ciudadano.objects.create(nombre="Pedro", apellido_paterno="Martínez", edad=40)
+
+    def test_inicio_tiene_titulo_adecuado_y_busqueda_dinamica(self):
+        response = self.client.get(reverse("dashboard_operativo"), {"q": "Ana"})
+
+        self.assertContains(response, "<h1>Inicio</h1>", html=True)
+        self.assertNotContains(response, "Resumen operativo")
+        self.assertContains(response, "data-dynamic-citizen-search")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Pedro Martínez")
+
+    def test_inicio_responde_solo_resultados_a_peticion_dinamica(self):
+        response = self.client.get(
+            reverse("dashboard_operativo"), {"q": "Ana"}, HTTP_HX_REQUEST="true"
+        )
+
+        self.assertTemplateUsed(response, "dashboard/partials/inicio_ciudadanos_resultados.html")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Acciones rápidas")
+
+    def test_padron_responde_solo_resultados_a_busqueda_dinamica(self):
+        response = self.client.get(
+            reverse("padron_ciudadanos"), {"q": "CONT-ANA"}, HTTP_HX_REQUEST="true"
+        )
+
+        self.assertTemplateUsed(response, "dashboard/partials/padron_ciudadanos_resultados.html")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Filtrar y ordenar resultados")
+        self.assertNotContains(response, "Pedro Martínez")
+
+
 class MotivoAltaCiudadanoTests(TestCase):
     def test_text_choices_contiene_unicamente_los_tres_motivos_permitidos(self):
         self.assertEqual(

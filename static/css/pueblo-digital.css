@@ -365,6 +365,8 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
 .search-status--pendiente { background: #fef3c7; color: #92400e; }
 .search-status--cancelado { background: #fee2e2; color: #991b1b; }
 .search-dynamic-error { margin-bottom: .75rem; padding: .75rem; border-radius: .75rem; background: #fff1f2; color: #9f1239; }
+.pd-dynamic-search__loading { display: none; color: var(--pd-color-muted); font-size: .85rem; }
+.is-loading .pd-dynamic-search__loading { display: inline; }
 @media (max-width: 900px) { .search-contributions__form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 639px) { .search-contributions__header { align-items: stretch; flex-direction: column; } .search-contributions__form { grid-template-columns: 1fr; } .search-context { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .search-contributions__loading { animation: none; } }

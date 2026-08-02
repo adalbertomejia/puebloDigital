@@ -1,20 +1,21 @@
 {% extends 'dashboard/base_dashboard.html' %}
-{% block title %}Panel de Gestión{% endblock %}
+{% load static %}
+{% block title %}Inicio{% endblock %}
 {% block content %}
 <header class="pd-page-heading">
-  <div><h1>Resumen operativo</h1><p>Consulta información de la comunidad y accede a las tareas frecuentes.</p></div>
+  <div><h1>Inicio</h1><p>Consulta información de la comunidad y accede a las tareas frecuentes.</p></div>
 </header>
 
 <section class="pd-grid pd-grid--dashboard" aria-label="Herramientas principales">
   <article class="pd-panel pd-panel--accent">
     <h2 class="pd-section-title">Buscar ciudadanos</h2>
-    <form method="get" role="search">
+    <form method="get" action="{% url 'dashboard_operativo' %}" role="search" data-dynamic-citizen-search>
       <div class="pd-form-group">
         <label for="dashboard-q">Nombre, contrato o toma</label>
         <span id="dashboard-q-hint" class="pd-hint">Escribe uno o varios datos para localizar un expediente.</span>
         <input class="pd-input" id="dashboard-q" type="search" name="q" value="{{ q }}" aria-describedby="dashboard-q-hint">
       </div>
-      <div class="pd-actions" style="margin-top: 1rem"><button class="pd-button pd-button--primary" type="submit">Buscar ciudadano</button></div>
+      <div class="pd-actions" style="margin-top: 1rem"><button class="pd-button pd-button--primary" type="submit">Buscar ciudadano</button><span class="pd-dynamic-search__loading" aria-hidden="true">Actualizando…</span></div>
     </form>
   </article>
   <article class="pd-panel">
@@ -39,15 +40,8 @@
 </section>
 
 <section class="pd-grid pd-grid--dashboard">
-  <div class="pd-stack">
-    <h2 class="pd-section-title">Resultados de ciudadanos</h2>
-    {% for c in ciudadanos %}
-      <article class="pd-card">
-        <header class="pd-card__header"><div class="flex flex-wrap justify-between gap-3"><div><p class="pd-card__eyebrow">Ciudadano</p><h3 class="pd-card__title">{{ c.nombre_completo }}</h3><p class="pd-card__meta">{{ c.edad }} años · Contrato {{ c.numero_contrato|default:'Sin registro' }}</p></div><span class="pd-tag {% if c.activo %}pd-tag--success{% else %}pd-tag--danger{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span></div></header>
-        <div class="pd-card__body"><div class="pd-info-grid"><div class="pd-info-item"><span class="pd-info-item__label">Manzana</span><span class="pd-info-item__value">{{ c.manzana|default:'Sin asignar' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Toma de agua</span><span class="pd-info-item__value">{{ c.toma.numero_toma|default:'Sin toma' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Último pago</span><span class="pd-info-item__value">{{ c.ultimo_pago_fecha|default:'Sin registro' }}</span></div><div class="pd-info-item"><span class="pd-info-item__label">Última faena</span><span class="pd-info-item__value">{{ c.ultima_faena_fecha|default:'Sin registro' }}</span></div></div><div class="pd-card__metrics"><div class="pd-metric"><p class="pd-metric__label">Adeudos de faena</p><p class="pd-metric__value">{{ c.adeudos_faena }}</p></div></div></div>
-        <footer class="pd-card__footer"><div class="pd-actions"><a href="{% url 'perfil_ciudadano' c.pk %}" class="pd-button pd-button--primary">Ver expediente</a><a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="pd-button pd-button--warning">Editar ciudadano</a></div></footer>
-      </article>
-    {% empty %}<div class="pd-panel"><p>No se encontraron ciudadanos para este criterio.</p></div>{% endfor %}
+  <div class="pd-stack" id="citizen-search-results" aria-live="polite" aria-busy="false">
+    {% include 'dashboard/partials/inicio_ciudadanos_resultados.html' %}
   </div>
 
   <aside id="actividad-reciente" class="pd-stack" aria-label="Actividad y acciones masivas">
@@ -57,4 +51,6 @@
     <article class="pd-panel"><h2 class="pd-section-title">Agua</h2><p>Tomas pendientes o suspendidas: <strong>{{ tarjeta_agua.tomas_pendientes }}</strong></p><p>Ciudadanos con pagos de servicio: <strong>{{ tarjeta_agua.morosos_agua }}</strong></p></article>
   </aside>
 </section>
+<noscript><p class="pd-muted">La búsqueda funciona mediante el botón Buscar ciudadano sin necesidad de JavaScript.</p></noscript>
+<script src="{% static 'js/buscar-ciudadanos.js' %}" defer></script>
 {% endblock %}
