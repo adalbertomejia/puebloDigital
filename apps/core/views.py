@@ -206,6 +206,8 @@ def padron_ciudadanos(request):
             {key: value for key, value in request.GET.items() if key != "page" and value}
         ),
     }
+    if request.headers.get("HX-Request") == "true":
+        return render(request, "dashboard/partials/padron_ciudadanos_resultados.html", context)
     return render(request, "dashboard/padron_ciudadanos.html", context)
 
 
@@ -480,6 +482,8 @@ def dashboard_operativo(request):
             "ciudadano_changelist": reverse("admin:core_ciudadano_changelist"),
         },
     }
+    if request.headers.get("HX-Request") == "true":
+        return render(request, "dashboard/partials/inicio_ciudadanos_resultados.html", context)
     return render(request, "dashboard/operativo.html", context)
 
 
