@@ -707,3 +707,54 @@ class ResumenAportacionesTests(TestCase):
             "orden_manzanas": "nombre", "incluir_manzanas_inactivas": "1",
         })
         self.assertEqual(len(response.content.decode("utf-8-sig").splitlines()), 4)
+
+    def buscar(self, params=None, **headers):
+        self.client.login(username="consulta", password="pw")
+        return self.client.get(reverse("buscar_aportaciones"), params or {}, **headers)
+
+    def test_busqueda_requiere_autenticacion_y_enlace_transfiere_contexto(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse("buscar_aportaciones")).status_code, 302)
+        response = self.get({"anio": "2026", "naturaleza": "COOPERACION", "manzana": self.manzana_historica.pk})
+        enlace = f"{reverse('buscar_aportaciones')}?anio=2026&amp;naturaleza=COOPERACION&amp;manzana={self.manzana_historica.pk}"
+        self.assertContains(response, enlace)
+
+    def test_busqueda_textual_nombre_apellidos_contrato_y_concepto(self):
+        casos = (("Ana", 2), ("López Ríos", 2), ("C-10", 2), ("Feria manzana", 2), (str(self.a3.pk), 1))
+        for texto, cantidad in casos:
+            with self.subTest(texto=texto):
+                response = self.buscar({"q": texto})
+                self.assertEqual(response.context["cantidad_resultados"], cantidad)
+
+    def test_busqueda_combina_filtros_rangos_estado_y_orden(self):
+        response = self.buscar({
+            "anio": "2026", "naturaleza": "COOPERACION", "manzana": self.manzana_historica.pk,
+            "q": "Ana", "fecha_inicial": "2026-08-01", "fecha_final": "2026-08-01",
+            "importe_minimo": "39", "importe_maximo": "41", "estado": "PENDIENTE",
+        })
+        self.assertEqual([a.pk for a in response.context["pagina"]], [self.a2.pk])
+        self.assertEqual([a.pk for a in self.buscar().context["pagina"]], [self.a3.pk, self.a2.pk, self.a1.pk])
+
+    def test_busqueda_pagina_limite_parametros_y_sin_duplicados(self):
+        obligacion = self.a1.obligacion
+        for i in range(30):
+            Abono.objects.create(obligacion=obligacion, monto=Decimal("1"), fecha=date(2026, 7, 21))
+        response = self.buscar({"por_pagina": "10", "q": "Ana", "pagina": "2"})
+        self.assertEqual(len(response.context["pagina"]), 10)
+        self.assertIn("q=Ana", response.context["next_querystring"])
+        self.assertIn("por_pagina=10", response.context["next_querystring"])
+        ids = [a.pk for a in response.context["pagina"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(self.buscar({"por_pagina": "500"}).context["pagina"].paginator.per_page, 25)
+
+    def test_busqueda_parcial_y_estado_sin_resultados(self):
+        partial = self.buscar({"q": "Ana"}, HTTP_HX_REQUEST="true")
+        self.assertTemplateUsed(partial, "dashboard/partials/buscar_aportaciones_resultados.html")
+        self.assertNotContains(partial, "<h1>Buscar aportaciones</h1>", html=True)
+        empty = self.buscar({"q": "persona inexistente"})
+        self.assertContains(empty, "No encontramos aportaciones que coincidan con estos filtros.")
+        self.assertContains(empty, "Limpiar filtros")
+
+    def test_volver_al_resumen_conserva_filtros_generales(self):
+        response = self.buscar({"anio": "2026", "naturaleza": "PAGO", "q": "Ana", "por_pagina": "10"})
+        self.assertContains(response, f"{reverse('resumen_aportaciones')}?anio=2026&amp;naturaleza=PAGO")
