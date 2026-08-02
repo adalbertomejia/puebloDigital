@@ -321,3 +321,25 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
 @media (max-width: 1023px) { .contributions-workspace__grid { grid-template-columns: 1fr; } .summary-switcher { align-items: stretch; flex-direction: column; } }
 @media (max-width: 639px) { .summary-switcher__tabs { display: grid; width: 100%; } .concept-slide__facts { grid-template-columns: 1fr 1fr; } }
 @media (prefers-reduced-motion: reduce) { .concept-slide { animation: none; } }
+
+/* Cuadrícula final: filtros/recientes y resumen/gráfica. */
+.contributions-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pd-space-5); align-items: start; }
+.contributions-layout > * { min-width: 0; }
+.contributions-layout__filters > aside { margin: var(--pd-space-3) 0 0; }
+.contributions-layout__summary { display: grid; min-width: 0; gap: var(--pd-space-3); }
+.contributions-layout__recent .recent-contributions { height: 100%; }
+.contributions-chart-card { min-width: 0; overflow: hidden; border: 1px solid var(--pd-color-border-subtle); border-radius: var(--pd-radius-xl); background: #fff; box-shadow: var(--pd-shadow-soft); }
+.contributions-chart { position: relative; height: clamp(20rem, 32vw, 28rem); min-width: 0; padding: var(--pd-space-4); overflow-x: auto; }
+.contributions-chart canvas { max-width: 100%; }
+.contributions-chart__empty { display: grid; min-height: 15rem; place-items: center; padding: var(--pd-space-5); color: var(--pd-color-muted); text-align: center; }
+.contributions-chart__empty[hidden] { display: none; }
+.latest-movement-badge { display: block; width: max-content; margin-top: .3rem; padding: .15rem .45rem; border-radius: 999px; background: #dcfce7; color: #166534; font-size: .68rem; font-weight: 800; white-space: nowrap; }
+@media (max-width: 1023px) {
+  .contributions-layout { grid-template-columns: minmax(0, 1fr); }
+  .contributions-layout__filters { order: 1; }
+  .contributions-layout__recent { order: 2; }
+  .contributions-layout__summary { order: 3; }
+  .contributions-chart-card { order: 4; }
+  .contributions-chart { height: clamp(19rem, 60vw, 26rem); }
+}
+@media (max-width: 639px) { .contributions-chart { height: 20rem; padding: .75rem; } }

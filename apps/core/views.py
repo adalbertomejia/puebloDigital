@@ -1639,13 +1639,46 @@ def resumen_aportaciones(request):
     # El resumen por concepto es una agregación compacta: no carga obligaciones ni
     # ciudadanos individuales y permite recorrer el conjunto sin consultas N+1.
     conceptos_resumen = list(por_concepto)
+    # El objetivo financiero procede de las mismas obligaciones que alimentan
+    # las tarjetas de Tesorería. Se obtiene en una sola consulta agrupada para
+    # que la visualización no introduzca accesos por concepto (N+1).
+    objetivos = ObligacionCiudadano.objects.filter(
+        concepto_id__in=[fila["obligacion__concepto_id"] for fila in conceptos_resumen],
+    ).exclude(estado=ObligacionCiudadano.Estados.CANCELADO).values(
+        "concepto_id"
+    ).annotate(total=Sum("monto_asignado"))
+    objetivos_por_concepto = {fila["concepto_id"]: fila["total"] for fila in objetivos}
+    datos_grafica_conceptos = []
     for fila in conceptos_resumen:
         fila["tesoreria_url"] = reverse("tesoreria_concepto_detalle", args=[fila["obligacion__concepto_id"]])
+        objetivo = objetivos_por_concepto.get(fila["obligacion__concepto_id"])
+        restante = max(objetivo - fila["total_recibido"], Decimal("0.00")) if objetivo is not None else None
+        datos_grafica_conceptos.append({
+            "nombre": fila["obligacion__concepto__concepto"],
+            "aportado": float(fila["total_recibido"]),
+            "objetivo": float(objetivo) if objetivo is not None else None,
+            "restante": float(restante) if restante is not None else None,
+            "porcentaje": float((fila["total_recibido"] / objetivo * 100) if objetivo else 0),
+            "superado": bool(objetivo is not None and fila["total_recibido"] > objetivo),
+        })
     conceptos_page = _pagina_aportaciones(request, conceptos_resumen, "conceptos_page", 10)
     compatibles = {k: v for k, v in filtros.items() if k in {"naturaleza", "alcance", "manzana", "comite", "mes", "anio"} and v not in ("todos", "todas", "")}
     if fila_general: fila_general["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'GENERAL'})}"
     for fila in por_manzana:
         fila["tesoreria_url"] = f"{reverse('tesoreria_operativa')}?{urlencode({**compatibles, 'alcance': 'MANZANA', 'manzana': fila['manzana_id']})}"
+    datos_grafica_manzanas = []
+    if fila_general:
+        datos_grafica_manzanas.append({"nombre": fila_general["nombre"], "total": float(fila_general["total_recibido"])})
+    datos_grafica_manzanas.extend(
+        {"nombre": fila["nombre"], "total": float(fila["total_recibido"])} for fila in por_manzana
+    )
+    datos_grafica_ciudadanos = [{
+        "nombre": " ".join(filter(None, (
+            fila["obligacion__ciudadano__nombre"], fila["obligacion__ciudadano__apellido_paterno"],
+            fila["obligacion__ciudadano__apellido_materno"],
+        ))),
+        "total": float(fila["total_abonado"]),
+    } for fila in mayores]
     return render(request, "dashboard/resumen_aportaciones.html", {
         "metricas": metricas,
         "conceptos_resumen": conceptos_resumen,
@@ -1693,6 +1726,11 @@ def resumen_aportaciones(request):
         ),
         "etiquetas_contexto": etiquetas_contexto,
         "return_to": return_to,
+        "datos_grafica": {
+            "conceptos": datos_grafica_conceptos,
+            "manzanas": datos_grafica_manzanas,
+            "ciudadanos": datos_grafica_ciudadanos,
+        },
     })
 
 
