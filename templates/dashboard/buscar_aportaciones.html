@@ -10,7 +10,7 @@
 <section class="contributions-filters bg-white rounded-2xl border p-4 md:p-5 mb-4" aria-labelledby="search-filters-title">
   <h2 id="search-filters-title" class="font-bold text-lg">Consulta movimientos y abonos registrados.</h2>
   <p class="text-sm text-slate-600 mb-4">Los filtros se combinan y la URL puede copiarse para compartir la consulta.</p>
-  <form method="get" id="contribution-search-form" class="search-contributions__form" data-dynamic-search>
+  <form method="get" action="{% url 'buscar_aportaciones' %}" id="contribution-search-form" class="search-contributions__form" data-dynamic-search>
     <div class="search-contributions__primary">{{ form.q.label_tag }}{{ form.q }}{{ form.q.errors }}</div>
     {% for field in form %}{% if field.name != 'q' %}<div><label for="{{ field.id_for_label }}" class="text-sm font-medium">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endif %}{% endfor %}
     <div class="search-contributions__actions"><button class="pd-button pd-button--primary" type="submit">Buscar</button><a class="pd-button pd-button--secondary" href="{% url 'buscar_aportaciones' %}">Limpiar filtros</a><span class="search-contributions__loading" aria-hidden="true">Actualizando…</span></div>
