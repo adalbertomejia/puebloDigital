@@ -1386,14 +1386,34 @@ def _metricas_conceptos(conceptos):
 def tesoreria_operativa(request):
     conceptos_qs = conceptos_filtrados(request.GET)
     metricas = _metricas_conceptos(conceptos_qs)
-    paginator = Paginator(conceptos_qs, 12)
-    page = paginator.get_page(request.GET.get("page"))
-    page.previous_querystring = _page_querystring(request, "page", page.previous_page_number()) if page.has_previous() else ""
-    page.next_querystring = _page_querystring(request, "page", page.next_page_number()) if page.has_next() else ""
-    export_params = request.GET.copy(); export_params.pop("page", None)
+    pagos_page = Paginator(
+        conceptos_qs.filter(naturaleza=ConceptoTesoreria.Naturalezas.PAGO), 3,
+    ).get_page(request.GET.get("pagina_conceptos"))
+    cooperaciones_page = Paginator(
+        conceptos_qs.filter(naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION), 3,
+    ).get_page(request.GET.get("pagina_cooperaciones"))
+
+    def preparar_pagina(page, parametro):
+        page.previous_querystring = _page_querystring(request, parametro, page.previous_page_number()) if page.has_previous() else ""
+        page.next_querystring = _page_querystring(request, parametro, page.next_page_number()) if page.has_next() else ""
+        page.neighbors = []
+        for number in range(max(1, page.number - 1), min(page.paginator.num_pages, page.number + 1) + 1):
+            page.neighbors.append({
+                "number": number,
+                "querystring": _page_querystring(request, parametro, number),
+                "current": number == page.number,
+            })
+        return page
+
+    preparar_pagina(pagos_page, "pagina_conceptos")
+    preparar_pagina(cooperaciones_page, "pagina_cooperaciones")
+    export_params = request.GET.copy()
+    for parametro in ("page", "pagina_conceptos", "pagina_cooperaciones"):
+        export_params.pop(parametro, None)
     filtros = _filtros_tesoreria(request.GET)
-    return render(request, "dashboard/tesoreria.html", {
-        "conceptos": page.object_list, "page_obj": page, "metricas": metricas, "filtros": filtros,
+    context = {
+        "pagos_page": pagos_page, "cooperaciones_page": cooperaciones_page,
+        "metricas": metricas, "filtros": filtros,
         "meses": MESES,
         "anios": ConceptoTesoreria.objects.dates("fecha", "year", order="DESC"),
         "comites": Comite.objects.filter(activo=True), "manzanas": Manzana.objects.order_by("nombre"),
@@ -1401,7 +1421,9 @@ def tesoreria_operativa(request):
         "hay_conceptos": ConceptoTesoreria.objects.exists(),
         "export_querystring": export_params.urlencode(),
         "manzana_activa": Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None,
-    })
+    }
+    template = "dashboard/partials/_conceptos_paginados.html" if request.headers.get("X-Requested-With") == "XMLHttpRequest" else "dashboard/tesoreria.html"
+    return render(request, template, context)
 
 
 @login_required

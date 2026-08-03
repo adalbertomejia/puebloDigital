@@ -71,7 +71,9 @@ def aplicar_filtros_conceptos(queryset, params):
         queryset = queryset.filter(comite_id=int(params["comite"]))
     if params.get("estado") in {"SIN_GENERAR", "CON_PENDIENTES", "COMPLETADO"}:
         queryset = queryset.filter(estado_general=params["estado"])
-    return queryset.order_by("-fecha", "-created_at")
+    # El identificador evita que conceptos con la misma fecha de creación cambien
+    # de página entre solicitudes.
+    return queryset.order_by("-fecha", "-created_at", "-pk")
 
 
 def conceptos_filtrados(params):

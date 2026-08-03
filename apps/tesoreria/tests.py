@@ -271,6 +271,51 @@ class TesoreriaOperativaTests(TestCase):
         pago.obligaciones.exclude(pk=o.pk).update(estado=ObligacionCiudadano.Estados.PAGADO)
         self.assertContains(self.client.get(reverse("tesoreria_operativa") + "?estado=COMPLETADO"), "Agua julio")
 
+    def test_conceptos_se_separan_y_paginan_de_tres_en_tres(self):
+        for numero in range(1, 6):
+            self.concepto(concepto=f"Pago {numero}", fecha=date(2026, 7, numero))
+            self.concepto(
+                concepto=f"Cooperación {numero}",
+                naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION,
+                fecha=date(2026, 6, numero),
+            )
+        self.login()
+        response = self.client.get(reverse("tesoreria_operativa"))
+        self.assertEqual(len(response.context["pagos_page"]), 3)
+        self.assertEqual(len(response.context["cooperaciones_page"]), 3)
+        self.assertContains(response, "Pagos")
+        self.assertContains(response, "Cooperaciones")
+        self.assertNotContains(response, "Pago 1")
+        self.assertContains(response, 'aria-label="Página anterior" aria-disabled="true"', count=2)
+
+    def test_paginas_independientes_invalidas_y_filtros_conservados(self):
+        for numero in range(1, 8):
+            self.concepto(concepto=f"Cuota especial {numero}", fecha=date(2026, 7, numero))
+        self.login()
+        response = self.client.get(reverse("tesoreria_operativa"), {
+            "q": "Cuota especial", "pagina_conceptos": "2", "pagina_cooperaciones": "invalida",
+        })
+        self.assertEqual(response.context["pagos_page"].number, 2)
+        self.assertEqual(response.context["cooperaciones_page"].number, 1)
+        self.assertEqual(len(response.context["pagos_page"]), 3)
+        self.assertContains(response, "q=Cuota+especial&amp;pagina_conceptos=1")
+        self.assertNotContains(response, "pagina_conceptos=2&amp;pagina_conceptos=")
+        fuera_de_rango = self.client.get(reverse("tesoreria_operativa"), {"pagina_conceptos": "999"})
+        self.assertEqual(fuera_de_rango.context["pagos_page"].number, 3)
+        self.assertFalse(fuera_de_rango.context["pagos_page"].has_next())
+
+    def test_respuesta_parcial_reutiliza_tarjetas_y_acciones(self):
+        concepto = self.concepto(concepto="Pago parcial")
+        self.login()
+        response = self.client.get(
+            reverse("tesoreria_operativa"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertTemplateUsed(response, "dashboard/partials/_conceptos_paginados.html")
+        self.assertNotContains(response, "<html", html=False)
+        self.assertContains(response, reverse("tesoreria_concepto_detalle", args=[concepto.pk]))
+        self.assertContains(response, reverse("generar_obligaciones_tesoreria", args=[concepto.pk]))
+
 
     def test_nuevas_metricas_tesoreria_operativa(self):
         concepto = self.concepto(concepto="Feria 2027")
