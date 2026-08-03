@@ -370,3 +370,24 @@ form p input:not([type="checkbox"]):not([type="radio"]), form p select, form p t
 @media (max-width: 900px) { .search-contributions__form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 639px) { .search-contributions__header { align-items: stretch; flex-direction: column; } .search-contributions__form { grid-template-columns: 1fr; } .search-context { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .search-contributions__loading { animation: none; } }
+
+/* Conceptos de Tesorería: dos bloques paginados, compactos e independientes. */
+.treasury-concepts { display: grid; gap: 2rem; }
+.treasury-concept-group { min-width: 0; }
+.treasury-concept-group__title { margin-bottom: .8rem; color: #1e293b; font-size: 1.1rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.treasury-concept-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.treasury-concept-grid > article { min-width: 0; }
+.treasury-concept-empty { grid-column: 1 / -1; padding: 2rem; border: 1px solid var(--pd-color-border-subtle); border-radius: 1rem; background: #fff; color: #475569; text-align: center; }
+.concept-pagination { display: inline-flex; position: relative; left: 50%; align-items: center; gap: .2rem; margin-top: 1.25rem; padding: .3rem; transform: translateX(-50%); border: 1px solid #dbe3ee; border-radius: .85rem; background: #f8fafc; box-shadow: 0 3px 10px rgb(15 23 42 / 7%); }
+.concept-pagination__item { display: inline-grid; min-width: 2.75rem; min-height: 2.75rem; place-items: center; border: 1px solid transparent; border-radius: .65rem; color: #334155; font-weight: 750; transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+a.concept-pagination__item:hover { border-color: #c7d2fe; background: #fff; color: #3730a3; box-shadow: 0 2px 6px rgb(15 23 42 / 8%); transform: translateY(-1px); }
+.concept-pagination__item:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
+.concept-pagination__item.is-current { border-color: #a5b4fc; background: #e0e7ff; color: #312e81; }
+.concept-pagination__item.is-disabled { cursor: not-allowed; color: #94a3b8; opacity: .65; }
+#conceptos-paginados { transition: opacity .18s ease, transform .18s ease; }
+#conceptos-paginados.is-loading { opacity: .55; pointer-events: none; transform: translateX(-.35rem); }
+#conceptos-paginados.is-loading.is-moving-back { transform: translateX(.35rem); }
+#conceptos-paginados.is-entering { opacity: .7; }
+@media (max-width: 1023px) { .treasury-concept-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .treasury-concept-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { #conceptos-paginados, .concept-pagination__item { transition: none; } #conceptos-paginados.is-loading { transform: none; } }

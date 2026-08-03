@@ -1,0 +1,24 @@
+<section class="treasury-concept-group" aria-labelledby="conceptos-{{ param }}">
+  <h2 id="conceptos-{{ param }}" class="treasury-concept-group__title">{{ title }}</h2>
+  <div class="treasury-concept-grid">
+    {% for c in page.object_list %}
+      <article class="bg-white rounded-2xl border p-5 space-y-3">
+        <div><p class="text-xs uppercase text-indigo-600 font-semibold">{{ c.get_naturaleza_display }}</p>{% include "dashboard/components/alcance_badge.html" with evento=c %}<h4 class="text-lg font-bold">{{ c.concepto }}</h4><p class="text-sm text-slate-500">{{ c.comite.nombre }} · Fecha: {{ c.fecha }}</p></div>
+        <p class="text-sm">Monto base: <strong>${{ c.monto_individual|floatformat:2 }}</strong></p>
+        <div class="grid grid-cols-2 gap-2 text-sm"><span>{{ c.cantidad_obligaciones }} obligaciones</span><span>{{ c.cantidad_pagada }} pagadas</span><span>{{ c.cantidad_pendiente }} pendientes</span><span>{{ c.cantidad_cancelada }} canceladas</span></div>
+        <div class="text-sm border-t pt-3"><p>Asignado: ${{ c.total_asignado|floatformat:2 }}</p><p>Abonado: ${{ c.total_abonado|floatformat:2 }}</p><p>Saldo: ${{ c.saldo_pendiente|floatformat:2 }}</p><p class="font-semibold">Estado: {% if c.estado_general == 'SIN_GENERAR' %}Sin generar{% elif c.estado_general == 'CON_PENDIENTES' %}Con pendientes{% else %}Completado{% endif %}</p></div>
+        <div class="flex flex-wrap gap-2"><a class="pd-button pd-button--primary pd-button--sm" href="{% url 'tesoreria_concepto_detalle' c.pk %}">Ver detalle</a>{% if can_modify %}<form method="post" action="{% url 'generar_obligaciones_tesoreria' c.pk %}">{% csrf_token %}<button class="pd-button pd-button--success pd-button--sm">{% if c.cantidad_obligaciones %}Generar faltantes{% else %}Generar obligaciones{% endif %}</button></form><a class="pd-button pd-button--warning pd-button--sm" href="{% url 'editar_concepto_tesoreria' c.pk %}">Editar concepto</a>{% endif %}</div>
+      </article>
+    {% empty %}
+      <div class="treasury-concept-empty"><p>Todavía no hay conceptos registrados.</p>{% if can_modify and not hay_conceptos %}<a class="pd-button pd-button--success mt-4" href="{% url 'crear_concepto_tesoreria' %}">Crear nuevo concepto</a>{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% if page.has_other_pages %}
+    <nav class="concept-pagination" aria-label="Paginación de {{ title|lower }}">
+      {% if page.has_previous %}<a class="concept-pagination__item" href="?{{ page.previous_querystring }}" data-concepts-page aria-label="Página anterior">←</a>{% else %}<span class="concept-pagination__item is-disabled" aria-label="Página anterior" aria-disabled="true">←</span>{% endif %}
+      {% for neighbor in page.neighbors %}{% if neighbor.current %}<span class="concept-pagination__item is-current" aria-current="page">{{ neighbor.number }}</span>{% else %}<a class="concept-pagination__item" href="?{{ neighbor.querystring }}" data-concepts-page aria-label="Ir a la página {{ neighbor.number }}">{{ neighbor.number }}</a>{% endif %}{% endfor %}
+      {% if page.has_next %}<a class="concept-pagination__item" href="?{{ page.next_querystring }}" data-concepts-page aria-label="Página siguiente">→</a>{% else %}<span class="concept-pagination__item is-disabled" aria-label="Página siguiente" aria-disabled="true">→</span>{% endif %}
+    </nav>
+  {% endif %}
+  <p class="sr-only">Página {{ page.number }} de conceptos. Mostrando {{ page.object_list|length }} conceptos.</p>
+</section>
