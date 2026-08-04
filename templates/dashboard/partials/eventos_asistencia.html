@@ -3,9 +3,10 @@
     <h2 id="{{ titulo|lower }}-title" class="pd-section-title">{{ titulo }}</h2>
     <p class="pd-muted" style="margin: 0">Actividades más recientes primero.</p>
   </div>
-  <div class="pd-cards-grid">
+  <div class="attendance-carousel" data-attendance-carousel data-carousel-label="{{ titulo|lower }}">
+    <div class="attendance-carousel__slides" aria-live="polite">
     {% for evento in eventos %}
-      <article class="pd-card">
+      <article class="pd-card attendance-carousel__slide" data-attendance-slide {% if not forloop.first %}hidden{% endif %} aria-label="{{ titulo|slice:':-1' }} {{ forloop.counter }} de {{ eventos|length }}">
         <header class="pd-card__header">
           <div class="flex justify-between items-start gap-3">
             <div>
@@ -43,6 +44,14 @@
         </footer>
       </article>
     {% empty %}<article class="pd-panel"><p class="pd-muted">{{ empty_message }}</p></article>{% endfor %}
+    </div>
+    {% if eventos|length > 1 %}
+      <nav class="attendance-carousel__controls" aria-label="Navegación entre {{ titulo|lower }}">
+        <button type="button" class="attendance-carousel__arrow" data-attendance-previous aria-label="Mostrar {{ titulo|lower }} anterior" disabled>←</button>
+        <span data-attendance-status>{{ titulo|slice:':-1' }} 1 de {{ eventos|length }}</span>
+        <button type="button" class="attendance-carousel__arrow" data-attendance-next aria-label="Mostrar {{ titulo|lower }} siguiente">→</button>
+      </nav>
+    {% endif %}
   </div>
   {% if page_obj.paginator.num_pages > 1 %}<nav class="pd-pagination" aria-label="Paginación de {{ titulo|lower }}"><span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span><div class="pd-pagination__links">{% if page_obj.has_previous %}<a class="pd-button pd-button--secondary" rel="prev" href="?{{ page_obj.previous_querystring }}#{{ titulo|lower }}">Anterior</a>{% endif %}{% if page_obj.has_next %}<a class="pd-button pd-button--secondary" rel="next" href="?{{ page_obj.next_querystring }}#{{ titulo|lower }}">Siguiente</a>{% endif %}</div></nav>{% endif %}
 </section>
