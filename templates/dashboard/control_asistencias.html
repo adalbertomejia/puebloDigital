@@ -1,4 +1,5 @@
 {% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
 {% block title %}Control de Asistencias{% endblock %}
 {% block content %}
 <nav class="pd-breadcrumbs" aria-label="Ruta de navegación"><a href="{% url 'dashboard_operativo' %}">Inicio</a> <span aria-hidden="true">›</span> <span aria-current="page">Control de Asistencias</span></nav>
@@ -29,3 +30,4 @@
 <div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas page_obj=faenas_page empty_message='No hay faenas para seguimiento.' %}</div>
 <div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas page_obj=juntas_page empty_message='No hay juntas para seguimiento.' %}</div>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/control-asistencias.js' %}" defer></script>{% endblock %}

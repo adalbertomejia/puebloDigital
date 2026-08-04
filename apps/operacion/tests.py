@@ -174,6 +174,17 @@ class TerritorialInterfaceTests(TestCase):
         self.assertContains(response, "Manzana 4")
         self.assertContains(response, "Alcance")
 
+    def test_tarjetas_de_cada_seccion_se_organizan_con_flechas(self):
+        Faena.objects.create(comite=self.comite, fecha=date.today(), descripcion="Faena adicional")
+        response = self.get_response(core_views.control_asistencias, reverse("control_asistencias"))
+
+        self.assertContains(response, 'data-attendance-carousel', count=2)
+        self.assertContains(response, 'data-attendance-previous', count=2)
+        self.assertContains(response, 'data-attendance-next', count=2)
+        self.assertContains(response, 'data-attendance-slide hidden', count=2)
+        self.assertContains(response, "Faena 1 de 2")
+        self.assertContains(response, "Junta 1 de 2")
+
     def test_csv_junta_incluye_contexto_legible(self):
         url = reverse("exportar_participantes_junta_csv", args=[self.junta.pk])
         response = self.get_response(core_views.exportar_participantes_junta_csv, url, junta_id=self.junta.pk)
