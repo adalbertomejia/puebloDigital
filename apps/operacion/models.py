@@ -1,8 +1,13 @@
 from django.db import models
 from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
+from .alcance import validar_territorio_evento
 
 class Junta(TimeStampedModel):
+    class Alcances(models.TextChoices):
+        GENERAL = "GENERAL", "Toda la comunidad"
+        MANZANA = "MANZANA", "Por manzana"
+
     class Estados(models.TextChoices):
         PROGRAMADA = 'PROGRAMADA', 'Programada'
         REALIZADA = 'REALIZADA', 'Realizada'
@@ -15,6 +20,11 @@ class Junta(TimeStampedModel):
 
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='juntas')
     fecha = models.DateField()
+    alcance = models.CharField(max_length=15, choices=Alcances.choices, default=Alcances.GENERAL, verbose_name="Alcance")
+    manzana = models.ForeignKey(
+        "core.Manzana", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="juntas", verbose_name="Manzana",
+    )
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.ORDINARIA)
     lugar = models.CharField(max_length=150, blank=True)
     tema = models.CharField(max_length=200)
@@ -25,6 +35,19 @@ class Junta(TimeStampedModel):
         verbose_name = '\U0001F465 Junta'
         verbose_name_plural = '\U0001F465 Juntas'
         ordering = ['-fecha']
+        indexes = [
+            models.Index(fields=["alcance", "manzana", "fecha"], name="junta_alc_manz_fecha_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        validar_territorio_evento(
+            instancia=self, registros=AsistenciaJunta.objects.filter(junta_id=self.pk), nombre_entidad="junta"
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.comite} - {self.fecha} - {self.tema}"
@@ -53,6 +76,10 @@ class AsistenciaJunta(TimeStampedModel):
         return f"{self.ciudadano.nombre_completo} - {self.junta} ({self.estatus})"
 
 class Faena(TimeStampedModel):
+    class Alcances(models.TextChoices):
+        GENERAL = "GENERAL", "Toda la comunidad"
+        MANZANA = "MANZANA", "Por manzana"
+
     class Estados(models.TextChoices):
         PROGRAMADA = 'PROGRAMADA', 'Programada'
         REALIZADA = 'REALIZADA', 'Realizada'
@@ -60,6 +87,20 @@ class Faena(TimeStampedModel):
 
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='faenas')
     fecha = models.DateField()
+    alcance = models.CharField(
+        max_length=15,
+        choices=Alcances.choices,
+        default=Alcances.GENERAL,
+        verbose_name="Alcance",
+    )
+    manzana = models.ForeignKey(
+        "core.Manzana",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="faenas",
+        verbose_name="Manzana",
+    )
     descripcion = models.CharField(max_length=200)
     estado = models.CharField(max_length=20, choices=Estados.choices, default=Estados.PROGRAMADA)
     notas = models.TextField(blank=True)
@@ -68,6 +109,19 @@ class Faena(TimeStampedModel):
         verbose_name = '🛠️ Faena'
         verbose_name_plural = '🛠️ Faenas'
         ordering = ['-fecha']
+        indexes = [
+            models.Index(fields=["alcance", "manzana", "fecha"], name="faena_alc_manz_fecha_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        validar_territorio_evento(
+            instancia=self, registros=RegistroFaena.objects.filter(faena_id=self.pk), nombre_entidad="faena"
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.comite} - {self.fecha} - {self.descripcion}"

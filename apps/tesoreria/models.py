@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -9,6 +10,9 @@ from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
 from apps.agua.models import Toma
 from apps.operacion.models import RegistroFaena
+from apps.operacion.alcance import validar_alcance_y_manzana
+
+from .validaciones import validar_cambios_con_obligaciones
 
 
 class Pago(TimeStampedModel):
@@ -71,6 +75,10 @@ class ConceptoTesoreria(TimeStampedModel):
         PAGO = "PAGO", "Pago"
         COOPERACION = "COOPERACION", "Cooperación"
 
+    class Alcances(models.TextChoices):
+        GENERAL = "GENERAL", "Toda la comunidad"
+        MANZANA = "MANZANA", "Por manzana"
+
     class Origenes(models.TextChoices):
         TESORERIA = "TESORERIA", "Tesorería"
         FAENA = "FAENA", "Faena"
@@ -78,11 +86,16 @@ class ConceptoTesoreria(TimeStampedModel):
         AGUA = "AGUA", "Agua"
 
     naturaleza = models.CharField(max_length=20, choices=Naturalezas.choices)
+    alcance = models.CharField(max_length=15, choices=Alcances.choices, default=Alcances.GENERAL, verbose_name="Alcance")
+    manzana = models.ForeignKey(
+        "core.Manzana", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="conceptos_tesoreria", verbose_name="Manzana",
+    )
     origen = models.CharField(max_length=20, choices=Origenes.choices, default=Origenes.TESORERIA)
     comite = models.ForeignKey(Comite, on_delete=models.PROTECT, related_name="conceptos_tesoreria")
     concepto = models.CharField(max_length=200)
     descripcion = models.TextField(blank=True)
-    monto_individual = models.DecimalField(max_digits=10, decimal_places=2)
+    monto_individual = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     fecha = models.DateField(default=timezone.localdate)
     anio_periodo = models.PositiveIntegerField(null=True, blank=True)
     registros_generados = models.BooleanField(default=False)
@@ -91,14 +104,34 @@ class ConceptoTesoreria(TimeStampedModel):
         verbose_name = "Concepto de tesorería"
         verbose_name_plural = "Conceptos de tesorería"
         ordering = ["-fecha", "-created_at"]
+        indexes = [models.Index(fields=["naturaleza", "alcance", "manzana", "fecha"], name="tes_nat_alc_mz_fecha_idx")]
 
     def clean(self):
+        super().clean()
+        errors = validar_alcance_y_manzana(
+            alcance=self.alcance, manzana_id=self.manzana_id,
+            alcance_general=self.Alcances.GENERAL, alcance_manzana=self.Alcances.MANZANA,
+            nombre_entidad="concepto",
+        )
+        errors.update(validar_cambios_con_obligaciones(self))
+        if errors:
+            raise ValidationError(errors)
         if not self.concepto or not self.concepto.strip():
             raise ValidationError({"concepto": "El concepto no puede estar vacío."})
         if self.monto_individual is not None and self.monto_individual <= 0:
             raise ValidationError({"monto_individual": "El monto individual debe ser mayor que cero."})
         if not self.comite_id:
             raise ValidationError({"comite": "Debe seleccionar un comité."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def alcance_legible(self):
+        if self.alcance == self.Alcances.MANZANA and self.manzana_id:
+            return str(self.manzana)
+        return self.Alcances.GENERAL.label
 
     def __str__(self):
         return f"{self.get_naturaleza_display()} · {self.concepto}"

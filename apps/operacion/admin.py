@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
 from django.forms.models import BaseInlineFormSet
 
+from .alcance import manzanas_disponibles_para_instancia
+
 from .models import (
     Actividad,
     ActividadArchivo,
@@ -23,13 +25,19 @@ class AsistenciaJuntaInline(admin.TabularInline):
 
 @admin.register(Junta)
 class JuntaAdmin(admin.ModelAdmin):
-    list_display = ("fecha", "comite", "tipo", "tema", "estado", "total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
-    list_filter = ("estado", "tipo", "comite")
+    list_display = ("fecha", "comite", "tipo", "tema", "alcance", "manzana", "estado", "total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
+    list_filter = ("alcance", "manzana", "estado", "tipo", "comite", "fecha")
     search_fields = ("tema", "comite__nombre")
-    autocomplete_fields = ("comite",)
+    autocomplete_fields = ("comite", "manzana")
+    list_select_related = ("comite", "manzana")
     list_editable = ("estado",)
     date_hierarchy = "fecha"
     inlines = [AsistenciaJuntaInline]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["manzana"].queryset = manzanas_disponibles_para_instancia(obj or Junta())
+        return form
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
@@ -106,13 +114,15 @@ class FaenaAdmin(admin.ModelAdmin):
         "fecha",
         "comite",
         "descripcion",
+        "alcance",
+        "manzana",
         "estado",
         "total_registros",
         "total_asistencias",
         "total_adeudos",
         "monto_total_adeudos",
     )
-    list_filter = ("estado", "comite", "fecha")
+    list_filter = ("alcance", "manzana", "estado", "comite", "fecha")
     list_editable = ("estado",)
     search_fields = (
         "descripcion",
@@ -123,19 +133,24 @@ class FaenaAdmin(admin.ModelAdmin):
         "registros__ciudadano__apellido_materno",
     )
     date_hierarchy = "fecha"
-    autocomplete_fields = ("comite",)
+    autocomplete_fields = ("comite", "manzana")
     inlines = [RegistroFaenaInline]
-    list_select_related = ("comite",)
+    list_select_related = ("comite", "manzana")
     list_per_page = 50
     ordering = ("-fecha",)
     save_on_top = True
     readonly_fields = ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")
     fieldsets = (
-        ("Datos de la faena", {"fields": ("comite", "fecha", "descripcion", "estado")}),
+        ("Datos de la faena", {"fields": ("comite", "fecha", "descripcion", "alcance", "manzana", "estado")}),
         ("Notas y control", {"fields": ("notas",)}),
         ("Resumen operativo", {"fields": ("total_registros", "total_asistencias", "total_adeudos", "monto_total_adeudos")}),
     )
     actions = ("marcar_como_programada", "marcar_como_realizada", "marcar_como_cancelada")
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields["manzana"].queryset = manzanas_disponibles_para_instancia(obj or Faena())
+        return form
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request)

@@ -1,45 +1,57 @@
-<section class="mb-8">
-  <div class="flex items-center justify-between mb-3">
-    <h4 class="text-lg font-semibold">{{ titulo }}</h4>
-    <p class="text-sm text-slate-500">Orden: actividades más recientes primero.</p>
+<section style="margin-bottom: 2rem" aria-labelledby="{{ titulo|lower }}-title">
+  <div class="pd-page-heading" style="margin-bottom: .75rem">
+    <h2 id="{{ titulo|lower }}-title" class="pd-section-title">{{ titulo }}</h2>
+    <p class="pd-muted" style="margin: 0">Actividades más recientes primero.</p>
   </div>
-  <div class="grid xl:grid-cols-2 gap-4">
+  <div class="attendance-carousel" data-attendance-carousel data-carousel-label="{{ titulo|lower }}">
+    <div class="attendance-carousel__slides" aria-live="polite">
     {% for evento in eventos %}
-      <article class="bg-white rounded-2xl border p-4 md:p-5">
-        <div class="flex justify-between items-start gap-3">
-          <div>
-            <p class="text-sm text-slate-500">{{ evento.fecha }} · {{ evento.comite.nombre }}</p>
-            <h5 class="font-semibold text-lg">{{ evento.descripcion_operativa }}</h5>
+      <article class="pd-card attendance-carousel__slide" data-attendance-slide {% if not forloop.first %}hidden{% endif %} aria-label="{{ titulo|slice:':-1' }} {{ forloop.counter }} de {{ eventos|length }}">
+        <header class="pd-card__header">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <p class="pd-card__eyebrow">{% if titulo == 'Faenas' %}Faena{% else %}Junta{% endif %}</p>
+              <h3 class="pd-card__title">{{ evento.descripcion_operativa }}</h3>
+              <p class="pd-card__meta">{{ evento.comite.nombre }}</p>
+            </div>
+            <span class="pd-tag {% if evento.pendientes %}pd-tag--warning{% elif evento.estado_operacional == 'COMPLETADA' %}pd-tag--success{% else %}pd-tag--info{% endif %}">{{ evento.get_estado_display }} · {{ evento.estado_operacional }}</span>
           </div>
-          <span class="text-xs px-2 py-1 rounded-full {% if evento.pendientes %}bg-amber-100 text-amber-800{% elif evento.estado_operacional == 'COMPLETADA' %}bg-emerald-100 text-emerald-700{% else %}bg-indigo-100 text-indigo-700{% endif %}">{{ evento.get_estado_display }} · {{ evento.estado_operacional }}</span>
+        </header>
+        <div class="pd-card__body">
+          <div class="pd-info-grid">
+            <div class="pd-info-item"><span class="pd-info-item__label">Fecha</span><span class="pd-info-item__value">{{ evento.fecha }}</span></div>
+            <div class="pd-info-item"><span class="pd-info-item__label">Alcance territorial</span><span class="pd-info-item__value">{% include "dashboard/components/alcance_badge.html" with evento=evento %}</span></div>
+          </div>
+          <div class="pd-card__metrics" aria-label="Resumen operativo">
+            <div class="pd-metric"><p class="pd-metric__label">Participantes</p><p class="pd-metric__value">{{ evento.total_participantes }}</p></div>
+            <div class="pd-metric"><p class="pd-metric__label">Registradas</p><p class="pd-metric__value">{{ evento.asistencias_registradas }}</p></div>
+            <div class="pd-metric"><p class="pd-metric__label">Pendientes</p><p class="pd-metric__value">{{ evento.pendientes }}</p></div>
+            <div class="pd-metric"><p class="pd-metric__label">Adeudos</p><p class="pd-metric__value">{{ evento.cantidad_adeudos }}</p></div>
+            <div class="pd-metric"><p class="pd-metric__label">Monto de adeudos</p><p class="pd-metric__value">${{ evento.monto_total_adeudos }}</p></div>
+          </div>
+          <div class="pd-progress">
+            <div class="pd-progress__label"><span>Avance de captura</span><span>{{ evento.porcentaje_asistencia }} %</span></div>
+            <div class="pd-progress__track" role="progressbar" aria-label="Avance de captura" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ evento.porcentaje_asistencia }}"><div class="pd-progress__bar" style="width: {{ evento.porcentaje_asistencia }}%"></div></div>
+          </div>
         </div>
-        <div class="grid sm:grid-cols-4 gap-2 mt-4 text-sm">
-          <p><span class="block text-slate-500 text-xs">Participantes</span><strong>{{ evento.total_participantes }}</strong></p>
-          <p><span class="block text-slate-500 text-xs">Registradas</span><strong>{{ evento.asistencias_registradas }}</strong></p>
-          <p><span class="block text-slate-500 text-xs">Pendientes</span><strong>{{ evento.pendientes }}</strong></p>
-          <p><span class="block text-slate-500 text-xs">Avance</span><strong>{{ evento.porcentaje_asistencia }}%</strong></p>
-          <p><span class="block text-slate-500 text-xs">Adeudos</span><strong>{{ evento.cantidad_adeudos }}</strong></p>
-          <p><span class="block text-slate-500 text-xs">Monto adeudos</span><strong>${{ evento.monto_total_adeudos }}</strong></p>
-        </div>
-        <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-indigo-500" style="width: {{ evento.porcentaje_asistencia }}%"></div></div>
-        <div class="mt-4 flex flex-wrap gap-2 text-sm">
-          <a href="{{ evento.detail_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver detalle</a>
-          {% if evento.total_participantes == 0 %}<a href="{{ evento.generate_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Generar registros</a>{% elif evento.pendientes > 0 and evento.can_capture %}<a href="{{ evento.capture_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Capturar asistencia</a><a href="{{ evento.sequential_capture_url }}" class="px-3 py-2 rounded-lg bg-emerald-600 text-white">Captura presencial</a>{% elif evento.pendientes == 0 %}<a href="{{ evento.sequential_capture_url }}" class="px-3 py-2 rounded-lg bg-emerald-100 text-emerald-800">Ver resumen</a><span class="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700">Captura completada</span>{% endif %}
-          <a href="{{ evento.estado_edit_url }}" class="px-3 py-2 rounded-lg bg-amber-100 text-amber-800">Editar estado</a>
-          <a href="{{ evento.admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-100">Editar evento</a>
-        </div>
+        <footer class="pd-card__footer">
+          <div class="pd-actions">
+            <a href="{{ evento.detail_url }}" class="pd-button pd-button--secondary">Ver detalle</a>
+            {% if evento.total_participantes == 0 %}<form method="post" action="{{ evento.generate_url }}">{% csrf_token %}<button class="pd-button pd-button--success" type="submit">Generar registros</button></form>{% elif evento.pendientes > 0 and evento.can_capture %}<a href="{{ evento.capture_url }}" class="pd-button pd-button--warning">Capturar asistencia</a><a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Captura presencial</a>{% elif evento.pendientes == 0 %}<a href="{{ evento.sequential_capture_url }}" class="pd-button pd-button--secondary">Ver resumen</a><span class="pd-tag pd-tag--success">Captura completada</span>{% endif %}
+            <a href="{{ evento.estado_edit_url }}" class="pd-button pd-button--warning">Editar estado</a>
+            <a href="{{ evento.admin_change_url }}" class="pd-button pd-button--warning">Editar evento</a>
+          </div>
+        </footer>
       </article>
-    {% empty %}
-      <article class="bg-white rounded-xl border p-6 text-slate-500">{{ empty_message }}</article>
-    {% endfor %}
+    {% empty %}<article class="pd-panel"><p class="pd-muted">{{ empty_message }}</p></article>{% endfor %}
+    </div>
+    {% if eventos|length > 1 %}
+      <nav class="attendance-carousel__controls" aria-label="Navegación entre {{ titulo|lower }}">
+        <button type="button" class="attendance-carousel__arrow" data-attendance-previous aria-label="Mostrar {{ titulo|lower }} anterior" disabled>←</button>
+        <span data-attendance-status>{{ titulo|slice:':-1' }} 1 de {{ eventos|length }}</span>
+        <button type="button" class="attendance-carousel__arrow" data-attendance-next aria-label="Mostrar {{ titulo|lower }} siguiente">→</button>
+      </nav>
+    {% endif %}
   </div>
-  {% if page_obj.paginator.num_pages > 1 %}
-    <nav class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-      <span class="text-slate-500">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
-      <div class="flex gap-2">
-        {% if page_obj.has_previous %}<a class="px-3 py-2 rounded-lg bg-white border" href="?{{ page_obj.previous_querystring }}#{{ titulo|lower }}">Anterior</a>{% endif %}
-        {% if page_obj.has_next %}<a class="px-3 py-2 rounded-lg bg-white border" href="?{{ page_obj.next_querystring }}#{{ titulo|lower }}">Siguiente</a>{% endif %}
-      </div>
-    </nav>
-  {% endif %}
+  {% if page_obj.paginator.num_pages > 1 %}<nav class="pd-pagination" aria-label="Paginación de {{ titulo|lower }}"><span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span><div class="pd-pagination__links">{% if page_obj.has_previous %}<a class="pd-button pd-button--secondary" rel="prev" href="?{{ page_obj.previous_querystring }}#{{ titulo|lower }}">Anterior</a>{% endif %}{% if page_obj.has_next %}<a class="pd-button pd-button--secondary" rel="next" href="?{{ page_obj.next_querystring }}#{{ titulo|lower }}">Siguiente</a>{% endif %}</div></nav>{% endif %}
 </section>

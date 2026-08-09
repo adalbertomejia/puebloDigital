@@ -9,7 +9,7 @@
   </div>
 {% endif %}
 
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'padron_ciudadanos' %}">Ciudadanos</a> / <span>Agregar ciudadano</span></nav>
+<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'padron_ciudadanos' %}">Ciudadanos</a> / <span>{{ title }}</span></nav>
 
 <section class="max-w-4xl mx-auto space-y-4">
   {% include 'dashboard/components/module_header.html' with title=title subtitle=description icon='👥' color='slate' action_url=cancel_url action_label='Volver a ciudadanos' %}
@@ -47,8 +47,8 @@
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</a>
-      <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ submit_label }}</button>
+      <a href="{{ cancel_url }}" class="pd-button pd-button--secondary">Cancelar</a>
+      <button class="pd-button pd-button--primary">{{ submit_label }}</button>
     </div>
   </form>
 </section>

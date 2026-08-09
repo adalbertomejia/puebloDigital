@@ -1,8 +1,8 @@
 from django import forms
-
 from apps.operacion.models import Faena, Junta
+from apps.operacion.alcance import manzanas_disponibles_para_instancia
 
-from .models import Ciudadano
+from .models import Ciudadano, Manzana
 
 
 class DashboardFormMixin:
@@ -30,7 +30,7 @@ class DashboardFormMixin:
 class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Faena
-        fields = ["comite", "fecha", "descripcion", "estado", "notas"]
+        fields = ["comite", "fecha", "descripcion", "alcance", "manzana", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
@@ -45,17 +45,26 @@ class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
         help_texts = {
             "descripcion": "Describe de forma breve el trabajo comunitario a realizar.",
             "notas": "Agrega indicaciones para la secretaría o el equipo operativo si hace falta.",
+            "manzana": "Selecciona una manzana únicamente cuando el alcance sea Por manzana.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
+        self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()
+
+    def clean_manzana(self):
+        manzana = self.cleaned_data.get("manzana")
+        if manzana and not manzana.activa and manzana.pk != self.instance.manzana_id:
+            raise forms.ValidationError("Selecciona una manzana activa.")
+        return manzana
 
 
 class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Junta
-        fields = ["comite", "fecha", "tipo", "lugar", "tema", "estado", "notas"]
+        fields = ["comite", "fecha", "tipo", "lugar", "tema", "alcance", "manzana", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
@@ -73,11 +82,20 @@ class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
             "tema": "Resume el motivo o asunto principal de la reunión.",
             "lugar": "Indica dónde se realizará la junta si ya está definido.",
             "notas": "Agrega acuerdos previos, indicaciones o contexto para seguimiento.",
+            "manzana": "Selecciona una manzana únicamente cuando el alcance sea Por manzana.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
+        self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()
+
+    def clean_manzana(self):
+        manzana = self.cleaned_data.get("manzana")
+        if manzana and not manzana.activa and manzana.pk != self.instance.manzana_id:
+            raise forms.ValidationError("Selecciona una manzana activa.")
+        return manzana
 
 
 class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
@@ -89,7 +107,11 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "apellido_materno",
             "edad",
             "fecha_nacimiento",
-            "telefono",
+            "sexo",
+            "numero_contrato",
+            "manzana",
+            "labor_social",
+            "motivo_alta",
             "direccion",
             "activo",
             "observaciones",
@@ -103,17 +125,20 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "nombre": "Nombre",
             "apellido_paterno": "Apellido paterno",
             "apellido_materno": "Apellido materno",
-            "edad": "Edad",
+            "edad": "Edad registrada",
             "fecha_nacimiento": "Fecha de nacimiento",
-            "telefono": "Teléfono",
+            "numero_contrato": "No. de contrato",
+            "motivo_alta": "Motivo de alta",
             "direccion": "Domicilio o referencia",
             "activo": "Ciudadano activo",
             "observaciones": "Observaciones",
         }
         help_texts = {
-            "edad": "Dato requerido para identificar correctamente a la persona.",
-            "fecha_nacimiento": "Opcional; úsala si la secretaría cuenta con la fecha exacta.",
-            "telefono": "Opcional; puede ser teléfono fijo o celular.",
+            "edad": "Dato heredado opcional; se usa solo cuando no hay fecha de nacimiento.",
+            "fecha_nacimiento": "Cuando existe, determina automáticamente la edad actual.",
+            "numero_contrato": "Opcional; admite letras, guiones y ceros iniciales.",
+            "manzana": "Opcional; selecciona la manzana identificada para el ciudadano.",
+            "motivo_alta": "Selecciona la razón por la que la persona se incorpora al padrón.",
             "direccion": "Agrega domicilio, barrio, referencia o ubicación conocida.",
             "activo": "Mantén esta opción marcada para incluirlo en la operación diaria.",
             "observaciones": "Notas internas relevantes para el expediente ciudadano.",
@@ -121,5 +146,7 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
+        self.fields["manzana"].empty_label = "Sin asignar"
         self._apply_dashboard_widgets()
         self.fields["activo"].widget.attrs["class"] = "h-4 w-4 rounded border-slate-300 text-indigo-600"

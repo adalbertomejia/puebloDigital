@@ -5,13 +5,116 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.forms import Select
 from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 
 from apps.comites.models import Comite
-from apps.core.models import Ciudadano
+from apps.core.forms import CiudadanoOperativoForm
+from apps.core.models import Ciudadano, Manzana
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
+
+
+class BusquedaDinamicaCiudadanosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="busqueda", password="testpass123")
+        self.client.force_login(self.user)
+        self.ana = Ciudadano.objects.create(
+            nombre="Ana", apellido_paterno="López", edad=30, numero_contrato="CONT-ANA"
+        )
+        Ciudadano.objects.create(nombre="Pedro", apellido_paterno="Martínez", edad=40)
+
+    def test_inicio_tiene_titulo_adecuado_y_busqueda_dinamica(self):
+        response = self.client.get(reverse("dashboard_operativo"), {"q": "Ana"})
+
+        self.assertContains(response, "<h1>Inicio</h1>", html=True)
+        self.assertNotContains(response, "Resumen operativo")
+        self.assertContains(response, "data-dynamic-citizen-search")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Pedro Martínez")
+
+    def test_inicio_responde_solo_resultados_a_peticion_dinamica(self):
+        response = self.client.get(
+            reverse("dashboard_operativo"), {"q": "Ana"}, HTTP_HX_REQUEST="true"
+        )
+
+        self.assertTemplateUsed(response, "dashboard/partials/inicio_ciudadanos_resultados.html")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Acciones rápidas")
+
+    def test_padron_responde_solo_resultados_a_busqueda_dinamica(self):
+        response = self.client.get(
+            reverse("padron_ciudadanos"), {"q": "CONT-ANA"}, HTTP_HX_REQUEST="true"
+        )
+
+        self.assertTemplateUsed(response, "dashboard/partials/padron_ciudadanos_resultados.html")
+        self.assertContains(response, self.ana.nombre_completo)
+        self.assertNotContains(response, "Filtrar y ordenar resultados")
+        self.assertNotContains(response, "Pedro Martínez")
+
+
+class MotivoAltaCiudadanoTests(TestCase):
+    def test_text_choices_contiene_unicamente_los_tres_motivos_permitidos(self):
+        self.assertEqual(
+            list(Ciudadano.MotivosAlta.choices),
+            [
+                ("ESTUDIOS", "Conclusión o interrupción de estudios"),
+                ("MAYORIA_EDAD", "Mayoría de edad"),
+                ("INTEGRACION_COMUNIDAD", "Integración voluntaria a la comunidad"),
+            ],
+        )
+
+    def test_modelo_rechaza_motivo_no_definido(self):
+        ciudadano = Ciudadano(
+            nombre="Ana",
+            apellido_paterno="López",
+            edad=18,
+            motivo_alta="OTRO",
+        )
+
+        with self.assertRaises(ValidationError) as error:
+            ciudadano.full_clean()
+        self.assertIn("motivo_alta", error.exception.message_dict)
+
+    def test_formulario_usa_selector_y_rechaza_motivo_no_definido(self):
+        form = CiudadanoOperativoForm(
+            data={
+                "nombre": "Ana",
+                "apellido_paterno": "López",
+                "apellido_materno": "",
+                "edad": 18,
+                "fecha_nacimiento": "",
+                "numero_contrato": "",
+                "manzana": "",
+                "labor_social": "",
+                "motivo_alta": "OTRO",
+                "direccion": "",
+                "activo": True,
+                "observaciones": "",
+            }
+        )
+
+        self.assertIsInstance(form.fields["motivo_alta"].widget, Select)
+        self.assertFalse(form.is_valid())
+        self.assertIn("motivo_alta", form.errors)
+
+    def test_detalle_muestra_etiqueta_legible(self):
+        ciudadano = Ciudadano(
+            nombre="Ana",
+            apellido_paterno="López",
+            edad=18,
+            motivo_alta=Ciudadano.MotivosAlta.ESTUDIOS,
+        )
+
+        self.assertEqual(
+            ciudadano.get_motivo_alta_display(),
+            "Conclusión o interrupción de estudios",
+        )
+        template = Path("templates/dashboard/perfil_ciudadano.html").read_text()
+        self.assertIn("ciudadano.get_motivo_alta_display", template)
+        self.assertNotIn("ciudadano.motivo_alta|default", template)
 
 
 class ExportacionParticipantesCsvTests(TestCase):
@@ -48,9 +151,9 @@ class ExportacionParticipantesCsvTests(TestCase):
         self.assertIn(f'filename="faena_{faena.pk}_participantes_2026-06-26.csv"', response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         rows = self._rows(response)
-        self.assertEqual(rows[0], ["Numero", "Nombre completo", "Estado", "Fecha", "Tipo de evento", "Descripcion", "Genera adeudo", "Monto adeudo", "Observaciones"])
+        self.assertEqual(rows[0], ["Numero", "Nombre completo", "Estado", "Fecha", "Tipo de evento", "Descripcion", "Alcance", "Manzana", "Genera adeudo", "Monto adeudo", "Observaciones"])
         self.assertEqual([row[1] for row in rows[1:]], ["Ana García Ruiz", "Juan Pérez López"])
-        self.assertEqual(rows[1][2:8], ["FALTO", "2026-06-26", "Faena", "Limpieza del camino, zona ñ", "Sí", "100.00"])
+        self.assertEqual(rows[1][2:10], ["FALTO", "2026-06-26", "Faena", "Limpieza del camino, zona ñ", "Toda la comunidad", "", "Sí", "100.00"])
         self.assertNotIn("Pedro Martínez Soto", response.content.decode("utf-8-sig"))
 
     def test_exporta_participantes_de_junta_incluyendo_pendientes_y_justificados(self):
@@ -84,7 +187,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
             apellido_paterno="García",
             apellido_materno="Ñúñez",
             edad=30,
-            telefono="",
+            numero_contrato=None,
             activo=True,
         )
         self.beto = Ciudadano.objects.create(
@@ -92,7 +195,8 @@ class ExportacionCiudadanosCsvTests(TestCase):
             apellido_paterno="Pérez",
             apellido_materno="López",
             edad=40,
-            telefono="555",
+            numero_contrato="CONT-0055",
+            manzana=Manzana.objects.create(nombre="Manzana 2"),
             activo=False,
         )
         self.maria = Ciudadano.objects.create(
@@ -124,9 +228,9 @@ class ExportacionCiudadanosCsvTests(TestCase):
         self.assertIn(f'filename="ciudadanos_{timezone.localdate().isoformat()}.csv"', response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         rows = self._rows(response)
-        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "Teléfono", "Edad", "Estado", "Fecha de registro"])
+        self.assertEqual(rows[0], ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Nombre completo", "No. de contrato", "Manzana", "Fecha de nacimiento", "Edad registrada", "Edad actual", "Sexo", "Motivo de alta", "Labor social", "Estado", "Fecha de registro"])
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:8], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "30", "Activo"])
+        self.assertEqual(rows[1][1:14], ["Ana María", "García", "Ñúñez", "Ana María García Ñúñez", "", "Sin asignar", "", "30", "30", "No especificado", "Sin motivo registrado", "", "Activo"])
         self.assertNotIn("Beto Pérez López", response.content.decode("utf-8-sig"))
 
     def test_exporta_inactivos_como_inactivo_y_requiere_autenticacion(self):
@@ -134,12 +238,188 @@ class ExportacionCiudadanosCsvTests(TestCase):
         rows = self._rows(response)
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][1:8], ["Beto", "Pérez", "López", "Beto Pérez López", "555", "40", "Inactivo"])
+        self.assertEqual(rows[1][1:14], ["Beto", "Pérez", "López", "Beto Pérez López", "CONT-0055", "Manzana 2", "", "40", "40", "No especificado", "Sin motivo registrado", "", "Inactivo"])
 
         self.client.logout()
         response = self.client.get(reverse("exportar_ciudadanos_csv"))
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("login"), response["Location"])
+
+    def test_exportacion_respeta_manzana_y_sin_asignar_y_nombra_archivo(self):
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"manzana": self.beto.manzana_id})
+        self.assertEqual([row[1] for row in self._rows(response)[1:]], ["Beto"])
+        self.assertIn(f"ciudadanos_manzana_{self.beto.manzana_id}_", response["Content-Disposition"])
+
+        response = self.client.get(reverse("exportar_ciudadanos_csv"), {"manzana": "sin_asignar", "page": 2})
+        self.assertCountEqual([row[1] for row in self._rows(response)[1:]], ["Ana María", "María"])
+        self.assertIn("ciudadanos_sin_manzana_", response["Content-Disposition"])
+
+
+class PadronCiudadanosFiltrosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="secretaria-padron", password="testpass123")
+        self.client.force_login(self.user)
+        self.manzana_uno = Manzana.objects.create(nombre="Manzana 1")
+        self.manzana_dos = Manzana.objects.create(nombre="Manzana 2", activa=False)
+        self.ana = Ciudadano.objects.create(
+            nombre="Ana María", apellido_paterno="Mejía", apellido_materno="López",
+            edad=20, numero_contrato="PD-001", manzana=self.manzana_uno, activo=True,
+            motivo_alta=Ciudadano.MotivosAlta.ESTUDIOS,
+        )
+        self.beto = Ciudadano.objects.create(
+            nombre="Beto", apellido_paterno="Ramírez", apellido_materno="Soto",
+            edad=25, numero_contrato="PD-002", manzana=self.manzana_dos, activo=False,
+            motivo_alta=Ciudadano.MotivosAlta.MAYORIA_EDAD,
+        )
+        self.carla = Ciudadano.objects.create(
+            nombre="Carla", apellido_paterno="Torres", apellido_materno="Mejía",
+            edad=30, numero_contrato="COM-900", activo=True,
+            motivo_alta=Ciudadano.MotivosAlta.INTEGRACION_COMUNIDAD,
+        )
+        self.sin_motivo = Ciudadano.objects.create(
+            nombre="Diego", apellido_paterno="Nava", apellido_materno="", edad=31,
+            numero_contrato="", activo=False, motivo_alta="",
+        )
+
+    def _ids(self, **params):
+        response = self.client.get(reverse("padron_ciudadanos"), params)
+        self.assertEqual(response.status_code, 200)
+        return [ciudadano.pk for ciudadano in response.context["ciudadanos"]]
+
+    def test_busqueda_por_cada_campo_es_parcial_e_insensible_a_mayusculas(self):
+        self.assertEqual(self._ids(q="  ANA mar "), [self.ana.pk])
+        self.assertEqual(self._ids(q="RAM"), [self.beto.pk])
+        self.assertEqual(self._ids(q="soto"), [self.beto.pk])
+        self.assertEqual(self._ids(q="com-9"), [self.carla.pk])
+
+    def test_filtros_de_manzana_incluyen_inactiva_y_sin_manzana(self):
+        self.assertEqual(self._ids(manzana=str(self.manzana_dos.pk)), [self.beto.pk])
+        self.assertCountEqual(self._ids(manzana="sin_asignar"), [self.carla.pk, self.sin_motivo.pk])
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertContains(response, "Manzana 2")
+        self.assertContains(response, "Sin manzana")
+
+    def test_filtros_de_estado_y_motivo_incluido_vacio(self):
+        self.assertCountEqual(self._ids(estado="activos"), [self.ana.pk, self.carla.pk])
+        self.assertCountEqual(self._ids(estado="inactivos"), [self.beto.pk, self.sin_motivo.pk])
+        for ciudadano, motivo in (
+            (self.ana, Ciudadano.MotivosAlta.ESTUDIOS),
+            (self.beto, Ciudadano.MotivosAlta.MAYORIA_EDAD),
+            (self.carla, Ciudadano.MotivosAlta.INTEGRACION_COMUNIDAD),
+        ):
+            self.assertEqual(self._ids(motivo_alta=motivo), [ciudadano.pk])
+        self.assertEqual(self._ids(motivo_alta="sin_motivo"), [self.sin_motivo.pk])
+
+    def test_combina_grupos_con_and(self):
+        self.assertEqual(
+            self._ids(q="Mejía", manzana=self.manzana_uno.pk, estado="activos", motivo_alta="ESTUDIOS"),
+            [self.ana.pk],
+        )
+        self.assertEqual(
+            self._ids(q="Mejía", manzana=self.manzana_uno.pk, estado="inactivos", motivo_alta="ESTUDIOS"),
+            [],
+        )
+
+    def test_conserva_filtros_existentes_y_no_duplica_ciudadanos(self):
+        comite = Comite.objects.create(nombre="Comité", tipo=Comite.Tipos.DELEGACION)
+        faena = Faena.objects.create(comite=comite, fecha=date(2026, 7, 1), descripcion="Faena")
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.ana, genera_adeudo=True)
+        RegistroFaena.objects.create(faena=faena, ciudadano=self.beto, genera_adeudo=False)
+        from apps.agua.models import Toma
+        Toma.objects.create(ciudadano=self.ana, numero_toma="T-1")
+
+        self.assertEqual(self._ids(toma="con_toma", adeudo="con_adeudo", orden="adeudos_faena"), [self.ana.pk])
+        self.assertNotIn(self.ana.pk, self._ids(toma="sin_toma", adeudo="sin_adeudo"))
+        self.assertEqual(self._ids(orden="adeudos_faena").count(self.ana.pk), 1)
+
+    def test_parametros_invalidos_se_ignoran_y_orden_no_llega_al_orm(self):
+        self.assertCountEqual(
+            self._ids(estado="desconocido", manzana="no-es-id", motivo_alta="OTRO", orden="__hack"),
+            [self.ana.pk, self.beto.pk, self.carla.pk, self.sin_motivo.pk],
+        )
+
+    def test_selector_de_orden_explica_direccion_y_como_aplicarlo(self):
+        response = self.client.get(reverse("padron_ciudadanos"))
+
+        self.assertContains(response, "Orden de resultados")
+        self.assertContains(response, "Nombre (A–Z)")
+        self.assertContains(response, "Estado (activos primero)")
+        self.assertContains(response, "Adeudos (mayor a menor)")
+        self.assertContains(response, "Registro (más reciente)")
+        self.assertContains(response, "Aplicar filtros y orden")
+
+    def test_pagina_20_y_enlaces_conservan_todos_los_parametros_codificados(self):
+        for index in range(21):
+            Ciudadano.objects.create(nombre=f"Persona {index:02}", apellido_paterno="Zeta", edad=18)
+        params = {
+            "q": "Persona", "manzana": "todas", "estado": "todos", "motivo_alta": "todos",
+            "toma": "todos", "adeudo": "todos", "orden": "nombre", "extra": "valor seguro",
+        }
+        response = self.client.get(reverse("padron_ciudadanos"), params)
+        self.assertEqual(len(response.context["ciudadanos"]), 20)
+        self.assertEqual(response.context["ciudadanos"].paginator.count, 21)
+        self.assertContains(response, "q=Persona")
+        self.assertContains(response, "motivo_alta=todos")
+        self.assertContains(response, "extra=valor+seguro")
+        self.assertContains(response, "page=2")
+
+    def test_acceso_protegido_y_relaciones_no_generan_n_mas_uno(self):
+        self.client.logout()
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertEqual(response.status_code, 302)
+        self.client.force_login(self.user)
+        # El número permanece constante aunque la tabla use manzana y toma.
+        with self.assertNumQueries(12):
+            response = self.client.get(reverse("padron_ciudadanos"))
+            list(response.context["ciudadanos"])
+
+    def test_listado_muestra_manzana_sin_asignar_y_metrica(self):
+        response = self.client.get(reverse("padron_ciudadanos"))
+        self.assertContains(response, "Manzana 1")
+        self.assertContains(response, "Sin asignar")
+        self.assertEqual(response.context["metricas"]["sin_manzana"], 2)
+        self.assertEqual(response.context["metricas"]["activos_sin_manzana"], 1)
+
+
+class CiudadanoOperativoManzanaFormTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="edicion-ciudadanos", password="testpass123")
+        self.client.force_login(self.user)
+        self.activa = Manzana.objects.create(nombre="Manzana activa")
+        self.inactiva = Manzana.objects.create(nombre="Manzana histórica", activa=False)
+        self.ciudadano = Ciudadano.objects.create(
+            nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.inactiva
+        )
+
+    def _datos(self, **cambios):
+        datos = {
+            "nombre": "Nueva", "apellido_paterno": "Persona", "apellido_materno": "",
+            "edad": 22, "fecha_nacimiento": "", "numero_contrato": "", "manzana": "",
+            "labor_social": "", "motivo_alta": "", "direccion": "", "activo": "on",
+            "observaciones": "",
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_creacion_ofrece_solo_activas_y_permite_asignar_o_dejar_vacio(self):
+        response = self.client.get(reverse("crear_ciudadano_operativo"))
+        self.assertContains(response, "Sin asignar")
+        self.assertContains(response, self.activa.nombre)
+        self.assertNotContains(response, self.inactiva.nombre)
+
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(manzana=self.activa.pk))
+        self.assertEqual(Ciudadano.objects.get(nombre="Nueva").manzana, self.activa)
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(nombre="Otra"))
+        self.assertIsNone(Ciudadano.objects.get(nombre="Otra").manzana)
+
+    def test_edicion_conserva_manzana_inactiva_y_puede_modificarla(self):
+        url = reverse("editar_ciudadano_operativo", args=[self.ciudadano.pk])
+        response = self.client.get(url)
+        self.assertContains(response, self.inactiva.nombre)
+        response = self.client.post(url, self._datos(nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.activa.pk))
+        self.assertRedirects(response, reverse("perfil_ciudadano", args=[self.ciudadano.pk]))
+        self.ciudadano.refresh_from_db()
+        self.assertEqual(self.ciudadano.manzana, self.activa)
 
 
 class OperationalEventCreationViewTests(TestCase):
@@ -159,6 +439,7 @@ class OperationalEventCreationViewTests(TestCase):
                 "comite": self.comite.pk,
                 "fecha": "2026-07-20",
                 "descripcion": "Limpieza del parque",
+                "alcance": Faena.Alcances.GENERAL,
                 "estado": Faena.Estados.PROGRAMADA,
                 "notas": "Traer herramientas",
             },
@@ -353,3 +634,53 @@ class SecureDeletionFlowTests(TestCase):
         response = self.client.post(reverse("eliminar_concepto_tesoreria", args=[concepto.pk]))
         self.assertRedirects(response, reverse("tesoreria_operativa"), fetch_redirect_response=False)
         self.assertFalse(ConceptoTesoreria.objects.filter(pk=concepto.pk).exists())
+
+class DemografiaCiudadanoTests(TestCase):
+    def test_edad_actual_prioriza_fecha_y_respeta_cumpleanos(self):
+        hoy = date.today()
+        ya_cumplio = Ciudadano(fecha_nacimiento=date(hoy.year - 65, 1, 1), edad=20)
+        cumple_despues = Ciudadano(fecha_nacimiento=date(hoy.year - 65, 12, 31), edad=90)
+        self.assertEqual(ya_cumplio.edad_actual, 65)
+        self.assertEqual(cumple_despues.edad_actual, 64)
+        self.assertEqual(Ciudadano(edad=42).edad_actual, 42)
+        self.assertIsNone(Ciudadano().edad_actual)
+
+    def test_rechaza_fecha_futura_y_edad_fuera_de_rango(self):
+        with self.assertRaises(ValidationError):
+            Ciudadano(fecha_nacimiento=date.today().replace(year=date.today().year + 1)).full_clean()
+        with self.assertRaises(ValidationError):
+            Ciudadano(edad=131).full_clean()
+
+    def test_sexo_predeterminado_y_etiquetas(self):
+        ciudadano = Ciudadano.objects.create(nombre="N", apellido_paterno="E", edad=20)
+        self.assertEqual(ciudadano.sexo, Ciudadano.Sexos.NO_ESPECIFICADO)
+        self.assertEqual(ciudadano.get_sexo_display(), "No especificado")
+
+
+class FiltrosDemograficosTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="demografia", password="x")
+        self.client.force_login(self.user)
+        hoy = date.today()
+        self.por_fecha = Ciudadano.objects.create(
+            nombre="Fecha", apellido_paterno="Mayor", edad=20,
+            fecha_nacimiento=date(hoy.year - 70, 1, 1), sexo=Ciudadano.Sexos.MUJER,
+        )
+        self.por_edad = Ciudadano.objects.create(
+            nombre="Manual", apellido_paterno="Mayor", edad=66,
+            sexo=Ciudadano.Sexos.HOMBRE,
+        )
+        self.joven = Ciudadano.objects.create(nombre="Joven", apellido_paterno="Uno", edad=25)
+        self.sin_info = Ciudadano.objects.create(nombre="Sin", apellido_paterno="Info")
+
+    def ids(self, **params):
+        from apps.core.views import _ciudadanos_operativos_queryset, _filtrar_ciudadanos_operativos
+        return set(_filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), params).values_list("pk", flat=True))
+
+    def test_65_mas_combina_fecha_y_edad_manual(self):
+        self.assertEqual(self.ids(rango_edad="65_mas"), {self.por_fecha.pk, self.por_edad.pk})
+
+    def test_sin_info_sin_fecha_y_sexo(self):
+        self.assertEqual(self.ids(rango_edad="sin_informacion"), {self.sin_info.pk})
+        self.assertEqual(self.ids(fecha_nacimiento="sin_fecha"), {self.por_edad.pk, self.joven.pk, self.sin_info.pk})
+        self.assertEqual(self.ids(sexo=Ciudadano.Sexos.MUJER), {self.por_fecha.pk})

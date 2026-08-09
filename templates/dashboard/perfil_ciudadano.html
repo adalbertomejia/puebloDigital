@@ -1,41 +1,30 @@
 {% extends 'dashboard/base_dashboard.html' %}
-{% block title %}Expediente {{ ciudadano.nombre_completo }}{% endblock %}
+{% block title %}Expediente ciudadano · {{ ciudadano.nombre_completo }}{% endblock %}
 {% block content %}
-{% if messages %}
-  <div class="space-y-2 mb-4">
-    {% for message in messages %}
-      <div class="rounded-lg border px-3 py-2 text-sm {% if message.tags == "success" %}bg-emerald-50 border-emerald-300 text-emerald-800{% elif message.tags == "error" %}bg-rose-50 border-rose-300 text-rose-800{% else %}bg-slate-50 border-slate-300{% endif %}">{{ message }}</div>
-    {% endfor %}
+<nav class="mb-4 text-sm text-slate-600" aria-label="Ruta contextual"><a class="underline" href="{{ return_to }}">{{ origen }}</a><span aria-hidden="true"> › </span><span>Expediente ciudadano</span></nav>
+<a class="pd-button pd-button--secondary mb-4" href="{{ return_to }}">← Volver a {{ origen }}</a>
+
+<header class="rounded-2xl border border-teal-200 bg-white p-5 mb-6">
+  <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+    <div><p class="text-sm font-semibold text-teal-700">Expediente ciudadano</p><h1 class="text-2xl md:text-3xl font-bold">{{ ciudadano.nombre_completo }}</h1><p class="mt-2 text-slate-600"><span class="pd-tag {% if ciudadano.activo %}pd-tag--active{% else %}pd-tag--inactive{% endif %}">{% if ciudadano.activo %}Activo{% else %}Inactivo{% endif %}</span> · Manzana actual: {{ ciudadano.manzana|default:'Sin asignar' }} · Contrato: {{ ciudadano.numero_contrato|default:'Sin asignar' }}</p></div>
+    <div class="flex flex-wrap gap-2"><a class="pd-button pd-button--secondary" href="{% url 'tesoreria_operativa' %}?q={{ ciudadano.nombre_completo|urlencode }}">Ver obligaciones en Tesorería</a><a class="pd-button pd-button--secondary" href="{% url 'resumen_aportaciones' %}?ciudadano={{ ciudadano.nombre_completo|urlencode }}">Ver aportaciones</a><a class="pd-button pd-button--secondary" href="{% url 'control_asistencias' %}">Ver faenas y juntas</a></div>
   </div>
-{% endif %}
+</header>
 
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>{{ ciudadano.nombre_completo }}</span></nav>
+<section class="mb-6" aria-labelledby="resumen-title"><h2 id="resumen-title" class="text-xl font-bold mb-3">Resumen comunitario</h2><div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+<article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Faenas relacionadas</p><p class="text-xl font-bold">{{ resumen.faenas }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Juntas relacionadas</p><p class="text-xl font-bold">{{ resumen.juntas }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Asistencias</p><p class="text-xl font-bold">{{ resumen.asistencias }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Faltas</p><p class="text-xl font-bold">{{ resumen.faltas }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Justificaciones</p><p class="text-xl font-bold">{{ resumen.justificaciones }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Conceptos con obligaciones</p><p class="text-xl font-bold">{{ resumen.conceptos }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Obligaciones pendientes</p><p class="text-xl font-bold">{{ resumen.pendientes }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Obligaciones pagadas</p><p class="text-xl font-bold">{{ resumen.pagadas }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Total abonado</p><p class="text-xl font-bold">${{ resumen.total_abonado|floatformat:2 }}</p></article><article class="rounded-xl border bg-white p-3"><p class="text-xs text-slate-500">Saldo pendiente</p><p class="text-xl font-bold">${{ resumen.saldo_pendiente|floatformat:2 }}</p></article>
+</div></section>
 
-<section class="bg-white border rounded-2xl p-5 mb-6">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-4">
-      <div class="h-16 w-16 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xl">{{ ciudadano.nombre|first }}{{ ciudadano.apellido_paterno|first }}</div>
-      <div>
-        <h2 class="text-2xl font-bold">{{ ciudadano.nombre_completo }}</h2>
-        <p class="text-slate-500">{{ ciudadano.edad }} años · {{ ciudadano.telefono|default:'Sin teléfono' }}</p>
-      </div>
-    </div>
-    <div class="flex flex-wrap gap-2 text-sm">
-      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Editar en Administración</a>
-      <a href="{{ quick_links.pago_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar pago</a>
-      <a href="{{ quick_links.cooperacion_add }}" class="px-3 py-2 rounded-lg bg-slate-200">Registrar cooperación</a>
-      <a href="{% url 'control_asistencias' %}" class="px-3 py-2 rounded-lg bg-slate-200">Ir a Control de Asistencias</a>
-    </div>
-  </div>
-</section>
+<section class="rounded-2xl border bg-white p-4 md:p-5 mb-6" aria-labelledby="datos-title"><h2 id="datos-title" class="text-xl font-bold mb-3">Datos generales</h2><dl class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+<div><dt class="text-slate-500">Nombre</dt><dd>{{ ciudadano.nombre }}</dd></div><div><dt class="text-slate-500">Apellido paterno</dt><dd>{{ ciudadano.apellido_paterno }}</dd></div><div><dt class="text-slate-500">Apellido materno</dt><dd>{{ ciudadano.apellido_materno|default:'Sin información' }}</dd></div>
+<div><dt class="text-slate-500">Fecha de nacimiento</dt><dd>{{ ciudadano.fecha_nacimiento|date:'d/m/Y'|default:'Sin información' }}</dd></div><div><dt class="text-slate-500">Edad actual</dt><dd>{{ ciudadano.edad_actual|default_if_none:'Sin información' }}</dd></div><div><dt class="text-slate-500">Edad registrada de respaldo</dt><dd>{{ ciudadano.edad|default_if_none:'Sin información' }}</dd></div>
+<div><dt class="text-slate-500">Sexo</dt><dd>{{ ciudadano.get_sexo_display }}</dd></div><div><dt class="text-slate-500">Manzana actual</dt><dd>{{ ciudadano.manzana|default:'Sin asignar' }}</dd></div><div><dt class="text-slate-500">Responsable de manzana</dt><dd>{{ ciudadano.manzana.responsable.nombre_completo|default:'Sin asignar' }}</dd></div>
+<div><dt class="text-slate-500">Motivo de alta</dt><dd>{{ ciudadano.get_motivo_alta_display|default:'Sin información' }}</dd></div><div><dt class="text-slate-500">Labor social</dt><dd>{{ ciudadano.labor_social|default:'Sin información' }}</dd></div><div><dt class="text-slate-500">Estado</dt><dd>{% if ciudadano.activo %}Activo{% else %}Inactivo{% endif %}</dd></div>
+<div><dt class="text-slate-500">Creación</dt><dd>{{ ciudadano.created_at|date:'d/m/Y H:i' }}</dd></div><div><dt class="text-slate-500">Actualización</dt><dd>{{ ciudadano.updated_at|date:'d/m/Y H:i' }}</dd></div></dl></section>
 
-<section class="grid lg:grid-cols-2 gap-4">
-  <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Agua</h3><p>Toma: {{ ciudadano.toma.numero_toma|default:'Sin toma' }}</p><p>Estado: {{ ciudadano.toma.get_estado_display|default:'-' }}</p><p>Observaciones: {{ ciudadano.toma.observaciones|default:'-' }}</p></article>
-  <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Resumen</h3><p>Adeudos de faena: {{ resumen.adeudos_faena }}</p><p>Último pago: {{ resumen.ultimo_pago.fecha|default:'Sin registro' }}</p><p>Última faena: {{ resumen.ultima_faena.faena.fecha|default:'Sin registro' }}</p></article>
+<section class="analytics-card mb-6" aria-labelledby="asistencias-title"><h2 id="asistencias-title" class="analytics-card__title p-4">Historial de asistencias</h2>{% if asistencias_page %}<div class="analytics-card__table"><table class="min-w-full text-sm"><thead><tr><th>Tipo</th><th>Actividad</th><th>Fecha</th><th>Territorio histórico</th><th>Estado</th><th>Adeudo relacionado</th></tr></thead><tbody>{% for a in asistencias_page %}<tr><td>{{ a.tipo }}</td><td><a class="text-teal-700 underline" href="{% url a.url_name a.evento_id %}">{{ a.descripcion }}</a></td><td>{{ a.fecha|date:'d/m/Y' }}</td><td>{{ a.territorio }}</td><td>{{ a.estado }}</td><td>{% if a.genera_adeudo %}${{ a.monto_adeudo|floatformat:2 }}{% else %}No{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="p-4 text-slate-600">No existen asistencias registradas.</p>{% endif %}{% include 'dashboard/components/expediente_pagination.html' with page=asistencias_page %}</section>
 
-  <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Pagos recientes</h3><ul class="text-sm space-y-1">{% for p in pagos %}<li>{{ p.fecha }} · {{ p.get_tipo_display }} · ${{ p.monto }} · {{ p.comite.nombre }}</li>{% empty %}<li>Sin pagos.</li>{% endfor %}</ul></article>
-  <article class="bg-white border rounded-xl p-4"><h3 class="font-semibold mb-2">Cooperaciones recientes</h3><ul class="text-sm space-y-1">{% for c in cooperaciones %}<li>{{ c.fecha }} · {{ c.get_tipo_display }} · ${{ c.monto }} · {{ c.comite.nombre }}</li>{% empty %}<li>Sin cooperaciones.</li>{% endfor %}</ul></article>
+<section class="analytics-card mb-6" aria-labelledby="obligaciones-title"><h2 id="obligaciones-title" class="analytics-card__title p-4">Historial financiero por concepto</h2><p class="px-4 pb-3 text-sm text-slate-600">El territorio histórico pertenece al concepto y no se reemplaza por la manzana actual.</p>{% if obligaciones_page %}<div class="analytics-card__table"><table class="min-w-full text-sm"><thead><tr><th>Concepto</th><th>Naturaleza</th><th>Fecha</th><th>Territorio histórico</th><th>Asignado</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th>Último movimiento</th></tr></thead><tbody>{% for o in obligaciones_page %}<tr><td><a class="text-teal-700 underline" href="{% url 'tesoreria_concepto_detalle' o.concepto_id %}">{{ o.concepto.concepto }}</a><span class="block text-xs text-slate-500">{{ o.concepto.comite.nombre }}</span></td><td>{{ o.concepto.get_naturaleza_display }}</td><td>{{ o.concepto.fecha|date:'d/m/Y' }}</td><td>{% if o.concepto.manzana %}{{ o.concepto.manzana }}{% else %}Toda la comunidad{% endif %}</td><td>${{ o.monto_asignado|floatformat:2 }}</td><td>${{ o.total_abonado_calc|floatformat:2 }}</td><td>${{ o.saldo_pendiente_calc|floatformat:2 }}</td><td>{{ o.get_estado_display }}</td><td>{{ o.ultimo_abono|date:'d/m/Y'|default:'Sin movimientos' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="p-4 text-slate-600">Este ciudadano todavía no tiene obligaciones.</p>{% endif %}{% include 'dashboard/components/expediente_pagination.html' with page=obligaciones_page %}</section>
 
-  <article class="bg-white border rounded-xl p-4 lg:col-span-2"><h3 class="font-semibold mb-2">Timeline de faenas</h3><ul class="text-sm space-y-2">{% for r in registros_faena %}<li>{{ r.faena.fecha }} · {{ r.faena.descripcion }} · <strong>{{ r.get_estatus_display }}</strong> {% if r.genera_adeudo %}(Adeudo: ${{ r.monto_adeudo }}){% endif %}</li>{% empty %}<li>Sin historial de faenas.</li>{% endfor %}</ul></article>
-</section>
+<section class="analytics-card mb-6" aria-labelledby="abonos-title"><h2 id="abonos-title" class="analytics-card__title p-4">Historial de abonos</h2>{% if abonos_page %}<div class="analytics-card__table"><table class="min-w-full text-sm"><thead><tr><th>Fecha</th><th>Concepto</th><th>Naturaleza</th><th>Territorio histórico</th><th>Monto</th><th>Estado de obligación</th></tr></thead><tbody>{% for a in abonos_page %}<tr><td>{{ a.fecha|date:'d/m/Y' }}</td><td><a class="text-teal-700 underline" href="{% url 'tesoreria_concepto_detalle' a.obligacion.concepto_id %}">{{ a.obligacion.concepto.concepto }}</a></td><td>{{ a.obligacion.concepto.get_naturaleza_display }}</td><td>{% if a.obligacion.concepto.manzana %}{{ a.obligacion.concepto.manzana }}{% else %}Toda la comunidad{% endif %}</td><td>${{ a.monto|floatformat:2 }}</td><td>{{ a.obligacion.get_estado_display }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="p-4 text-slate-600">No hay abonos registrados.</p>{% endif %}{% include 'dashboard/components/expediente_pagination.html' with page=abonos_page %}</section>
 {% endblock %}

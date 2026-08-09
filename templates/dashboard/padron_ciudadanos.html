@@ -1,96 +1,42 @@
 {% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
 {% block title %}Ciudadanos{% endblock %}
 {% block content %}
-<nav class="text-sm mb-4 text-slate-500"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <span>Ciudadanos</span></nav>
+<nav class="pd-breadcrumbs" aria-label="Ruta de navegación"><a href="{% url 'dashboard_operativo' %}">Inicio</a> <span aria-hidden="true">›</span> <span aria-current="page">Ciudadanos</span></nav>
+<header class="pd-page-heading">
+  <div><h1>Ciudadanos</h1><p>Consulta y administra la información del padrón comunitario.</p></div>
+  <div class="pd-actions"><a class="pd-button pd-button--success" href="{{ crear_ciudadano_url }}">Agregar ciudadano</a><a class="pd-button pd-button--secondary" href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}">Exportar CSV</a></div>
+</header>
 
-{% include 'dashboard/components/module_header.html' with title='Ciudadanos' subtitle='Consulta y administra la información de los ciudadanos.' icon='👥' color='slate' action_url=crear_ciudadano_url action_label='Agregar ciudadano' %}
-<section class="mb-6 flex flex-wrap justify-end gap-2 text-sm">
-  <a href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}" class="px-4 py-2 rounded-lg bg-emerald-600 text-white">⬇️ Exportar CSV</a>
+<section class="pd-metrics" aria-label="Resumen del padrón">
+  <article class="pd-metric"><p class="pd-metric__label">Total</p><p class="pd-metric__value">{{ metricas.total }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Activos</p><p class="pd-metric__value">{{ metricas.activos }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Inactivos</p><p class="pd-metric__value">{{ metricas.inactivos }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Sin toma</p><p class="pd-metric__value">{{ metricas.sin_toma }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Con adeudo de faena</p><p class="pd-metric__value">{{ metricas.con_adeudo }}</p></article>
+  <a href="?manzana=sin_asignar" class="pd-metric"><p class="pd-metric__label">Sin manzana</p><p class="pd-metric__value">{{ metricas.sin_manzana }}</p><span class="pd-muted">{{ metricas.activos_sin_manzana }} activos</span></a>
 </section>
 
-<section class="grid md:grid-cols-5 gap-4 mb-6">
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total</p><p class="text-2xl font-bold">{{ metricas.total }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Activos</p><p class="text-2xl font-bold text-emerald-700">{{ metricas.activos }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Inactivos</p><p class="text-2xl font-bold text-rose-700">{{ metricas.inactivos }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Sin toma</p><p class="text-2xl font-bold">{{ metricas.sin_toma }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Con adeudo faena</p><p class="text-2xl font-bold">{{ metricas.con_adeudo }}</p></article>
-</section>
-
-<section class="bg-white rounded-2xl border p-4 mb-6">
-  <form method="get" class="grid lg:grid-cols-6 gap-3 items-end">
-    <label class="lg:col-span-2 text-sm font-medium">Búsqueda general
-      <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre, teléfono, toma o identificador" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-    </label>
-    <label class="text-sm font-medium">Estado
-      <select name="estado" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-        <option value="todos" {% if filtros.estado == 'todos' %}selected{% endif %}>Todos</option>
-        <option value="activos" {% if filtros.estado == 'activos' %}selected{% endif %}>Activos</option>
-        <option value="inactivos" {% if filtros.estado == 'inactivos' %}selected{% endif %}>Inactivos</option>
-      </select>
-    </label>
-    <label class="text-sm font-medium">Toma de agua
-      <select name="toma" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-        <option value="todos" {% if filtros.toma == 'todos' %}selected{% endif %}>Todos</option>
-        <option value="con_toma" {% if filtros.toma == 'con_toma' %}selected{% endif %}>Con toma</option>
-        <option value="sin_toma" {% if filtros.toma == 'sin_toma' %}selected{% endif %}>Sin toma</option>
-      </select>
-    </label>
-    <label class="text-sm font-medium">Adeudos de faena
-      <select name="adeudo" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-        <option value="todos" {% if filtros.adeudo == 'todos' %}selected{% endif %}>Todos</option>
-        <option value="con_adeudo" {% if filtros.adeudo == 'con_adeudo' %}selected{% endif %}>Con adeudo</option>
-        <option value="sin_adeudo" {% if filtros.adeudo == 'sin_adeudo' %}selected{% endif %}>Sin adeudo</option>
-      </select>
-    </label>
-    <label class="text-sm font-medium">Ordenar por
-      <select name="orden" class="mt-1 w-full rounded-lg border px-3 py-2 font-normal">
-        <option value="nombre" {% if filtros.orden == 'nombre' %}selected{% endif %}>Nombre</option>
-        <option value="estado" {% if filtros.orden == 'estado' %}selected{% endif %}>Estado</option>
-        <option value="adeudos_faena" {% if filtros.orden == 'adeudos_faena' %}selected{% endif %}>Adeudos de faena</option>
-        <option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Fecha de registro</option>
-      </select>
-    </label>
-    <div class="lg:col-span-6 flex flex-wrap gap-2">
-      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar filtros</button>
-      <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'padron_ciudadanos' %}">Limpiar</a>
-    </div>
+<section class="pd-panel pd-filter-panel" aria-labelledby="filtros-title">
+  <h2 id="filtros-title" class="pd-section-title">Filtrar y ordenar resultados</h2>
+  <form method="get" action="{% url 'padron_ciudadanos' %}" class="pd-form-grid" data-dynamic-citizen-search>
+    <div class="pd-form-group pd-form-group--wide"><label for="padron-q">Búsqueda principal</label><span id="padron-q-hint" class="pd-hint">Busca por nombre, apellidos o número de contrato.</span><input class="pd-input" id="padron-q" type="search" name="q" value="{{ filtros.q }}" aria-describedby="padron-q-hint"></div>
+    <div class="pd-form-group"><label for="padron-manzana">Manzana</label><select class="pd-select" id="padron-manzana" name="manzana"><option value="todas" {% if filtros.manzana == 'todas' %}selected{% endif %}>Todas las manzanas</option><option value="sin_asignar" {% if filtros.manzana == 'sin_asignar' %}selected{% endif %}>Sin manzana asignada</option>{% for manzana in manzanas %}<option value="{{ manzana.pk }}" {% if filtros.manzana == manzana.pk|stringformat:'s' %}selected{% endif %}>{{ manzana }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="padron-estado">Estado</label><select class="pd-select" id="padron-estado" name="estado"><option value="todos" {% if filtros.estado == 'todos' %}selected{% endif %}>Todos</option><option value="activos" {% if filtros.estado == 'activos' %}selected{% endif %}>Activos</option><option value="inactivos" {% if filtros.estado == 'inactivos' %}selected{% endif %}>Inactivos</option></select></div>
+    <div class="pd-form-group"><label for="padron-motivo">Motivo de alta</label><select class="pd-select" id="padron-motivo" name="motivo_alta"><option value="todos" {% if filtros.motivo_alta == 'todos' %}selected{% endif %}>Todos los motivos</option>{% if motivo_alta_permite_vacio %}<option value="sin_motivo" {% if filtros.motivo_alta == 'sin_motivo' %}selected{% endif %}>Sin motivo registrado</option>{% endif %}{% for value, label in motivos_alta %}<option value="{{ value }}" {% if filtros.motivo_alta == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="padron-sexo">Sexo</label><select class="pd-select" id="padron-sexo" name="sexo"><option value="todos" {% if filtros.sexo == 'todos' %}selected{% endif %}>Todos</option>{% for value, label in sexos %}<option value="{{ value }}" {% if filtros.sexo == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="padron-edad">Rango de edad</label><select class="pd-select" id="padron-edad" name="rango_edad"><option value="todas" {% if filtros.rango_edad == 'todas' %}selected{% endif %}>Todas las edades</option><option value="menores_18" {% if filtros.rango_edad == 'menores_18' %}selected{% endif %}>Menores de 18</option><option value="18_29" {% if filtros.rango_edad == '18_29' %}selected{% endif %}>18 a 29</option><option value="30_49" {% if filtros.rango_edad == '30_49' %}selected{% endif %}>30 a 49</option><option value="50_64" {% if filtros.rango_edad == '50_64' %}selected{% endif %}>50 a 64</option><option value="65_mas" {% if filtros.rango_edad == '65_mas' %}selected{% endif %}>65 años o más</option><option value="sin_informacion" {% if filtros.rango_edad == 'sin_informacion' %}selected{% endif %}>Sin información de edad</option><option value="sin_fecha" {% if filtros.rango_edad == 'sin_fecha' %}selected{% endif %}>Sin fecha de nacimiento</option></select></div>
+    <div class="pd-form-group"><label for="padron-fecha">Fecha de nacimiento</label><select class="pd-select" id="padron-fecha" name="fecha_nacimiento"><option value="todas" {% if filtros.fecha_nacimiento == 'todas' %}selected{% endif %}>Con o sin fecha</option><option value="con_fecha" {% if filtros.fecha_nacimiento == 'con_fecha' %}selected{% endif %}>Con fecha de nacimiento</option><option value="sin_fecha" {% if filtros.fecha_nacimiento == 'sin_fecha' %}selected{% endif %}>Sin fecha de nacimiento</option></select></div>
+    <div class="pd-form-group"><label for="padron-toma">Toma de agua</label><select class="pd-select" id="padron-toma" name="toma"><option value="todos" {% if filtros.toma == 'todos' %}selected{% endif %}>Todos</option><option value="con_toma" {% if filtros.toma == 'con_toma' %}selected{% endif %}>Con toma</option><option value="sin_toma" {% if filtros.toma == 'sin_toma' %}selected{% endif %}>Sin toma</option></select></div>
+    <div class="pd-form-group"><label for="padron-adeudo">Adeudos de faena</label><select class="pd-select" id="padron-adeudo" name="adeudo"><option value="todos" {% if filtros.adeudo == 'todos' %}selected{% endif %}>Todos</option><option value="con_adeudo" {% if filtros.adeudo == 'con_adeudo' %}selected{% endif %}>Con adeudo</option><option value="sin_adeudo" {% if filtros.adeudo == 'sin_adeudo' %}selected{% endif %}>Sin adeudo</option></select></div>
+    <div class="pd-form-group"><label for="padron-orden">Orden de resultados</label><select class="pd-select" id="padron-orden" name="orden"><option value="nombre" {% if filtros.orden == 'nombre' %}selected{% endif %}>Nombre (A–Z)</option><option value="estado" {% if filtros.orden == 'estado' %}selected{% endif %}>Estado (activos primero)</option><option value="adeudos_faena" {% if filtros.orden == 'adeudos_faena' %}selected{% endif %}>Adeudos (mayor a menor)</option><option value="registro" {% if filtros.orden == 'registro' %}selected{% endif %}>Registro (más reciente)</option></select></div>
+    <div class="pd-form-actions"><button class="pd-button pd-button--primary" type="submit">Aplicar filtros y orden</button><a class="pd-button pd-button--secondary" href="{% url 'padron_ciudadanos' %}">Limpiar filtros</a><span class="pd-dynamic-search__loading" aria-hidden="true">Actualizando…</span></div>
   </form>
 </section>
 
-<section class="space-y-3">
-  {% for c in ciudadanos %}
-    <article class="bg-white rounded-xl border p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 class="font-semibold text-lg">{{ c.nombre_completo }}</h3>
-          <p class="text-sm text-slate-500">{{ c.edad }} años · {{ c.telefono|default:'Sin teléfono' }} · ID {{ c.id }}</p>
-        </div>
-        <span class="text-xs px-3 py-1 rounded-full font-medium {% if c.activo %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if c.activo %}Activo{% else %}Inactivo{% endif %}</span>
-      </div>
-      <div class="grid md:grid-cols-4 gap-3 mt-4 text-sm">
-        <p><span class="block text-xs text-slate-500">Toma de agua</span><strong>{{ c.toma.numero_toma|default:'Sin toma' }}</strong></p>
-        <p><span class="block text-xs text-slate-500">Último pago</span><strong>{{ c.ultimo_pago_fecha|default:'Sin registro' }}</strong></p>
-        <p><span class="block text-xs text-slate-500">Adeudos de faena</span><strong>{{ c.adeudos_faena }}</strong></p>
-        <p><span class="block text-xs text-slate-500">Registro</span><strong>{{ c.created_at|date:'d/m/Y' }}</strong></p>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-2 text-sm">
-        <a href="{% url 'perfil_ciudadano' c.pk %}" class="px-3 py-2 rounded-lg bg-indigo-600 text-white">Ver expediente</a>
-        <a href="/admin/core/ciudadano/{{ c.pk }}/change/" class="px-3 py-2 rounded-lg bg-slate-200">Editar</a>
-        <a href="{% url 'control_asistencias' %}" class="px-3 py-2 rounded-lg bg-slate-100">Registrar asistencia de faena</a>
-      </div>
-    </article>
-  {% empty %}
-    <article class="bg-white rounded-xl border p-6 text-slate-500">No se encontraron ciudadanos con los filtros seleccionados.</article>
-  {% endfor %}
-</section>
-
-{% if ciudadanos.paginator.num_pages > 1 %}
-  <nav class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
-    <span class="text-slate-500">Página {{ ciudadanos.number }} de {{ ciudadanos.paginator.num_pages }}</span>
-    <div class="flex gap-2">
-      {% if ciudadanos.has_previous %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.previous_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Anterior</a>{% endif %}
-      {% if ciudadanos.has_next %}<a class="px-3 py-2 rounded-lg bg-white border" href="?page={{ ciudadanos.next_page_number }}&q={{ filtros.q }}&estado={{ filtros.estado }}&toma={{ filtros.toma }}&adeudo={{ filtros.adeudo }}&orden={{ filtros.orden }}">Siguiente</a>{% endif %}
-    </div>
-  </nav>
-{% endif %}
+<div id="citizen-search-results" aria-live="polite" aria-busy="false">
+  {% include 'dashboard/partials/padron_ciudadanos_resultados.html' %}
+</div>
+<noscript><p class="pd-muted">La búsqueda funciona mediante el botón Aplicar filtros y orden sin necesidad de JavaScript.</p></noscript>
+<script src="{% static 'js/buscar-ciudadanos.js' %}" defer></script>
 {% endblock %}

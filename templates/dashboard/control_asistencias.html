@@ -1,45 +1,33 @@
 {% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
 {% block title %}Control de Asistencias{% endblock %}
 {% block content %}
-{% url 'dashboard_operativo' as dashboard_url %}
-{% include 'dashboard/components/module_header.html' with title='Control de Asistencias' subtitle='Administra la asistencia de faenas y juntas.' icon='☑️' color='orange' action_url=dashboard_url action_label='Volver al dashboard' %}
+<nav class="pd-breadcrumbs" aria-label="Ruta de navegación"><a href="{% url 'dashboard_operativo' %}">Inicio</a> <span aria-hidden="true">›</span> <span aria-current="page">Control de Asistencias</span></nav>
+<header class="pd-page-heading">
+  <div><h1>Control de Asistencias</h1><p>Administra la asistencia de faenas y juntas y consulta su avance operativo.</p></div>
+</header>
 
-<section class="grid md:grid-cols-4 gap-4 mb-6">
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Faenas activas</p><p class="text-2xl font-bold">{{ resumen.faenas_activas }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Juntas activas</p><p class="text-2xl font-bold">{{ resumen.juntas_activas }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Eventos pendientes de captura</p><p class="text-2xl font-bold">{{ resumen.eventos_pendientes }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias pendientes</p><p class="text-2xl font-bold">{{ resumen.asistencias_pendientes }}</p></article>
+<section class="pd-metrics" aria-label="Resumen de asistencias">
+  <article class="pd-metric"><p class="pd-metric__label">Faenas activas</p><p class="pd-metric__value">{{ resumen.faenas_activas }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Juntas activas</p><p class="pd-metric__value">{{ resumen.juntas_activas }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Eventos pendientes de captura</p><p class="pd-metric__value">{{ resumen.eventos_pendientes }}</p></article>
+  <article class="pd-metric"><p class="pd-metric__label">Asistencias pendientes</p><p class="pd-metric__value">{{ resumen.asistencias_pendientes }}</p></article>
 </section>
 
-<section class="bg-white rounded-2xl border p-4 md:p-5 mb-6">
-  <form method="get" class="grid lg:grid-cols-12 gap-3 items-end">
+<section class="pd-panel pd-filter-panel" aria-labelledby="attendance-filters-title">
+  <h2 id="attendance-filters-title" class="pd-section-title">Filtrar actividades</h2>
+  <form method="get" class="pd-form-grid">
     {% if tipo_activo %}<input type="hidden" name="tipo" value="{{ tipo_activo }}">{% endif %}
-    <label class="lg:col-span-6 text-sm font-medium text-slate-700">Buscar actividad
-      <input type="search" name="q" value="{{ filtros.q }}" placeholder="Descripción, comité, faena o junta" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
-    </label>
-    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Mes
-      <select name="mes" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
-        <option value="todos">Todos</option>
-        {% for mes_value, mes_nombre in meses %}
-          <option value="{{ mes_value }}" {% if filtros.mes == mes_value|stringformat:'s' %}selected{% endif %}>{{ mes_nombre }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="lg:col-span-2 text-sm font-medium text-slate-700">Año
-      <select name="anio" class="mt-1 w-full rounded-lg border-slate-300 focus:border-indigo-500 focus:ring-indigo-500">
-        <option value="todos">Todos</option>
-        {% for anio in anios %}
-          <option value="{{ anio }}" {% if filtros.anio == anio|stringformat:'s' %}selected{% endif %}>{{ anio }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <div class="lg:col-span-2 flex flex-wrap gap-2">
-      <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Aplicar</button>
-      <a class="rounded-lg bg-slate-200 px-4 py-2" href="{% url 'control_asistencias' %}">Limpiar filtros</a>
-    </div>
+    <div class="pd-form-group pd-form-group--wide"><label for="activity-q">Buscar actividad</label><span id="activity-q-hint" class="pd-hint">Descripción, comité, faena o junta.</span><input class="pd-input" id="activity-q" type="search" name="q" value="{{ filtros.q }}" aria-describedby="activity-q-hint"></div>
+    <div class="pd-form-group"><label for="activity-scope">Alcance</label><select class="pd-select" id="activity-scope" name="alcance"><option value="todos">Todos</option>{% for value, label in alcances %}<option value="{{ value }}" {% if filtros.alcance == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="activity-block">Manzana</label><select class="pd-select" id="activity-block" name="manzana"><option value="todas">Todas las manzanas</option>{% for item in manzanas %}<option value="{{ item.pk }}" {% if filtros.manzana == item.pk|stringformat:'s' %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="activity-month">Mes</label><select class="pd-select" id="activity-month" name="mes"><option value="todos">Todos</option>{% for mes_value, mes_nombre in meses %}<option value="{{ mes_value }}" {% if filtros.mes == mes_value|stringformat:'s' %}selected{% endif %}>{{ mes_nombre }}</option>{% endfor %}</select></div>
+    <div class="pd-form-group"><label for="activity-year">Año</label><select class="pd-select" id="activity-year" name="anio"><option value="todos">Todos</option>{% for anio in anios %}<option value="{{ anio }}" {% if filtros.anio == anio|stringformat:'s' %}selected{% endif %}>{{ anio }}</option>{% endfor %}</select></div>
+    <div class="pd-form-actions"><button class="pd-button pd-button--primary" type="submit">Aplicar filtros</button><a class="pd-button pd-button--secondary" href="{% url 'control_asistencias' %}">Limpiar filtros</a></div>
   </form>
 </section>
 
 <div id="faenas" class="{% if tipo_activo == 'juntas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Faenas' eventos=faenas page_obj=faenas_page empty_message='No hay faenas para seguimiento.' %}</div>
 <div id="juntas" class="{% if tipo_activo == 'faenas' %}opacity-60{% endif %}">{% include 'dashboard/partials/eventos_asistencia.html' with titulo='Juntas' eventos=juntas page_obj=juntas_page empty_message='No hay juntas para seguimiento.' %}</div>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/control-asistencias.js' %}" defer></script>{% endblock %}

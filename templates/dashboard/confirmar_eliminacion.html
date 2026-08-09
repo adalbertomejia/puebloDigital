@@ -35,8 +35,8 @@
     <form method="post" class="mt-6">
       {% csrf_token %}
       <div class="flex flex-wrap gap-3">
-        <a href="{{ cancel_url }}" class="rounded-lg bg-slate-200 px-4 py-2 font-medium text-slate-800 transition hover:bg-slate-300">Cancelar</a>
-        <button type="submit" onclick="return confirm('Esta acción eliminará permanentemente los datos relacionados. ¿Deseas continuar?')" class="rounded-lg bg-rose-600 px-4 py-2 font-medium text-white transition hover:bg-rose-700">Sí, eliminar permanentemente</button>
+        <a href="{{ cancel_url }}" class="pd-button pd-button--secondary">Cancelar</a>
+        <button type="submit" onclick="return confirm('Esta acción eliminará permanentemente los datos relacionados. ¿Deseas continuar?')" class="pd-button pd-button--danger">Sí, eliminar permanentemente</button>
       </div>
     </form>
   </article>

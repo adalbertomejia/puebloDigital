@@ -1,57 +1,57 @@
+{% load static %}
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Panel de Gestión{% endblock %}</title>
+  <title>{% block title %}Panel de Gestión{% endblock %} | Pueblo Digital</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{% static 'css/pueblo-digital.css' %}">
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen">
-  <div class="min-h-screen lg:flex">
-    <aside class="w-full lg:w-72 bg-slate-950 text-slate-100 px-4 py-5 lg:py-6">
-      <p class="text-xs uppercase tracking-[.2em] text-indigo-300">Pueblo Digital</p>
-      <h1 class="text-xl font-semibold mt-1">Centro de Gestión Comunitaria</h1>
-      <p class="text-sm text-slate-400 mt-1">Información y operación diaria de la delegación.</p>
-
-      <nav class="mt-6 space-y-2 text-sm">
-        <a href="{% url 'dashboard_operativo' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'dashboard_operativo' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Inicio</a>
-        <a href="{% url 'padron_ciudadanos' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'padron_ciudadanos' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Ciudadanos</a>
-        <a href="{% url 'control_asistencias' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'control_asistencias' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Control de Asistencias</a>
-        <a href="{% url 'tesoreria_operativa' %}" class="block rounded-lg px-3 py-2 {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">💰 Tesorería</a>
-        <a href="{% url 'control_agua' %}" class="block rounded-lg px-3 py-2 {% if request.resolver_match.url_name == 'control_agua' %}bg-slate-800{% else %}hover:bg-slate-800{% endif %}">Agua</a>
-        <a href="#actividad-reciente" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Actividad reciente</a>
-      </nav>
-
-      <div class="mt-8 border-t border-slate-800 pt-4 space-y-2 text-sm">
-        <a href="/" class="block rounded-lg px-3 py-2 bg-slate-800">Volver a inicio</a>
+<body class="app-shell">
+  <a class="pd-skip-link" href="#contenido-principal">Saltar al contenido principal</a>
+  <div class="pd-layout">
+    <aside class="pd-sidebar" aria-label="Navegación de Pueblo Digital">
+      <div class="pd-sidebar__inner">
+        <a class="pd-brand" href="{% url 'dashboard_operativo' %}">
+          <span class="pd-brand__mark" aria-hidden="true">PD</span>
+          <span><span class="pd-brand__name">Pueblo Digital</span><span class="pd-brand__description">Gestión comunitaria</span></span>
+        </a>
+        <nav class="pd-navigation" aria-label="Navegación principal">
+          <a class="pd-navigation__link" href="{% url 'dashboard_operativo' %}" {% if request.resolver_match.url_name == 'dashboard_operativo' %}aria-current="page"{% endif %}>Inicio</a>
+          <a class="pd-navigation__link" href="{% url 'padron_ciudadanos' %}" {% if 'ciudadano' in request.resolver_match.url_name or request.resolver_match.url_name == 'padron_ciudadanos' %}aria-current="page"{% endif %}>Ciudadanos</a>
+          <a class="pd-navigation__link" href="{% url 'control_asistencias' %}" {% if 'asistencia' in request.resolver_match.url_name %}aria-current="page"{% endif %}>Control de Asistencias</a>
+          <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#faenas">Faenas</a>
+          <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#juntas">Juntas</a>
+          <a class="pd-navigation__link {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% endif %}" href="{% url 'tesoreria_operativa' %}" {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}aria-current="page"{% endif %}>Tesorería</a>
+          <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' or request.resolver_match.url_name == 'buscar_aportaciones' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
+          <a class="pd-navigation__link" href="{% url 'control_agua' %}" {% if request.resolver_match.url_name == 'control_agua' %}aria-current="page"{% endif %}>Agua</a>
+        </nav>
       </div>
     </aside>
-
-    <section class="flex-1 min-w-0">
-      <header class="bg-white border-b sticky top-0 z-10">
-        <div class="px-4 py-3 md:px-6 flex flex-wrap gap-3 items-center justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-widest text-slate-500">Inicio</p>
-            <h2 class="font-semibold text-lg">Panel de Gestión</h2>
-          </div>
-          <nav class="flex items-center gap-2 text-sm">
-            <a class="px-3 py-2 rounded-lg bg-indigo-600 text-white" href="{% url 'dashboard_operativo' %}">Inicio</a>
-            <a class="px-3 py-2 rounded-lg bg-slate-200" href="/admin/">Administración</a>
-            <a class="px-3 py-2 rounded-lg bg-slate-200" href="/logout/">Salir</a>
-            <span class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700">
-              <span class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-white" aria-hidden="true">
-                {{ request.user.get_username|first|upper }}
-              </span>
-              <span class="font-medium">{{ request.user.get_full_name|default:request.user.get_username }}</span>
-            </span>
+    <div class="min-w-0">
+      <header class="pd-header">
+        <div class="pd-header__inner">
+          <p class="pd-header__title">Panel de Gestión Comunitaria</p>
+          <nav class="pd-account" aria-label="Cuenta de usuario">
+            <span class="pd-account__user">Sesión: <strong>{{ request.user.get_full_name|default:request.user.get_username }}</strong></span>
+            <a href="/admin/">Administración</a>
+            <a href="/logout/">Cerrar sesión</a>
           </nav>
         </div>
       </header>
-
-      <main class="px-4 md:px-6 py-6">
+      <main id="contenido-principal" class="pd-main" tabindex="-1">
+        {% if messages %}
+          <div aria-live="polite">
+            {% for message in messages %}
+              <div class="pd-alert {% if 'success' in message.tags %}pd-alert--success{% elif 'warning' in message.tags %}pd-alert--warning{% elif 'error' in message.tags %}pd-alert--danger{% else %}pd-alert--info{% endif %}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
         {% block content %}{% endblock %}
       </main>
-    </section>
+    </div>
   </div>
+  {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,7 @@
+{% if metric_1_value or metric_2_value or metric_3_value %}
+<ul class="analytics-card__metrics" aria-label="Contexto de {{ title|lower }}">
+  {% if metric_1_value %}<li><strong>{{ metric_1_prefix }}{{ metric_1_value }}</strong> {{ metric_1_label }}</li>{% endif %}
+  {% if metric_2_value %}<li><strong>{{ metric_2_prefix }}{{ metric_2_value }}</strong> {{ metric_2_label }}</li>{% endif %}
+  {% if metric_3_value %}<li><strong>{{ metric_3_prefix }}{{ metric_3_value }}</strong> {{ metric_3_label }}</li>{% endif %}
+</ul>
+{% endif %}

@@ -1,0 +1,24 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
+{% block title %}Buscar aportaciones{% endblock %}
+{% block content %}
+<nav class="mb-3 text-sm text-slate-600" aria-label="Migas de pan"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'resumen_aportaciones' %}{% if resumen_querystring %}?{{ resumen_querystring }}{% endif %}">Resumen de aportaciones</a> / <span aria-current="page">Buscar aportaciones</span></nav>
+<header class="search-contributions__header">
+  <div><p class="search-contributions__eyebrow">Búsqueda avanzada de aportaciones</p><h1>Buscar aportaciones</h1><p>Localiza aportaciones y abonos por ciudadano, concepto, manzana o periodo.</p></div>
+  <a class="pd-button pd-button--secondary" href="{% url 'resumen_aportaciones' %}{% if resumen_querystring %}?{{ resumen_querystring }}{% endif %}">Volver al resumen</a>
+</header>
+<section class="contributions-filters bg-white rounded-2xl border p-4 md:p-5 mb-4" aria-labelledby="search-filters-title">
+  <h2 id="search-filters-title" class="font-bold text-lg">Consulta movimientos y abonos registrados.</h2>
+  <p class="text-sm text-slate-600 mb-4">Los filtros se combinan y la URL puede copiarse para compartir la consulta.</p>
+  <form method="get" action="{% url 'buscar_aportaciones' %}" id="contribution-search-form" class="search-contributions__form" data-dynamic-search>
+    <div class="search-contributions__primary">{{ form.q.label_tag }}{{ form.q }}{{ form.q.errors }}</div>
+    {% for field in form %}{% if field.name != 'q' %}<div><label for="{{ field.id_for_label }}" class="text-sm font-medium">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endif %}{% endfor %}
+    <div class="search-contributions__actions"><button class="pd-button pd-button--primary" type="submit">Buscar</button><a class="pd-button pd-button--secondary" href="{% url 'buscar_aportaciones' %}">Limpiar filtros</a><span class="search-contributions__loading" aria-hidden="true">Actualizando…</span></div>
+  </form>
+</section>
+<div id="search-results" aria-live="polite" aria-busy="false">
+  {% include 'dashboard/partials/buscar_aportaciones_resultados.html' %}
+</div>
+<noscript><p class="mt-3 text-sm text-slate-600">La búsqueda funciona mediante el botón Buscar sin necesidad de JavaScript.</p></noscript>
+<script src="{% static 'js/buscar-aportaciones.js' %}" defer></script>
+{% endblock %}

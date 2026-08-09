@@ -17,7 +17,7 @@
         <h3 class="text-2xl font-semibold text-slate-900">{{ title }}</h3>
         <p class="text-sm text-slate-500 mt-1">{{ description }}</p>
       </div>
-      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">{{ cancel_label|default:"Volver al dashboard" }}</a>
+      <a href="{{ cancel_url }}" class="pd-button pd-button--secondary pd-button--sm">{{ cancel_label|default:"Volver al dashboard" }}</a>
     </div>
   </div>
 
@@ -44,10 +44,10 @@
 
     <div class="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
       {% if delete_url %}
-        <a href="{{ delete_url }}" class="inline-flex items-center justify-center rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100">Eliminar {{ event_label|lower }}</a>
+        <a href="{{ delete_url }}" class="pd-button pd-button--danger">Eliminar {{ event_label|lower }}</a>
       {% endif %}
-      <a href="{{ cancel_url }}" class="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</a>
-      <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ submit_label }}</button>
+      <a href="{{ cancel_url }}" class="pd-button pd-button--secondary">Cancelar</a>
+      <button class="pd-button pd-button--primary">{{ submit_label }}</button>
     </div>
   </form>
 </section>

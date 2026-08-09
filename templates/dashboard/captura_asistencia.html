@@ -21,11 +21,12 @@
       <p class="text-sm uppercase tracking-widest text-indigo-600 font-semibold">Vista Operativa de Captura · {{ event_type }}</p>
       <h3 class="text-2xl font-bold">{{ description }}</h3>
       <p class="text-slate-500">{{ event.fecha }} · {{ event.comite.nombre }}{% if event.lugar %} · {{ event.lugar }}{% endif %}</p>
+      {% if event.alcance %}<p class="mt-1 text-sm font-medium">{% if event.manzana_id %}Manzana: {{ event.manzana }}{% else %}Alcance: Toda la comunidad{% endif %}</p>{% endif %}
       {% if event.notas %}<p class="mt-2 text-sm text-slate-600">{{ event.notas }}</p>{% endif %}
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
-      <a href="{{ detail_url }}" class="px-3 py-2 rounded-lg bg-slate-200">Ver detalle</a>
-      <a href="{{ admin_change_url }}" class="px-3 py-2 rounded-lg bg-slate-100">Editar evento</a>
+      <a href="{{ detail_url }}" class="pd-button pd-button--secondary pd-button--sm">Ver detalle</a>
+      <a href="{{ admin_change_url }}" class="pd-button pd-button--warning pd-button--sm">Editar evento</a>
     </div>
   </div>
 </section>
@@ -44,7 +45,7 @@
       <h4 class="font-semibold text-lg">Registros de asistencia</h4>
       <p class="text-sm text-slate-500">Actualiza el estatus de todos los participantes generados para este evento sin crear registros nuevos.</p>
     </div>
-    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Guardar cambios</button>
+    <button class="pd-button pd-button--primary">Guardar cambios</button>
   </div>
   <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -78,7 +79,7 @@
     </table>
   </div>
   <div class="mt-4 flex justify-end">
-    <button class="rounded-lg bg-indigo-600 text-white px-4 py-2">Guardar cambios</button>
+    <button class="pd-button pd-button--primary">Guardar cambios</button>
   </div>
 </form>
 {% endblock %}

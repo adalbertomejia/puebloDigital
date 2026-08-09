@@ -9,7 +9,7 @@
             {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
           </div>
         </div>
-        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-amber-900 border border-amber-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="pd-button pd-button--warning">{{ action_label }}</a>{% endif %}
       </div>
     </section>
   {% endwith %}
@@ -24,7 +24,7 @@
             {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
           </div>
         </div>
-        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-emerald-900 border border-emerald-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="pd-button pd-button--success">{{ action_label }}</a>{% endif %}
       </div>
     </section>
   {% endwith %}
@@ -39,7 +39,7 @@
             {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
           </div>
         </div>
-        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 hover:bg-white">{{ action_label }}</a>{% endif %}
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="pd-button pd-button--secondary">{{ action_label }}</a>{% endif %}
       </div>
     </section>
   {% endwith %}
@@ -54,7 +54,7 @@
             {% if subtitle %}<p class="mt-1 text-sm md:text-base {{ subtitle_color }}">{{ subtitle }}</p>{% endif %}
           </div>
         </div>
-        {% if action_url and action_label %}<a href="{{ action_url }}" class="rounded-lg bg-white/80 px-4 py-2 text-sm font-medium text-sky-900 border border-sky-200 hover:bg-white">{{ action_label }}</a>{% endif %}
+        {% if action_url and action_label %}<a href="{{ action_url }}" class="pd-button pd-button--primary">{{ action_label }}</a>{% endif %}
       </div>
     </section>
   {% endwith %}
