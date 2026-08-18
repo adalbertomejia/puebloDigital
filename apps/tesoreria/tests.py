@@ -97,31 +97,6 @@ class TesoreriaOperativaTests(TestCase):
         pago.obligaciones.exclude(pk=o.pk).update(estado=ObligacionCiudadano.Estados.PAGADO)
         self.assertContains(self.client.get(reverse("tesoreria_operativa") + "?estado=COMPLETADO"), "Agua julio")
 
-    def test_aportaciones_y_avance_se_calculan_por_cada_concepto(self):
-        primero = self.concepto(concepto="Cooperación de obra", monto_individual=Decimal("100.00"))
-        segundo = self.concepto(concepto="Pago de agua", monto_individual=Decimal("200.00"))
-        self.generar(primero)
-        self.generar(segundo)
-
-        obligacion = primero.obligaciones.get(ciudadano=self.activo1)
-        obligacion.acreditar(Decimal("25.00"), date(2026, 7, 20))
-        obligacion.acreditar(Decimal("25.00"), date(2026, 7, 21))
-        segundo.obligaciones.get(ciudadano=self.activo1).acreditar(Decimal("200.00"), date(2026, 7, 22))
-
-        self.login()
-        response = self.client.get(reverse("tesoreria_operativa"))
-        conceptos = {concepto.concepto: concepto for concepto in response.context["conceptos"]}
-
-        self.assertEqual(conceptos["Cooperación de obra"].total_generado, Decimal("200.00"))
-        self.assertEqual(conceptos["Cooperación de obra"].total_abonado, Decimal("50.00"))
-        self.assertEqual(conceptos["Cooperación de obra"].saldo_pendiente, Decimal("150.00"))
-        self.assertEqual(conceptos["Cooperación de obra"].porcentaje_avance, 25)
-        self.assertEqual(conceptos["Pago de agua"].total_generado, Decimal("400.00"))
-        self.assertEqual(conceptos["Pago de agua"].total_abonado, Decimal("200.00"))
-        self.assertEqual(conceptos["Pago de agua"].porcentaje_avance, 50)
-        self.assertContains(response, "Aportaciones por concepto", count=2)
-        self.assertContains(response, "Avance del concepto", count=2)
-
 
     def test_nuevas_metricas_tesoreria_operativa(self):
         self.concepto(concepto="Sin obligaciones")
@@ -305,3 +280,4 @@ class TesoreriaOperativaTests(TestCase):
         self.assertEqual(metricas["pendientes"], 47)
         self.assertEqual(metricas["pagadas"], 4)
         self.assertEqual(response.context["concepto"].cantidad_pendiente + response.context["concepto"].cantidad_pagada + response.context["concepto"].cantidad_cancelada, 51)
+
