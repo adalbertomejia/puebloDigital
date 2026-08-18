@@ -595,6 +595,46 @@ class ResumenAportacionesTests(TestCase):
         self.assertEqual(response.context["fila_general"]["ciudadanos_distintos"], 1)
         self.assertNotEqual(historica["manzana_id"], self.ana.manzana_id)
 
+    def test_concepto_nuevo_actualiza_tarjeta_y_grafica_antes_del_primer_abono(self):
+        nuevo = ConceptoTesoreria.objects.create(
+            naturaleza="COOPERACION", alcance="GENERAL", comite=self.comite,
+            concepto="Cooperación recién creada", monto_individual=Decimal("250"),
+            fecha=date(2026, 8, 18),
+        )
+        obligacion = ObligacionCiudadano.objects.create(
+            concepto=nuevo, ciudadano=self.ana, monto_asignado=Decimal("250"),
+        )
+
+        contexto = self.get().context
+        tarjeta = next(
+            fila for fila in contexto["conceptos_resumen"]
+            if fila["obligacion__concepto_id"] == nuevo.pk
+        )
+        grafica = next(
+            fila for fila in contexto["datos_grafica"]["conceptos"]
+            if fila["nombre"] == nuevo.concepto
+        )
+        self.assertEqual(tarjeta["total_recibido"], Decimal("0.00"))
+        self.assertEqual(tarjeta["cantidad_abonos"], 0)
+        self.assertEqual(grafica["aportado"], 0.0)
+        self.assertEqual(grafica["objetivo"], 250.0)
+        self.assertEqual(grafica["restante"], 250.0)
+
+        Abono.objects.create(obligacion=obligacion, monto=Decimal("80"), fecha=date(2026, 8, 18))
+        contexto_actualizado = self.get().context
+        tarjeta_actualizada = next(
+            fila for fila in contexto_actualizado["conceptos_resumen"]
+            if fila["obligacion__concepto_id"] == nuevo.pk
+        )
+        grafica_actualizada = next(
+            fila for fila in contexto_actualizado["datos_grafica"]["conceptos"]
+            if fila["nombre"] == nuevo.concepto
+        )
+        self.assertEqual(tarjeta_actualizada["total_recibido"], Decimal("80"))
+        self.assertEqual(tarjeta_actualizada["cantidad_abonos"], 1)
+        self.assertEqual(grafica_actualizada["aportado"], 80.0)
+        self.assertEqual(grafica_actualizada["restante"], 170.0)
+
     def test_alcance_y_manzana_global_controlan_las_filas(self):
         general = self.get({"alcance": "GENERAL"}).context
         self.assertIsNotNone(general["fila_general"])
@@ -699,12 +739,15 @@ class ResumenAportacionesTests(TestCase):
         Abono.objects.all().delete()
         response = self.get()
         for mensaje in (
-            "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
             "Sin movimientos registrados",
             "No hay movimientos recientes con los filtros seleccionados.",
             "No se encontraron ciudadanos con aportaciones para los filtros seleccionados.",
         ):
             self.assertContains(response, mensaje)
+        self.assertContains(response, "Cuota general")
+        self.assertContains(response, "Feria de manzana")
+        self.assertContains(response, "Total recaudado")
+        self.assertNotContains(response, "No hay aportaciones agrupadas por concepto")
 
     def test_componentes_analiticos_admiten_opcionales_ausentes(self):
         from django.template.loader import render_to_string

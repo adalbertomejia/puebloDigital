@@ -1735,6 +1735,35 @@ def resumen_aportaciones(request):
     # El resumen por concepto es una agregación compacta: no carga obligaciones ni
     # ciudadanos individuales y permite recorrer el conjunto sin consultas N+1.
     conceptos_resumen = list(por_concepto)
+    # Una tarjeta representa al concepto, no solamente a los conceptos que ya
+    # tienen abonos. Completar la agregación con los conceptos recién creados
+    # permite mostrar desde el inicio su avance en cero y su objetivo financiero.
+    # Cuando se busca a un ciudadano conservamos la semántica anterior: sólo se
+    # muestran conceptos en los que esa persona registra una aportación.
+    if not filtros["ciudadano"]:
+        parametros_conceptos = request.GET.copy()
+        parametros_conceptos["q"] = filtros["concepto"]
+        conceptos_presentes = {
+            fila["obligacion__concepto_id"] for fila in conceptos_resumen
+        }
+        conceptos_sin_aportaciones = conceptos_filtrados(parametros_conceptos).exclude(
+            pk__in=conceptos_presentes
+        ).values(
+            "pk", "concepto", "naturaleza", "comite__nombre", "alcance", "manzana__nombre",
+        )
+        for concepto in conceptos_sin_aportaciones:
+            conceptos_resumen.append({
+                "obligacion__concepto_id": concepto["pk"],
+                "obligacion__concepto__concepto": concepto["concepto"],
+                "obligacion__concepto__naturaleza": concepto["naturaleza"],
+                "obligacion__concepto__comite__nombre": concepto["comite__nombre"],
+                "obligacion__concepto__alcance": concepto["alcance"],
+                "obligacion__concepto__manzana__nombre": concepto["manzana__nombre"],
+                "total_recibido": Decimal("0.00"),
+                "cantidad_abonos": 0,
+                "ciudadanos_distintos": 0,
+                "ultimo_movimiento": None,
+            })
     # El objetivo financiero procede de las mismas obligaciones que alimentan
     # las tarjetas de Tesorería. Se obtiene en una sola consulta agrupada para
     # que la visualización no introduzca accesos por concepto (N+1).
