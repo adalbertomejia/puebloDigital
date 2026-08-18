@@ -1201,7 +1201,6 @@ def _tesoreria_conceptos_queryset(params):
         cantidad_pagada=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PAGADO), distinct=True),
         cantidad_pendiente=Count("obligaciones", filter=Q(obligaciones__estado=ObligacionCiudadano.Estados.PENDIENTE), distinct=True),
         total_generado=Sum("obligaciones__monto_asignado"),
-        total_abonado=Sum("obligaciones__abonos__monto"),
     )
     q = params.get("q", "").strip()
     if q:
@@ -1225,10 +1224,21 @@ def _tesoreria_conceptos_queryset(params):
 
 
 def _decorate_tesoreria_concepts(concepts):
+    concepts = list(concepts)
+    abonos_por_concepto = {
+        row["obligacion__concepto_id"]: row["total"]
+        for row in Abono.objects.filter(obligacion__concepto_id__in=[c.pk for c in concepts])
+        .values("obligacion__concepto_id")
+        .annotate(total=Sum("monto"))
+    }
     for c in concepts:
         c.total_generado = c.total_generado or 0
-        c.total_abonado = c.total_abonado or 0
-        c.saldo_pendiente = c.total_generado - c.total_abonado
+        c.total_abonado = abonos_por_concepto.get(c.pk, Decimal("0.00"))
+        c.saldo_pendiente = max(c.total_generado - c.total_abonado, Decimal("0.00"))
+        c.porcentaje_avance = min(
+            round((c.total_abonado / c.total_generado) * 100),
+            100,
+        ) if c.total_generado else 0
         if c.cantidad_obligaciones == 0:
             c.estado_general = "SIN_GENERAR"
             c.estado_general_label = "Sin generar"
