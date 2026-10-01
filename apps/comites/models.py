@@ -5,8 +5,12 @@ from apps.core.models import TimeStampedModel, Ciudadano
 class Comite(TimeStampedModel):
     class Tipos(models.TextChoices):
         AGUA = 'AGUA', 'Agua'
+        PANTEON = 'PANTEON', 'Panteón'
         FERIA = 'FERIA', 'Feria'
         IGLESIA = 'IGLESIA', 'Iglesia'
+        PEREGRINO = 'PEREGRINO', 'Peregrino'
+        CLINICA = 'CLINICA', 'Clínica'
+        PEREGRINACION = 'PEREGRINACION', 'Peregrinación'
         DELEGACION = 'DELEGACION', 'Delegación'
 
     nombre = models.CharField(max_length=100, unique=True)
