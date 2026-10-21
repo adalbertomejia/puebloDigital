@@ -103,6 +103,45 @@ class AlcanceOperacionTests(TestCase):
         response = self.client.get(reverse("exportar_participantes_faena_csv", args=[self.faena_ajena.pk]))
         self.assertEqual(response.status_code, 404)
 
+    def test_responsable_crea_faena_solo_en_su_manzana(self):
+        self.client.force_login(self.responsable)
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-10-20",
+                "descripcion": "Poda Centro",
+                "alcance": Faena.Alcances.MANZANA,
+                "manzana": self.manzana.pk,
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+
+        creada = Faena.objects.get(descripcion="Poda Centro")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(creada.alcance, Faena.Alcances.MANZANA)
+        self.assertEqual(creada.manzana_id, self.manzana.pk)
+
+    def test_responsable_no_puede_tamperar_alcance_o_manzana_al_crear_faena(self):
+        otra_manzana = self.ciudadano_ajeno.manzana
+        self.client.force_login(self.responsable)
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-10-20",
+                "descripcion": "Poda ajena",
+                "alcance": Faena.Alcances.MANZANA,
+                "manzana": otra_manzana.pk,
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Faena.objects.filter(descripcion="Poda ajena").exists())
+
     def test_captura_no_actualiza_registros_de_otra_manzana(self):
         self.client.force_login(self.responsable)
         self.registro_local.estatus = RegistroFaena.Estatus.PENDIENTE
