@@ -43,6 +43,7 @@ from apps.tesoreria.forms import BuscarAportacionesForm
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
+from .autorizacion import responsabilidades_activas
 
 
 class EstadoEventoForm(DashboardFormMixin, forms.Form):
@@ -485,6 +486,15 @@ def dashboard_operativo(request):
     if request.headers.get("HX-Request") == "true":
         return render(request, "dashboard/partials/inicio_ciudadanos_resultados.html", context)
     return render(request, "dashboard/operativo.html", context)
+
+
+@login_required
+def mis_responsabilidades(request):
+    return render(
+        request,
+        "dashboard/mis_responsabilidades.html",
+        {"responsabilidades": responsabilidades_activas(request.user)},
+    )
 
 
 def _can_delete_operacion_event(user, permission_codename):

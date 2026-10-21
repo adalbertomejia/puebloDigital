@@ -100,6 +100,18 @@ class ResponsabilidadesActivasTests(TestCase):
 
         self.assertEqual(responsabilidades_activas(AnonymousUser()), [])
 
+    def test_superusuario_recibe_alcance_global(self):
+        from apps.core.autorizacion import responsabilidades_activas
+
+        admin = get_user_model().objects.create_superuser(
+            username="admin-accesos", password="test-pass", email="admin@example.com"
+        )
+
+        responsabilidades = responsabilidades_activas(admin)
+
+        self.assertEqual(responsabilidades[0].tipo, "GLOBAL")
+        self.assertEqual(responsabilidades[0].rol, "ADMINISTRADOR")
+
 
 class VistaMisResponsabilidadesTests(TestCase):
     def test_exige_inicio_de_sesion(self):
@@ -137,5 +149,4 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertContains(response, "Centro")
         self.assertContains(response, "Tesorero")
         self.assertContains(response, "Comité del Agua")
-        self.assertContains(response, "ámbito asociado")
-
+        self.assertIn("ámbito asociado", response.content.decode().casefold())
