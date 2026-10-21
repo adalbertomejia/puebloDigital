@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.db.models import Count
 
 from apps.agua.models import Toma
+from apps.comites.models import PerfilAcceso
 from apps.operacion.models import RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
 
@@ -108,6 +109,16 @@ class TomaInline(admin.StackedInline):
     verbose_name_plural = "Agua"
 
 
+class PerfilAccesoInline(admin.StackedInline):
+    model = PerfilAcceso
+    extra = 0
+    max_num = 1
+    fields = ("user",)
+    autocomplete_fields = ("user",)
+    verbose_name = "Cuenta de acceso"
+    verbose_name_plural = "Cuenta vinculada"
+
+
 @admin.register(Ciudadano)
 class CiudadanoAdmin(admin.ModelAdmin):
     list_display = (
@@ -136,7 +147,7 @@ class CiudadanoAdmin(admin.ModelAdmin):
     save_on_top = True
     list_select_related = ("toma", "manzana")
     autocomplete_fields = ("manzana",)
-    inlines = [TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
+    inlines = [PerfilAccesoInline, TomaInline, PagoInline, CooperacionInline, RegistroFaenaInline]
     fieldsets = (
         ("Identidad", {"fields": (("nombre", "apellido_paterno", "apellido_materno"), "activo")}),
         ("Datos del padrón", {"fields": ("fecha_nacimiento", "edad", "sexo", "numero_contrato", "manzana", "direccion")}),

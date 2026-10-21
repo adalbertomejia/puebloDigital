@@ -27,7 +27,7 @@ class PerfilAccesoAdministracionTests(SimpleTestCase):
         self.assertIn(PerfilAcceso, admin.site._registry)
 
     def test_ciudadano_muestra_el_vinculo_de_cuenta_en_su_admin(self):
-        inline = PerfilAccesoInline(Ciudadano, CiudadanoAdmin(Ciudadano, admin.site))
+        inline = PerfilAccesoInline(Ciudadano, admin.site)
 
         self.assertEqual(inline.model, PerfilAcceso)
         self.assertEqual(inline.max_num, 1)
