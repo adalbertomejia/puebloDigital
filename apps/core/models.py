@@ -53,7 +53,30 @@ class Manzana(TimeStampedModel):
         return self.nombre
 
 
+class CiudadanoQuerySet(models.QuerySet):
+    def visibles_para(self, usuario):
+        if not getattr(usuario, "is_authenticated", False) or not getattr(
+            usuario, "is_active", False
+        ):
+            return self.none()
+        if usuario.is_superuser or usuario.has_perm("core.view_ciudadano"):
+            return self
+
+        from .autorizacion import responsabilidades_activas
+
+        manzana_ids = [
+            responsabilidad.manzana.pk
+            for responsabilidad in responsabilidades_activas(usuario)
+            if responsabilidad.tipo == "MANZANA" and responsabilidad.manzana
+        ]
+        if not manzana_ids:
+            return self.none()
+        return self.filter(manzana_id__in=manzana_ids)
+
+
 class Ciudadano(TimeStampedModel):
+    objects = CiudadanoQuerySet.as_manager()
+
     class Sexos(models.TextChoices):
         HOMBRE = "HOMBRE", "Hombre"
         MUJER = "MUJER", "Mujer"

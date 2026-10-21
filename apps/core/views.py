@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -59,6 +59,26 @@ def _ciudadanos_operativos_queryset():
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
         ultimo_pago_fecha=Max("pagos__fecha"),
         adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
+    )
+
+
+def _puede_consultar_padron(usuario):
+    return bool(
+        usuario.is_authenticated
+        and usuario.is_active
+        and (
+            usuario.is_superuser
+            or usuario.has_perm("core.view_ciudadano")
+            or any(r.tipo == "MANZANA" for r in responsabilidades_activas(usuario))
+        )
+    )
+
+
+def _puede_modificar_padron(usuario, accion):
+    return bool(
+        usuario.is_authenticated
+        and usuario.is_active
+        and (usuario.is_superuser or usuario.has_perm(f"core.{accion}_ciudadano"))
     )
 
 
@@ -167,7 +187,10 @@ def _filtrar_ciudadanos_operativos(queryset, params):
 
 @login_required
 def padron_ciudadanos(request):
-    ciudadanos_qs = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    if not _puede_consultar_padron(request.user):
+        raise Http404
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     paginator = Paginator(ciudadanos_qs, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
     pagination_params = request.GET.copy()
@@ -187,19 +210,23 @@ def padron_ciudadanos(request):
             "fecha_nacimiento": request.GET.get("fecha_nacimiento", "todas"),
             "orden": request.GET.get("orden", "nombre"),
         },
-        "manzanas": Manzana.objects.filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
+        "manzanas": Manzana.objects.filter(
+            pk__in=base_ciudadanos.values("manzana_id")
+        ).filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
         "motivos_alta": Ciudadano.MotivosAlta.choices,
         "sexos": Ciudadano.Sexos.choices,
         "motivo_alta_permite_vacio": Ciudadano._meta.get_field("motivo_alta").blank,
         "pagination_querystring": pagination_params.urlencode(),
         "metricas": {
-            "total": Ciudadano.objects.count(),
-            "activos": Ciudadano.objects.filter(activo=True).count(),
-            "inactivos": Ciudadano.objects.filter(activo=False).count(),
-            "sin_toma": Ciudadano.objects.filter(toma__isnull=True).count(),
-            "sin_manzana": Ciudadano.objects.filter(manzana__isnull=True).count(),
-            "activos_sin_manzana": Ciudadano.objects.filter(activo=True, manzana__isnull=True).count(),
-            "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
+            "total": base_ciudadanos.count(),
+            "activos": base_ciudadanos.filter(activo=True).count(),
+            "inactivos": base_ciudadanos.filter(activo=False).count(),
+            "sin_toma": base_ciudadanos.filter(toma__isnull=True).count(),
+            "sin_manzana": base_ciudadanos.filter(manzana__isnull=True).count(),
+            "activos_sin_manzana": base_ciudadanos.filter(activo=True, manzana__isnull=True).count(),
+            "con_adeudo": RegistroFaena.objects.filter(
+                genera_adeudo=True, ciudadano__in=base_ciudadanos
+            ).values("ciudadano").distinct().count(),
         },
         "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
         "exportar_ciudadanos_url": reverse("exportar_ciudadanos_csv"),
@@ -214,7 +241,10 @@ def padron_ciudadanos(request):
 
 @login_required
 def exportar_ciudadanos_csv(request):
-    ciudadanos = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    if not _puede_consultar_padron(request.user):
+        raise Http404
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    ciudadanos = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     manzana = request.GET.get("manzana", "todas")
     if manzana == "sin_asignar":
         filename_context = "_sin_manzana"
@@ -270,6 +300,8 @@ def exportar_ciudadanos_csv(request):
 
 @login_required
 def crear_ciudadano_operativo(request):
+    if not _puede_modificar_padron(request.user, "add"):
+        raise Http404
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST)
         if form.is_valid():
@@ -295,6 +327,8 @@ def crear_ciudadano_operativo(request):
 
 @login_required
 def editar_ciudadano_operativo(request, pk):
+    if not _puede_modificar_padron(request.user, "change"):
+        raise Http404
     ciudadano = get_object_or_404(Ciudadano, pk=pk)
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
@@ -1289,7 +1323,14 @@ def perfil_ciudadano(request, pk):
         obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
     )
 
-    ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma", "manzana", "manzana__responsable"), pk=pk)
+    puede_ver_finanzas = bool(
+        request.user.is_superuser or request.user.has_perm("core.view_ciudadano")
+    )
+    ciudadanos_visibles = Ciudadano.objects.visibles_para(request.user)
+    ciudadano = get_object_or_404(
+        ciudadanos_visibles.select_related("toma", "manzana", "manzana__responsable"),
+        pk=pk,
+    )
     retorno_solicitado = request.GET.get("return_to", "")
     retorno_valido = bool(retorno_solicitado and url_has_allowed_host_and_scheme(
         retorno_solicitado, allowed_hosts={request.get_host()}, require_https=request.is_secure()
@@ -1304,8 +1345,8 @@ def perfil_ciudadano(request, pk):
     else:
         origen = "Ciudadanos"
 
-    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page")
-    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page")
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page") if puede_ver_finanzas else []
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page") if puede_ver_finanzas else []
     asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
     for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
         params = request.GET.copy()
@@ -1323,6 +1364,7 @@ def perfil_ciudadano(request, pk):
         {
             "ciudadano": ciudadano,
             "resumen": obtener_resumen_ciudadano(ciudadano),
+            "puede_ver_finanzas": puede_ver_finanzas,
             "obligaciones_page": obligaciones_page,
             "abonos_page": abonos_page,
             "asistencias_page": asistencias_page,
