@@ -502,6 +502,7 @@ class OperationalEventCreationViewTests(TestCase):
                 "tipo": Junta.Tipos.ORDINARIA,
                 "lugar": "Salón comunitario",
                 "tema": "Seguimiento operativo",
+                "alcance": Junta.Alcances.GENERAL,
                 "estado": Junta.Estados.PROGRAMADA,
                 "notas": "Confirmar asistencia",
             },
