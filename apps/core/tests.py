@@ -588,7 +588,7 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 class SecureDeletionFlowTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="deleter", password="pw")
-        perms = Permission.objects.filter(codename__in=["delete_faena", "change_faena", "delete_junta", "change_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
+        perms = Permission.objects.filter(codename__in=["add_faena", "view_faena", "change_faena", "delete_faena", "add_junta", "view_junta", "change_junta", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
         self.user.user_permissions.set(perms)
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
@@ -605,7 +605,7 @@ class SecureDeletionFlowTests(TestCase):
         self.assertContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
         self.assertNotContains(self.client.get(reverse("crear_concepto_tesoreria")), "Eliminar concepto")
         limited = get_user_model().objects.create_user(username="limited", password="pw")
-        limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria"]))
+        limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria", "view_faena", "change_faena", "view_junta", "change_junta"]))
         self.client.force_login(limited)
         self.assertNotContains(self.client.get(reverse("editar_faena_operativa", args=[faena.pk])), "Eliminar faena")
         self.assertNotContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
