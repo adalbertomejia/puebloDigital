@@ -80,6 +80,15 @@ class AlcancePadronTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_expediente_de_su_manzana_muestra_operacion_y_oculta_tesoreria(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("perfil_ciudadano", args=[self.ciudadano_local.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Datos generales")
+        self.assertNotContains(response, "Historial financiero por concepto")
+        self.assertNotContains(response, "Ver obligaciones en Tesorería")
+
     def test_cargo_de_tesoreria_sin_rol_operativo_no_abre_el_padron(self):
         tesorero = get_user_model().objects.create_user(username="tesorero")
         comite = Comite.objects.create(nombre="Comité financiero")

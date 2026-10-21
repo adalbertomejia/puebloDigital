@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import date
 
 from django.contrib.auth import get_user_model
@@ -69,6 +67,18 @@ class AlcanceOperacionTests(TestCase):
         self.client.force_login(self.responsable)
         detalle = self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_general.pk]))
         exportacion = self.client.get(reverse("exportar_participantes_faena_csv", args=[self.faena_general.pk]))
+        texto = exportacion.content.decode("utf-8-sig")
+
+        self.assertEqual(detalle.status_code, 200)
+        self.assertContains(detalle, "Ana Local")
+        self.assertNotContains(detalle, "Luis Ajeno")
+        self.assertIn("Ana Local", texto)
+        self.assertNotIn("Luis Ajeno", texto)
+
+    def test_detalle_y_exportacion_de_junta_general_solo_muestran_su_manzana(self):
+        self.client.force_login(self.responsable)
+        detalle = self.client.get(reverse("control_asistencias_junta_detalle", args=[self.junta_general.pk]))
+        exportacion = self.client.get(reverse("exportar_participantes_junta_csv", args=[self.junta_general.pk]))
         texto = exportacion.content.decode("utf-8-sig")
 
         self.assertEqual(detalle.status_code, 200)
@@ -159,6 +169,17 @@ class AlcanceOperacionTests(TestCase):
         self.registro_ajeno.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.registro_local.estatus, RegistroFaena.Estatus.ASISTIO)
+        self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.PENDIENTE)
+
+    def test_captura_secuencial_rechaza_id_de_participante_ajeno(self):
+        self.client.force_login(self.responsable)
+        response = self.client.post(
+            reverse("captura_asistencia_secuencial_faena", args=[self.faena_general.pk]),
+            {"action": "asistio", "record_id": self.registro_ajeno.pk},
+        )
+
+        self.registro_ajeno.refresh_from_db()
+        self.assertEqual(response.status_code, 404)
         self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.PENDIENTE)
 
     def test_superusuario_mantiene_acceso_global_a_eventos_y_registros(self):
