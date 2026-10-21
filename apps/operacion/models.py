@@ -4,6 +4,22 @@ from apps.comites.models import Comite
 from .alcance import validar_territorio_evento
 
 
+def validar_comite_y_motivo(instancia, nombre_entidad):
+    errors = {}
+    if instancia.alcance == instancia.Alcances.GENERAL and not instancia.comite_id:
+        errors["comite"] = f"Selecciona el comité responsable de esta {nombre_entidad}."
+    if (
+        instancia.alcance == instancia.Alcances.MANZANA
+        and not instancia.comite_id
+        and not instancia.motivo.strip()
+    ):
+        errors["motivo"] = "Explica el motivo de esta actividad por manzana."
+    if errors:
+        from django.core.exceptions import ValidationError
+
+        raise ValidationError(errors)
+
+
 def _responsabilidad_manzana_ids(usuario):
     if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
         return []
@@ -65,7 +81,9 @@ class Junta(TimeStampedModel):
         EXTRAORDINARIA = 'EXTRAORDINARIA', 'Extraordinaria'
         INFORMATIVA = 'INFORMATIVA', 'Informativa'
 
-    comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='juntas')
+    comite = models.ForeignKey(
+        Comite, on_delete=models.CASCADE, related_name="juntas", null=True, blank=True
+    )
     fecha = models.DateField()
     alcance = models.CharField(max_length=15, choices=Alcances.choices, default=Alcances.GENERAL, verbose_name="Alcance")
     manzana = models.ForeignKey(
@@ -75,6 +93,7 @@ class Junta(TimeStampedModel):
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.ORDINARIA)
     lugar = models.CharField(max_length=150, blank=True)
     tema = models.CharField(max_length=200)
+    motivo = models.CharField(max_length=250, blank=True, default="", verbose_name="Motivo")
     estado = models.CharField(max_length=20, choices=Estados.choices, default=Estados.PROGRAMADA)
     notas = models.TextField(blank=True)
 
@@ -91,6 +110,7 @@ class Junta(TimeStampedModel):
         validar_territorio_evento(
             instancia=self, registros=AsistenciaJunta.objects.filter(junta_id=self.pk), nombre_entidad="junta"
         )
+        validar_comite_y_motivo(self, "junta")
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -134,7 +154,9 @@ class Faena(TimeStampedModel):
         REALIZADA = 'REALIZADA', 'Realizada'
         CANCELADA = 'CANCELADA', 'Cancelada'
 
-    comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='faenas')
+    comite = models.ForeignKey(
+        Comite, on_delete=models.CASCADE, related_name="faenas", null=True, blank=True
+    )
     fecha = models.DateField()
     alcance = models.CharField(
         max_length=15,
@@ -151,6 +173,7 @@ class Faena(TimeStampedModel):
         verbose_name="Manzana",
     )
     descripcion = models.CharField(max_length=200)
+    motivo = models.CharField(max_length=250, blank=True, default="", verbose_name="Motivo")
     estado = models.CharField(max_length=20, choices=Estados.choices, default=Estados.PROGRAMADA)
     notas = models.TextField(blank=True)
 
@@ -167,6 +190,7 @@ class Faena(TimeStampedModel):
         validar_territorio_evento(
             instancia=self, registros=RegistroFaena.objects.filter(faena_id=self.pk), nombre_entidad="faena"
         )
+        validar_comite_y_motivo(self, "faena")
 
     def save(self, *args, **kwargs):
         self.full_clean()

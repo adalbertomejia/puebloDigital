@@ -30,10 +30,11 @@ class DashboardFormMixin:
 class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Faena
-        fields = ["comite", "fecha", "descripcion", "alcance", "manzana", "estado", "notas"]
+        fields = ["comite", "fecha", "descripcion", "alcance", "manzana", "motivo", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
+            "motivo": forms.Textarea(attrs={"rows": 3}),
         }
         labels = {
             "comite": "Comité responsable",
@@ -45,6 +46,7 @@ class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
         help_texts = {
             "descripcion": "Describe de forma breve el trabajo comunitario a realizar.",
             "notas": "Agrega indicaciones para la secretaría o el equipo operativo si hace falta.",
+            "motivo": "Explica por qué se organiza esta faena por manzana.",
             "manzana": "Selecciona una manzana únicamente cuando el alcance sea Por manzana.",
         }
 
@@ -64,10 +66,11 @@ class FaenaOperativaForm(DashboardFormMixin, forms.ModelForm):
 class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Junta
-        fields = ["comite", "fecha", "tipo", "lugar", "tema", "alcance", "manzana", "estado", "notas"]
+        fields = ["comite", "fecha", "tipo", "lugar", "tema", "alcance", "manzana", "motivo", "estado", "notas"]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "notas": forms.Textarea(attrs={"rows": 4}),
+            "motivo": forms.Textarea(attrs={"rows": 3}),
         }
         labels = {
             "comite": "Comité convocante",
@@ -82,6 +85,7 @@ class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
             "tema": "Resume el motivo o asunto principal de la reunión.",
             "lugar": "Indica dónde se realizará la junta si ya está definido.",
             "notas": "Agrega acuerdos previos, indicaciones o contexto para seguimiento.",
+            "motivo": "Explica por qué se convoca esta junta por manzana.",
             "manzana": "Selecciona una manzana únicamente cuando el alcance sea Por manzana.",
         }
 
