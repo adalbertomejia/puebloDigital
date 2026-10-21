@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.forms import Select
 from django.test import TestCase
@@ -78,6 +79,7 @@ class MotivoAltaCiudadanoTests(TestCase):
             ciudadano.full_clean()
         self.assertIn("motivo_alta", error.exception.message_dict)
 
+
     def test_formulario_usa_selector_y_rechaza_motivo_no_definido(self):
         form = CiudadanoOperativoForm(
             data={
@@ -115,6 +117,43 @@ class MotivoAltaCiudadanoTests(TestCase):
         template = Path("templates/dashboard/perfil_ciudadano.html").read_text()
         self.assertIn("ciudadano.get_motivo_alta_display", template)
         self.assertNotIn("ciudadano.motivo_alta|default", template)
+
+
+class PerfilAccesoIdentidadTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_user(username="responsable-manzana")
+        self.otro_usuario = get_user_model().objects.create_user(username="otro-responsable")
+        self.ciudadano = Ciudadano.objects.create(
+            nombre="Rosa", apellido_paterno="Ejemplo", edad=35
+        )
+        self.otro_ciudadano = Ciudadano.objects.create(
+            nombre="Luis", apellido_paterno="Ejemplo", edad=41
+        )
+
+    def _perfil_model(self):
+        try:
+            return apps.get_model("comites", "PerfilAcceso")
+        except LookupError:
+            self.fail("Debe existir PerfilAcceso independiente del cargo de comité.")
+
+    def test_perfil_acceso_relaciona_cuenta_y_ciudadano_uno_a_uno(self):
+        perfil_model = self._perfil_model()
+        self.assertTrue(perfil_model._meta.get_field("user").one_to_one)
+        self.assertTrue(perfil_model._meta.get_field("ciudadano").one_to_one)
+
+    def test_una_cuenta_no_puede_vincularse_a_dos_ciudadanos(self):
+        perfil_model = self._perfil_model()
+        perfil_model.objects.create(user=self.usuario, ciudadano=self.ciudadano)
+        perfil = perfil_model(user=self.usuario, ciudadano=self.otro_ciudadano)
+        with self.assertRaises(ValidationError):
+            perfil.full_clean()
+
+    def test_un_ciudadano_no_puede_vincularse_a_dos_cuentas(self):
+        perfil_model = self._perfil_model()
+        perfil_model.objects.create(user=self.usuario, ciudadano=self.ciudadano)
+        perfil = perfil_model(user=self.otro_usuario, ciudadano=self.ciudadano)
+        with self.assertRaises(ValidationError):
+            perfil.full_clean()
 
 
 class ExportacionParticipantesCsvTests(TestCase):
