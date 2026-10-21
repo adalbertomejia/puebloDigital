@@ -810,11 +810,21 @@ def generar_registros_junta(request, junta_id):
 def _attendance_queryset(model, relation_name, pending_status, usuario=None):
     """Annotate event querysets with operational attendance metrics."""
     queryset = model.objects.visibles_para(usuario) if usuario is not None else model.objects.all()
-    scoped_filter = Q()
     participant_model = model._meta.get_field(relation_name).related_model
     if usuario is not None and not usuario.is_superuser and not usuario.has_perm(f"operacion.view_{participant_model._meta.model_name}"):
-        manzana_ids = [r.manzana.pk for r in responsabilidades_activas(usuario) if r.tipo == "MANZANA" and r.manzana]
-        scoped_filter = Q(**{f"{relation_name}__ciudadano__manzana_id__in": manzana_ids})
+        manzana_ids = _manzanas_responsables(usuario)
+        comite_ids = _comites_presididos(usuario)
+        event_relation = "faena" if model is Faena else "junta"
+        scoped_filter = Q(pk__in=[])
+        if manzana_ids:
+            scoped_filter |= Q(**{f"{relation_name}__ciudadano__manzana_id__in": manzana_ids})
+        if comite_ids:
+            scoped_filter |= Q(**{
+                f"{relation_name}__{event_relation}__alcance": "GENERAL",
+                f"{relation_name}__{event_relation}__comite_id__in": comite_ids,
+            })
+    else:
+        scoped_filter = Q()
     return queryset.select_related("comite", "manzana").annotate(
         total_participantes=Count(relation_name, filter=scoped_filter, distinct=True),
         asistencias_registradas=Count(
