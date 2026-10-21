@@ -82,6 +82,27 @@ class AlcanceOperacionTests(TestCase):
         response = self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_ajena.pk]))
         self.assertEqual(response.status_code, 404)
 
+    def test_lista_operativa_no_incluye_eventos_de_otra_manzana(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("control_asistencias"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Limpieza Centro")
+        self.assertNotContains(response, "Limpieza Norte")
+
+    def test_edicion_y_cambio_de_estado_de_evento_general_no_se_abren_al_responsable(self):
+        self.client.force_login(self.responsable)
+        edicion = self.client.get(reverse("editar_faena_operativa", args=[self.faena_general.pk]))
+        estado = self.client.get(reverse("editar_estado_evento", args=["faena", self.faena_general.pk]))
+
+        self.assertEqual(edicion.status_code, 404)
+        self.assertEqual(estado.status_code, 404)
+
+    def test_exportacion_directa_de_evento_ajeno_devuelve_404(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("exportar_participantes_faena_csv", args=[self.faena_ajena.pk]))
+        self.assertEqual(response.status_code, 404)
+
     def test_captura_no_actualiza_registros_de_otra_manzana(self):
         self.client.force_login(self.responsable)
         self.registro_local.estatus = RegistroFaena.Estatus.PENDIENTE
