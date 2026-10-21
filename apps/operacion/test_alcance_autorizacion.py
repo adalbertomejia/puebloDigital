@@ -138,14 +138,18 @@ class AlcanceOperacionTests(TestCase):
 
     def test_responsable_crea_faena_solo_en_su_manzana(self):
         self.client.force_login(self.responsable)
+        formulario = self.client.get(reverse("crear_faena_operativa"))
+        self.assertEqual(formulario.status_code, 200)
+        self.assertNotIn("comite", formulario.context["form"].fields)
+        self.assertIn("motivo", formulario.context["form"].fields)
         response = self.client.post(
             reverse("crear_faena_operativa"),
             {
-                "comite": self.comite.pk,
                 "fecha": "2026-10-20",
                 "descripcion": "Poda Centro",
                 "alcance": Faena.Alcances.MANZANA,
                 "manzana": self.manzana.pk,
+                "motivo": "Retirar ramas que obstruyen el paso",
                 "estado": Faena.Estados.PROGRAMADA,
                 "notas": "",
             },
@@ -155,6 +159,8 @@ class AlcanceOperacionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(creada.alcance, Faena.Alcances.MANZANA)
         self.assertEqual(creada.manzana_id, self.manzana.pk)
+        self.assertIsNone(creada.comite_id)
+        self.assertEqual(creada.motivo, "Retirar ramas que obstruyen el paso")
 
     def test_responsable_no_puede_tamperar_alcance_o_manzana_al_crear_faena(self):
         otra_manzana = self.ciudadano_ajeno.manzana
@@ -167,6 +173,7 @@ class AlcanceOperacionTests(TestCase):
                 "descripcion": "Poda ajena",
                 "alcance": Faena.Alcances.MANZANA,
                 "manzana": otra_manzana.pk,
+                "motivo": "Trabajo de prueba en otra manzana",
                 "estado": Faena.Estados.PROGRAMADA,
                 "notas": "",
             },
@@ -174,6 +181,67 @@ class AlcanceOperacionTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Faena.objects.filter(descripcion="Poda ajena").exists())
+
+    def test_presidente_solo_ve_y_edita_eventos_generales_de_su_comite(self):
+        presidente = get_user_model().objects.create_user(username="presidente-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        otro_comite = Comite.objects.create(nombre="Comité vecino")
+        general_ajena = Faena.objects.create(
+            comite=otro_comite,
+            fecha=date(2026, 10, 5),
+            alcance=Faena.Alcances.GENERAL,
+            descripcion="Faena de otro comité",
+        )
+
+        self.assertQuerySetEqual(
+            Faena.objects.visibles_para(presidente).order_by("pk"),
+            [self.faena_general],
+        )
+        self.client.force_login(presidente)
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[self.faena_general.pk])).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[general_ajena.pk])).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[self.faena_local.pk])).status_code,
+            404,
+        )
+
+    def test_presidente_crea_evento_general_limitado_a_su_comite(self):
+        presidente = get_user_model().objects.create_user(username="presidente-crea-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        otro_comite = Comite.objects.create(nombre="Comité vecino")
+        self.client.force_login(presidente)
+
+        formulario = self.client.get(reverse("crear_faena_operativa"))
+        self.assertEqual(formulario.status_code, 200)
+        form = formulario.context["form"]
+        self.assertEqual(set(form.fields["comite"].queryset.values_list("pk", flat=True)), {self.comite.pk})
+        self.assertEqual(form.fields["alcance"].choices, [(Faena.Alcances.GENERAL, "Toda la comunidad")])
+
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-10-20",
+                "descripcion": "Faena presidencial",
+                "alcance": Faena.Alcances.GENERAL,
+                "manzana": "",
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Faena.objects.get(descripcion="Faena presidencial").comite_id, self.comite.pk)
+        self.assertFalse(Faena.objects.filter(descripcion="Faena presidencial", comite=otro_comite).exists())
 
     def test_captura_no_actualiza_registros_de_otra_manzana(self):
         self.client.force_login(self.responsable)
