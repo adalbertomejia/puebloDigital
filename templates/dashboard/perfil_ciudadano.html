@@ -1,6 +1,5 @@
 {% extends 'dashboard/base_dashboard.html' %}
-{% block title %}Expediente ciudadano · {{ ciudadano.nombre_completo }}{% endif %}
-{% endblock %}
+{% block title %}Expediente ciudadano · {{ ciudadano.nombre_completo }}{% endblock %}
 {% block content %}
 <nav class="mb-4 text-sm text-slate-600" aria-label="Ruta contextual"><a class="underline" href="{{ return_to }}">{{ origen }}</a><span aria-hidden="true"> › </span><span>Expediente ciudadano</span></nav>
 <a class="pd-button pd-button--secondary mb-4" href="{{ return_to }}">← Volver a {{ origen }}</a>

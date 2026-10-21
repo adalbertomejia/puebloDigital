@@ -3,7 +3,54 @@ from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
 from .alcance import validar_territorio_evento
 
+
+def _responsabilidad_manzana_ids(usuario):
+    if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
+        return []
+    from apps.core.autorizacion import responsabilidades_activas
+
+    return [
+        responsabilidad.manzana.pk
+        for responsabilidad in responsabilidades_activas(usuario)
+        if responsabilidad.tipo == "MANZANA" and responsabilidad.manzana
+    ]
+
+
+class AlcanceEventoQuerySet(models.QuerySet):
+    def visibles_para(self, usuario):
+        if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
+            return self.none()
+        if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
+            return self
+        manzana_ids = _responsabilidad_manzana_ids(usuario)
+        if not manzana_ids:
+            return self.none()
+        relation = "registros" if self.model.__name__ == "Faena" else "asistencias"
+        return self.filter(
+            models.Q(alcance="MANZANA", manzana_id__in=manzana_ids)
+            | models.Q(**{f"alcance": "GENERAL", f"{relation}__ciudadano__manzana_id__in": manzana_ids})
+        ).distinct()
+
+
+class AlcanceParticipanteQuerySet(models.QuerySet):
+    def visibles_para(self, usuario):
+        if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
+            return self.none()
+        if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
+            return self
+        manzana_ids = _responsabilidad_manzana_ids(usuario)
+        if not manzana_ids:
+            return self.none()
+        event_relation = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
+        return self.filter(
+            ciudadano__manzana_id__in=manzana_ids,
+        ).filter(
+            models.Q(**{f"{event_relation}__alcance": "GENERAL"})
+            | models.Q(**{f"{event_relation}__alcance": "MANZANA", f"{event_relation}__manzana_id__in": manzana_ids})
+        )
+
 class Junta(TimeStampedModel):
+    objects = AlcanceEventoQuerySet.as_manager()
     class Alcances(models.TextChoices):
         GENERAL = "GENERAL", "Toda la comunidad"
         MANZANA = "MANZANA", "Por manzana"
@@ -53,6 +100,7 @@ class Junta(TimeStampedModel):
         return f"{self.comite} - {self.fecha} - {self.tema}"
 
 class AsistenciaJunta(TimeStampedModel):
+    objects = AlcanceParticipanteQuerySet.as_manager()
     class Estatus(models.TextChoices):
         PENDIENTE = 'PENDIENTE', 'Pendiente'
         ASISTIO = 'ASISTIO', 'Asistió'
@@ -76,6 +124,7 @@ class AsistenciaJunta(TimeStampedModel):
         return f"{self.ciudadano.nombre_completo} - {self.junta} ({self.estatus})"
 
 class Faena(TimeStampedModel):
+    objects = AlcanceEventoQuerySet.as_manager()
     class Alcances(models.TextChoices):
         GENERAL = "GENERAL", "Toda la comunidad"
         MANZANA = "MANZANA", "Por manzana"
@@ -127,6 +176,7 @@ class Faena(TimeStampedModel):
         return f"{self.comite} - {self.fecha} - {self.descripcion}"
 
 class RegistroFaena(TimeStampedModel):
+    objects = AlcanceParticipanteQuerySet.as_manager()
     class Estatus(models.TextChoices):
         PENDIENTE = 'PENDIENTE', 'Pendiente'
         ASISTIO = 'ASISTIO', 'Asistió'
