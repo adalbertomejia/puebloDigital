@@ -290,6 +290,19 @@ class AlcanceOperacionTests(TestCase):
         self.assertEqual(self.registro_local.estatus, RegistroFaena.Estatus.ASISTIO)
         self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.FALTO)
 
+    def test_control_asistencias_muestra_metricas_de_todas_las_manzanas_al_presidente(self):
+        presidente = get_user_model().objects.create_user(username="presidente-metricas-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        self.client.force_login(presidente)
+
+        response = self.client.get(reverse("control_asistencias"))
+
+        faena = next(evento for evento in response.context["faenas"] if evento.pk == self.faena_general.pk)
+        self.assertEqual(faena.total_participantes, 2)
+        self.assertEqual(faena.pendientes, 2)
+
     def test_responsable_crea_junta_de_manzana_sin_comite_y_con_motivo(self):
         self.client.force_login(self.responsable)
         formulario = self.client.get(reverse("crear_junta_operativa"))
