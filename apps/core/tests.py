@@ -158,7 +158,7 @@ class PerfilAccesoIdentidadTests(TestCase):
 
 class ExportacionParticipantesCsvTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="secretaria", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="secretaria", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Delegación Ñuu", tipo=Comite.Tipos.DELEGACION)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="García", apellido_materno="Ruiz", edad=30)
@@ -219,7 +219,7 @@ class ExportacionParticipantesCsvTests(TestCase):
 
 class ExportacionCiudadanosCsvTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="padron", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="padron", password="testpass123")
         self.client.force_login(self.user)
         self.ana = Ciudadano.objects.create(
             nombre="Ana María",
@@ -296,7 +296,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
 
 class PadronCiudadanosFiltrosTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="secretaria-padron", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="secretaria-padron", password="testpass123")
         self.client.force_login(self.user)
         self.manzana_uno = Manzana.objects.create(nombre="Manzana 1")
         self.manzana_dos = Manzana.objects.create(nombre="Manzana 2", activa=False)
@@ -422,7 +422,7 @@ class PadronCiudadanosFiltrosTests(TestCase):
 
 class CiudadanoOperativoManzanaFormTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="edicion-ciudadanos", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="edicion-ciudadanos", password="testpass123")
         self.client.force_login(self.user)
         self.activa = Manzana.objects.create(nombre="Manzana activa")
         self.inactiva = Manzana.objects.create(nombre="Manzana histórica", activa=False)
@@ -463,7 +463,7 @@ class CiudadanoOperativoManzanaFormTests(TestCase):
 
 class OperationalEventCreationViewTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="operadora", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="operadora", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Operativo", tipo=Comite.Tipos.DELEGACION)
 
@@ -515,7 +515,7 @@ class OperationalEventCreationViewTests(TestCase):
 
 class CapturaPresencialUltimoPendienteTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="capturista", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="capturista", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Captura", tipo=Comite.Tipos.DELEGACION)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="García", apellido_materno="Ruiz", edad=30)
