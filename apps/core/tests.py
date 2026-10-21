@@ -20,7 +20,7 @@ from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 
 class BusquedaDinamicaCiudadanosTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="busqueda", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="busqueda", password="testpass123")
         self.client.force_login(self.user)
         self.ana = Ciudadano.objects.create(
             nombre="Ana", apellido_paterno="López", edad=30, numero_contrato="CONT-ANA"
@@ -588,7 +588,7 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 class SecureDeletionFlowTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="deleter", password="pw")
-        perms = Permission.objects.filter(codename__in=["delete_faena", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
+        perms = Permission.objects.filter(codename__in=["delete_faena", "change_faena", "delete_junta", "change_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
         self.user.user_permissions.set(perms)
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
