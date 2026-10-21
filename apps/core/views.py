@@ -539,10 +539,20 @@ def _manzanas_responsables(usuario):
     return [r.manzana.pk for r in responsabilidades_activas(usuario) if r.tipo == "MANZANA" and r.manzana]
 
 
+def _comites_presididos(usuario):
+    return [
+        r.comite.pk
+        for r in responsabilidades_activas(usuario)
+        if r.tipo == "COMITE" and r.rol == "PRESIDENTE" and r.comite
+    ]
+
+
 def _puede_operar_evento(usuario, evento):
     if usuario.is_superuser or usuario.has_perm(f"operacion.change_{evento._meta.model_name}"):
         return True
-    return evento.alcance == evento.Alcances.MANZANA and evento.manzana_id in _manzanas_responsables(usuario)
+    if evento.alcance == evento.Alcances.MANZANA:
+        return evento.manzana_id in _manzanas_responsables(usuario)
+    return evento.comite_id in _comites_presididos(usuario)
 
 
 def _puede_crear_evento(usuario, model):
@@ -550,6 +560,7 @@ def _puede_crear_evento(usuario, model):
         usuario.is_superuser
         or usuario.has_perm(f"operacion.add_{model._meta.model_name}")
         or _manzanas_responsables(usuario)
+        or _comites_presididos(usuario)
     )
 
 
@@ -566,6 +577,7 @@ def _evento_operativo_form_view(
     *,
     instance=None,
     manzana_restringida_id=None,
+    comites_restringidos_ids=None,
     delete_url_name="",
     delete_permission="",
 ):
@@ -579,10 +591,22 @@ def _evento_operativo_form_view(
         form.fields["alcance"].choices = [(form.instance.Alcances.MANZANA, "Por manzana")]
         form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
         form.fields["manzana"].initial = manzana_restringida_id
+        form.fields.pop("comite", None)
+        form.fields["motivo"].required = instance is None or bool(instance.motivo)
         if instance is not None:
-            form.fields["comite"].queryset = Comite.objects.filter(pk=instance.comite_id, activo=True)
+            form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id)
         else:
-            form.fields["comite"].queryset = Comite.objects.filter(activo=True)
+            form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
+    elif comites_restringidos_ids is not None:
+        form.fields["alcance"].choices = [(form.instance.Alcances.GENERAL, "Toda la comunidad")]
+        form.fields["manzana"].initial = None
+        form.fields.pop("manzana", None)
+        if instance is not None:
+            form.fields.pop("comite", None)
+        else:
+            form.fields["comite"].queryset = Comite.objects.filter(
+                pk__in=comites_restringidos_ids, activo=True
+            )
 
     if request.method == "POST":
         if form.is_valid():
@@ -618,6 +642,12 @@ def _crear_evento_operativo(request, form_class, event_label, description, detai
         raise Http404
     manzanas = _manzanas_responsables(request.user)
     if not request.user.is_superuser and not request.user.has_perm(f"operacion.add_{model._meta.model_name}"):
+        comites_presididos = _comites_presididos(request.user)
+        if comites_presididos and not manzanas:
+            return _evento_operativo_form_view(
+                request, form_class, event_label, description, detail_url_name,
+                comites_restringidos_ids=comites_presididos,
+            )
         if len(manzanas) != 1:
             raise Http404
         return _evento_operativo_form_view(
@@ -654,6 +684,8 @@ def editar_faena_operativa(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite"), pk=faena_id)
     if not _puede_operar_evento(request.user, faena):
         raise Http404
+    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_faena")
+    comites_presididos = [faena.comite_id] if faena.alcance == Faena.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
         FaenaOperativaForm,
@@ -661,7 +693,8 @@ def editar_faena_operativa(request, faena_id):
         "Actualiza la información operativa de la faena sin salir del flujo de Control de Asistencias.",
         "control_asistencias_faena_detalle",
         instance=faena,
-        manzana_restringida_id=faena.manzana_id if not (request.user.is_superuser or request.user.has_perm("operacion.change_faena")) else None,
+        manzana_restringida_id=faena.manzana_id if faena.alcance == Faena.Alcances.MANZANA and not es_global else None,
+        comites_restringidos_ids=comites_presididos,
         delete_url_name="eliminar_faena_operativa",
         delete_permission="operacion.delete_faena",
     )
@@ -672,6 +705,8 @@ def editar_junta_operativa(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
     if not _puede_operar_evento(request.user, junta):
         raise Http404
+    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_junta")
+    comites_presididos = [junta.comite_id] if junta.alcance == Junta.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
         JuntaOperativaForm,
@@ -679,7 +714,8 @@ def editar_junta_operativa(request, junta_id):
         "Actualiza la información operativa de la junta sin salir del flujo de Control de Asistencias.",
         "control_asistencias_junta_detalle",
         instance=junta,
-        manzana_restringida_id=junta.manzana_id if not (request.user.is_superuser or request.user.has_perm("operacion.change_junta")) else None,
+        manzana_restringida_id=junta.manzana_id if junta.alcance == Junta.Alcances.MANZANA and not es_global else None,
+        comites_restringidos_ids=comites_presididos,
         delete_url_name="eliminar_junta_operativa",
         delete_permission="operacion.delete_junta",
     )

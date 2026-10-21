@@ -32,6 +32,20 @@ def _responsabilidad_manzana_ids(usuario):
     ]
 
 
+def _comites_presididos_ids(usuario):
+    if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
+        return []
+    from apps.core.autorizacion import responsabilidades_activas
+
+    return [
+        responsabilidad.comite.pk
+        for responsabilidad in responsabilidades_activas(usuario)
+        if responsabilidad.tipo == "COMITE"
+        and responsabilidad.rol == "PRESIDENTE"
+        and responsabilidad.comite
+    ]
+
+
 class AlcanceEventoQuerySet(models.QuerySet):
     def visibles_para(self, usuario):
         if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
@@ -39,13 +53,20 @@ class AlcanceEventoQuerySet(models.QuerySet):
         if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
             return self
         manzana_ids = _responsabilidad_manzana_ids(usuario)
-        if not manzana_ids:
+        comite_ids = _comites_presididos_ids(usuario)
+        if not manzana_ids and not comite_ids:
             return self.none()
         relation = "registros" if self.model.__name__ == "Faena" else "asistencias"
-        return self.filter(
-            models.Q(alcance="MANZANA", manzana_id__in=manzana_ids)
-            | models.Q(**{f"alcance": "GENERAL", f"{relation}__ciudadano__manzana_id__in": manzana_ids})
-        ).distinct()
+        alcance = models.Q()
+        if manzana_ids:
+            alcance |= models.Q(alcance="MANZANA", manzana_id__in=manzana_ids)
+            alcance |= models.Q(**{
+                "alcance": "GENERAL",
+                f"{relation}__ciudadano__manzana_id__in": manzana_ids,
+            })
+        if comite_ids:
+            alcance |= models.Q(alcance="GENERAL", comite_id__in=comite_ids)
+        return self.filter(alcance).distinct()
 
 
 class AlcanceParticipanteQuerySet(models.QuerySet):
@@ -55,15 +76,25 @@ class AlcanceParticipanteQuerySet(models.QuerySet):
         if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
             return self
         manzana_ids = _responsabilidad_manzana_ids(usuario)
-        if not manzana_ids:
+        comite_ids = _comites_presididos_ids(usuario)
+        if not manzana_ids and not comite_ids:
             return self.none()
         event_relation = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
-        return self.filter(
-            ciudadano__manzana_id__in=manzana_ids,
-        ).filter(
-            models.Q(**{f"{event_relation}__alcance": "GENERAL"})
-            | models.Q(**{f"{event_relation}__alcance": "MANZANA", f"{event_relation}__manzana_id__in": manzana_ids})
-        )
+        alcance = models.Q()
+        if manzana_ids:
+            alcance |= models.Q(ciudadano__manzana_id__in=manzana_ids) & (
+                models.Q(**{f"{event_relation}__alcance": "GENERAL"})
+                | models.Q(**{
+                    f"{event_relation}__alcance": "MANZANA",
+                    f"{event_relation}__manzana_id__in": manzana_ids,
+                })
+            )
+        if comite_ids:
+            alcance |= models.Q(**{
+                f"{event_relation}__alcance": "GENERAL",
+                f"{event_relation}__comite_id__in": comite_ids,
+            })
+        return self.filter(alcance).distinct()
 
 class Junta(TimeStampedModel):
     objects = AlcanceEventoQuerySet.as_manager()
