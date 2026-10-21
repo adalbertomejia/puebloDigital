@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.comites.models import PerfilAcceso, Comite
+from apps.comites.models import PerfilAcceso, Comite, UsuarioApp
 from apps.core.models import Ciudadano, Manzana
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 
@@ -107,6 +107,29 @@ class AlcanceOperacionTests(TestCase):
 
         self.assertEqual(edicion.status_code, 404)
         self.assertEqual(estado.status_code, 404)
+
+    def test_responsable_puede_editar_y_cambiar_estado_de_evento_de_su_manzana(self):
+        self.client.force_login(self.responsable)
+        edicion = self.client.get(reverse("editar_faena_operativa", args=[self.faena_local.pk]))
+        estado = self.client.post(
+            reverse("editar_estado_evento", args=["faena", self.faena_local.pk]),
+            {"estado": Faena.Estados.CANCELADA},
+        )
+
+        self.faena_local.refresh_from_db()
+        self.assertEqual(edicion.status_code, 200)
+        self.assertEqual(estado.status_code, 302)
+        self.assertEqual(self.faena_local.estado, Faena.Estados.CANCELADA)
+
+    def test_tesorero_no_recibe_alcance_operativo_por_su_cargo(self):
+        tesorero = get_user_model().objects.create_user(username="tesorero-sin-operacion")
+        UsuarioApp.objects.create(user=tesorero, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
+        self.assertFalse(Faena.objects.visibles_para(tesorero).exists())
+        self.client.force_login(tesorero)
+        self.assertEqual(
+            self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_local.pk])).status_code,
+            404,
+        )
 
     def test_exportacion_directa_de_evento_ajeno_devuelve_404(self):
         self.client.force_login(self.responsable)
