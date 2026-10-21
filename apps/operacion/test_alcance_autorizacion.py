@@ -199,6 +199,14 @@ class AlcanceOperacionTests(TestCase):
             Faena.objects.visibles_para(presidente).order_by("pk"),
             [self.faena_general],
         )
+        self.assertQuerySetEqual(
+            RegistroFaena.objects.visibles_para(presidente).order_by("pk"),
+            [self.registro_local, self.registro_ajeno],
+        )
+        self.assertQuerySetEqual(
+            AsistenciaJunta.objects.visibles_para(presidente).order_by("pk"),
+            [self.asistencia_local, self.asistencia_ajena],
+        )
         self.client.force_login(presidente)
         self.assertEqual(
             self.client.get(reverse("editar_faena_operativa", args=[self.faena_general.pk])).status_code,
