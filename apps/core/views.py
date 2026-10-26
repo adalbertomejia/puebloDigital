@@ -44,6 +44,7 @@ from apps.tesoreria.forms import BuscarAportacionesForm
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
 from .autorizacion import responsabilidades_activas
+from .query_helpers import filtro_busqueda_ciudadano
 
 
 class EstadoEventoForm(DashboardFormMixin, forms.Form):
@@ -128,13 +129,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
     fecha_nacimiento = params.get("fecha_nacimiento", "todas")
 
     if q:
-        search_filter = (
-            Q(nombre__icontains=q)
-            | Q(apellido_paterno__icontains=q)
-            | Q(apellido_materno__icontains=q)
-            | Q(numero_contrato__icontains=q)
-        )
-        queryset = queryset.filter(search_filter)
+        queryset = queryset.filter(filtro_busqueda_ciudadano(q))
 
     if estado == "activos":
         queryset = queryset.filter(activo=True)
@@ -442,11 +437,7 @@ def dashboard_operativo(request):
 
     if q:
         ciudadanos_qs = ciudadanos_qs.filter(
-            Q(nombre__icontains=q)
-            | Q(apellido_paterno__icontains=q)
-            | Q(apellido_materno__icontains=q)
-            | Q(numero_contrato__icontains=q)
-            | Q(toma__numero_toma__icontains=q)
+            filtro_busqueda_ciudadano(q, extra_fields=("toma__numero_toma",))
         )
 
     paginator = Paginator(ciudadanos_qs, 12)

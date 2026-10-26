@@ -45,6 +45,17 @@ class BusquedaDinamicaCiudadanosTests(TestCase):
         self.assertContains(response, self.ana.nombre_completo)
         self.assertNotContains(response, "Acciones rápidas")
 
+    def test_inicio_encuentra_nombre_completo_con_varias_palabras(self):
+        adalberto = Ciudadano.objects.create(
+            nombre="Adalberto", apellido_paterno="Mejia", apellido_materno="Trejo", edad=45
+        )
+        response = self.client.get(
+            reverse("dashboard_operativo"), {"q": "Adalberto Mejia Trejo"}
+        )
+        self.assertContains(response, adalberto.nombre_completo)
+        self.assertNotContains(response, "Pedro Martínez")
+        self.assertNotContains(response, self.ana.nombre_completo)
+
     def test_padron_responde_solo_resultados_a_busqueda_dinamica(self):
         response = self.client.get(
             reverse("padron_ciudadanos"), {"q": "CONT-ANA"}, HTTP_HX_REQUEST="true"
@@ -330,6 +341,11 @@ class PadronCiudadanosFiltrosTests(TestCase):
         self.assertEqual(self._ids(q="RAM"), [self.beto.pk])
         self.assertEqual(self._ids(q="soto"), [self.beto.pk])
         self.assertEqual(self._ids(q="com-9"), [self.carla.pk])
+
+    def test_busqueda_por_nombre_completo_reparte_palabras_entre_campos(self):
+        self.assertEqual(self._ids(q="Ana María Mejía López"), [self.ana.pk])
+        self.assertEqual(self._ids(q="  Beto Ramírez Soto "), [self.beto.pk])
+        self.assertEqual(self._ids(q="Ana María Mejía López extra"), [])
 
     def test_filtros_de_manzana_incluyen_inactiva_y_sin_manzana(self):
         self.assertEqual(self._ids(manzana=str(self.manzana_dos.pk)), [self.beto.pk])
