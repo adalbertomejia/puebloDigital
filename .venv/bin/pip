@@ -1,6 +1,4 @@
-#!/bin/sh
-'''exec' "/home/Adal/Python projects/pueblo_digital_mvp_v3_admin_first/.venv/bin/python3" "$0" "$@"
-' '''
+#!/srv/pueblo-digital/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -1,2 +1,4 @@
-Django>=4.2,<5.0
+Django>=5.2.8,<5.3
 django-unfold
+psycopg[binary]
+gunicorn
