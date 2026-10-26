@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -46,6 +46,7 @@ from .models import Ciudadano, Manzana
 from .autorizacion import responsabilidades_activas
 from .query_helpers import filtro_busqueda_ciudadano
 
+
 class EstadoEventoForm(DashboardFormMixin, forms.Form):
     estado = forms.ChoiceField(label="Nuevo estado")
 
@@ -59,6 +60,26 @@ def _ciudadanos_operativos_queryset():
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
         ultimo_pago_fecha=Max("pagos__fecha"),
         adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
+    )
+
+
+def _puede_consultar_padron(usuario):
+    return bool(
+        usuario.is_authenticated
+        and usuario.is_active
+        and (
+            usuario.is_superuser
+            or usuario.has_perm("core.view_ciudadano")
+            or any(r.tipo == "MANZANA" for r in responsabilidades_activas(usuario))
+        )
+    )
+
+
+def _puede_modificar_padron(usuario, accion):
+    return bool(
+        usuario.is_authenticated
+        and usuario.is_active
+        and (usuario.is_superuser or usuario.has_perm(f"core.{accion}_ciudadano"))
     )
 
 
@@ -161,7 +182,10 @@ def _filtrar_ciudadanos_operativos(queryset, params):
 
 @login_required
 def padron_ciudadanos(request):
-    ciudadanos_qs = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    if not _puede_consultar_padron(request.user):
+        raise Http404
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     paginator = Paginator(ciudadanos_qs, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
     pagination_params = request.GET.copy()
@@ -181,19 +205,23 @@ def padron_ciudadanos(request):
             "fecha_nacimiento": request.GET.get("fecha_nacimiento", "todas"),
             "orden": request.GET.get("orden", "nombre"),
         },
-        "manzanas": Manzana.objects.filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
+        "manzanas": Manzana.objects.filter(
+            pk__in=base_ciudadanos.values("manzana_id")
+        ).filter(Q(activa=True) | Q(ciudadanos__isnull=False)).distinct(),
         "motivos_alta": Ciudadano.MotivosAlta.choices,
         "sexos": Ciudadano.Sexos.choices,
         "motivo_alta_permite_vacio": Ciudadano._meta.get_field("motivo_alta").blank,
         "pagination_querystring": pagination_params.urlencode(),
         "metricas": {
-            "total": Ciudadano.objects.count(),
-            "activos": Ciudadano.objects.filter(activo=True).count(),
-            "inactivos": Ciudadano.objects.filter(activo=False).count(),
-            "sin_toma": Ciudadano.objects.filter(toma__isnull=True).count(),
-            "sin_manzana": Ciudadano.objects.filter(manzana__isnull=True).count(),
-            "activos_sin_manzana": Ciudadano.objects.filter(activo=True, manzana__isnull=True).count(),
-            "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
+            "total": base_ciudadanos.count(),
+            "activos": base_ciudadanos.filter(activo=True).count(),
+            "inactivos": base_ciudadanos.filter(activo=False).count(),
+            "sin_toma": base_ciudadanos.filter(toma__isnull=True).count(),
+            "sin_manzana": base_ciudadanos.filter(manzana__isnull=True).count(),
+            "activos_sin_manzana": base_ciudadanos.filter(activo=True, manzana__isnull=True).count(),
+            "con_adeudo": RegistroFaena.objects.filter(
+                genera_adeudo=True, ciudadano__in=base_ciudadanos
+            ).values("ciudadano").distinct().count(),
         },
         "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
         "exportar_ciudadanos_url": reverse("exportar_ciudadanos_csv"),
@@ -208,7 +236,10 @@ def padron_ciudadanos(request):
 
 @login_required
 def exportar_ciudadanos_csv(request):
-    ciudadanos = _filtrar_ciudadanos_operativos(_ciudadanos_operativos_queryset(), request.GET)
+    if not _puede_consultar_padron(request.user):
+        raise Http404
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    ciudadanos = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     manzana = request.GET.get("manzana", "todas")
     if manzana == "sin_asignar":
         filename_context = "_sin_manzana"
@@ -264,6 +295,8 @@ def exportar_ciudadanos_csv(request):
 
 @login_required
 def crear_ciudadano_operativo(request):
+    if not _puede_modificar_padron(request.user, "add"):
+        raise Http404
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST)
         if form.is_valid():
@@ -289,6 +322,8 @@ def crear_ciudadano_operativo(request):
 
 @login_required
 def editar_ciudadano_operativo(request, pk):
+    if not _puede_modificar_padron(request.user, "change"):
+        raise Http404
     ciudadano = get_object_or_404(Ciudadano, pk=pk)
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
@@ -478,8 +513,46 @@ def dashboard_operativo(request):
     return render(request, "dashboard/operativo.html", context)
 
 
+@login_required
+def mis_responsabilidades(request):
+    return render(
+        request,
+        "dashboard/mis_responsabilidades.html",
+        {"responsabilidades": responsabilidades_activas(request.user)},
+    )
+
+
 def _can_delete_operacion_event(user, permission_codename):
     return user.is_superuser or user.has_perm(permission_codename)
+
+
+def _manzanas_responsables(usuario):
+    return [r.manzana.pk for r in responsabilidades_activas(usuario) if r.tipo == "MANZANA" and r.manzana]
+
+
+def _comites_presididos(usuario):
+    return [
+        r.comite.pk
+        for r in responsabilidades_activas(usuario)
+        if r.tipo == "COMITE" and r.rol == "PRESIDENTE" and r.comite
+    ]
+
+
+def _puede_operar_evento(usuario, evento):
+    if usuario.is_superuser or usuario.has_perm(f"operacion.change_{evento._meta.model_name}"):
+        return True
+    if evento.alcance == evento.Alcances.MANZANA:
+        return evento.manzana_id in _manzanas_responsables(usuario)
+    return evento.comite_id in _comites_presididos(usuario)
+
+
+def _puede_crear_evento(usuario, model):
+    return bool(
+        usuario.is_superuser
+        or usuario.has_perm(f"operacion.add_{model._meta.model_name}")
+        or _manzanas_responsables(usuario)
+        or _comites_presididos(usuario)
+    )
 
 
 def _money(value):
@@ -494,20 +567,45 @@ def _evento_operativo_form_view(
     detail_url_name,
     *,
     instance=None,
+    manzana_restringida_id=None,
+    comites_restringidos_ids=None,
     delete_url_name="",
     delete_permission="",
 ):
     is_edit = instance is not None
     if request.method == "POST":
         form = form_class(request.POST, instance=instance)
+    else:
+        form = form_class(instance=instance)
+
+    if manzana_restringida_id:
+        form.fields["alcance"].choices = [(form.instance.Alcances.MANZANA, "Por manzana")]
+        form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
+        form.fields["manzana"].initial = manzana_restringida_id
+        form.fields.pop("comite", None)
+        form.fields["motivo"].required = instance is None or bool(instance.motivo)
+        if instance is not None:
+            form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id)
+        else:
+            form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
+    elif comites_restringidos_ids is not None:
+        form.fields["alcance"].choices = [(form.instance.Alcances.GENERAL, "Toda la comunidad")]
+        form.fields["manzana"].initial = None
+        form.fields.pop("manzana", None)
+        if instance is not None:
+            form.fields.pop("comite", None)
+        else:
+            form.fields["comite"].queryset = Comite.objects.filter(
+                pk__in=comites_restringidos_ids, activo=True
+            )
+
+    if request.method == "POST":
         if form.is_valid():
             event = form.save()
             action = "actualizó" if is_edit else "creó"
             messages.success(request, f"Se {action} correctamente la {event_label.lower()}.")
             return redirect(detail_url_name, event.pk)
         messages.error(request, "Revisa los campos marcados antes de guardar.")
-    else:
-        form = form_class(instance=instance)
 
     cancel_url = reverse(detail_url_name, args=[instance.pk]) if is_edit else reverse("dashboard_operativo")
     can_delete = bool(is_edit and delete_permission and _can_delete_operacion_event(request.user, delete_permission))
@@ -530,6 +628,23 @@ def _evento_operativo_form_view(
 
 
 def _crear_evento_operativo(request, form_class, event_label, description, detail_url_name):
+    model = form_class._meta.model
+    if not _puede_crear_evento(request.user, model):
+        raise Http404
+    manzanas = _manzanas_responsables(request.user)
+    if not request.user.is_superuser and not request.user.has_perm(f"operacion.add_{model._meta.model_name}"):
+        comites_presididos = _comites_presididos(request.user)
+        if comites_presididos and not manzanas:
+            return _evento_operativo_form_view(
+                request, form_class, event_label, description, detail_url_name,
+                comites_restringidos_ids=comites_presididos,
+            )
+        if len(manzanas) != 1:
+            raise Http404
+        return _evento_operativo_form_view(
+            request, form_class, event_label, description, detail_url_name,
+            manzana_restringida_id=manzanas[0],
+        )
     return _evento_operativo_form_view(request, form_class, event_label, description, detail_url_name)
 
 
@@ -557,7 +672,11 @@ def crear_junta_operativa(request):
 
 @login_required
 def editar_faena_operativa(request, faena_id):
-    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
+    faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite"), pk=faena_id)
+    if not _puede_operar_evento(request.user, faena):
+        raise Http404
+    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_faena")
+    comites_presididos = [faena.comite_id] if faena.alcance == Faena.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
         FaenaOperativaForm,
@@ -565,6 +684,8 @@ def editar_faena_operativa(request, faena_id):
         "Actualiza la información operativa de la faena sin salir del flujo de Control de Asistencias.",
         "control_asistencias_faena_detalle",
         instance=faena,
+        manzana_restringida_id=faena.manzana_id if faena.alcance == Faena.Alcances.MANZANA and not es_global else None,
+        comites_restringidos_ids=comites_presididos,
         delete_url_name="eliminar_faena_operativa",
         delete_permission="operacion.delete_faena",
     )
@@ -572,7 +693,11 @@ def editar_faena_operativa(request, faena_id):
 
 @login_required
 def editar_junta_operativa(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
+    if not _puede_operar_evento(request.user, junta):
+        raise Http404
+    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_junta")
+    comites_presididos = [junta.comite_id] if junta.alcance == Junta.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
         JuntaOperativaForm,
@@ -580,6 +705,8 @@ def editar_junta_operativa(request, junta_id):
         "Actualiza la información operativa de la junta sin salir del flujo de Control de Asistencias.",
         "control_asistencias_junta_detalle",
         instance=junta,
+        manzana_restringida_id=junta.manzana_id if junta.alcance == Junta.Alcances.MANZANA and not es_global else None,
+        comites_restringidos_ids=comites_presididos,
         delete_url_name="eliminar_junta_operativa",
         delete_permission="operacion.delete_junta",
     )
@@ -630,7 +757,9 @@ def generar_registros_faena(request, faena_id):
     if request.method != "POST":
         return redirect("dashboard_operativo")
 
-    faena = get_object_or_404(Faena.objects.select_related("manzana"), pk=faena_id)
+    faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("manzana"), pk=faena_id)
+    if faena.alcance != Faena.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_faena"):
+        raise Http404
     if faena.estado != Faena.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para faenas programadas.")
         return redirect("dashboard_operativo")
@@ -651,7 +780,9 @@ def generar_registros_junta(request, junta_id):
     if request.method != "POST":
         return redirect("dashboard_operativo")
 
-    junta = get_object_or_404(Junta.objects.select_related("manzana"), pk=junta_id)
+    junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("manzana"), pk=junta_id)
+    if junta.alcance != Junta.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_junta"):
+        raise Http404
     if junta.estado != Junta.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para juntas programadas.")
         return redirect("dashboard_operativo")
@@ -667,28 +798,44 @@ def generar_registros_junta(request, junta_id):
     return redirect("dashboard_operativo")
 
 
-def _attendance_queryset(model, relation_name, pending_status):
+def _attendance_queryset(model, relation_name, pending_status, usuario=None):
     """Annotate event querysets with operational attendance metrics."""
-    return model.objects.select_related("comite", "manzana").annotate(
-        total_participantes=Count(relation_name, distinct=True),
+    queryset = model.objects.visibles_para(usuario) if usuario is not None else model.objects.all()
+    participant_model = model._meta.get_field(relation_name).related_model
+    if usuario is not None and not usuario.is_superuser and not usuario.has_perm(f"operacion.view_{participant_model._meta.model_name}"):
+        manzana_ids = _manzanas_responsables(usuario)
+        comite_ids = _comites_presididos(usuario)
+        event_relation = "faena" if model is Faena else "junta"
+        scoped_filter = Q(pk__in=[])
+        if manzana_ids:
+            scoped_filter |= Q(**{f"{relation_name}__ciudadano__manzana_id__in": manzana_ids})
+        if comite_ids:
+            scoped_filter |= Q(**{
+                f"{relation_name}__{event_relation}__alcance": "GENERAL",
+                f"{relation_name}__{event_relation}__comite_id__in": comite_ids,
+            })
+    else:
+        scoped_filter = Q()
+    return queryset.select_related("comite", "manzana").annotate(
+        total_participantes=Count(relation_name, filter=scoped_filter, distinct=True),
         asistencias_registradas=Count(
             relation_name,
-            filter=~Q(**{f"{relation_name}__estatus": pending_status}),
+            filter=scoped_filter & ~Q(**{f"{relation_name}__estatus": pending_status}),
             distinct=True,
         ),
         pendientes=Count(
             relation_name,
-            filter=Q(**{f"{relation_name}__estatus": pending_status}),
+            filter=scoped_filter & Q(**{f"{relation_name}__estatus": pending_status}),
             distinct=True,
         ),
         cantidad_adeudos=Count(
             relation_name,
-            filter=Q(**{f"{relation_name}__genera_adeudo": True}),
+            filter=scoped_filter & Q(**{f"{relation_name}__genera_adeudo": True}),
             distinct=True,
         ),
         monto_total_adeudos=Sum(
             f"{relation_name}__monto_adeudo",
-            filter=Q(**{f"{relation_name}__genera_adeudo": True}),
+            filter=scoped_filter & Q(**{f"{relation_name}__genera_adeudo": True}),
         ),
     )
 
@@ -794,7 +941,7 @@ def _paginate_events(request, queryset, page_param):
 @login_required
 def control_asistencias(request):
     faenas_qs = _filtrar_eventos_asistencia(
-        _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE),
+        _attendance_queryset(Faena, "registros", RegistroFaena.Estatus.PENDIENTE, request.user),
         request.GET,
         "descripcion",
         "faena",
@@ -802,7 +949,7 @@ def control_asistencias(request):
     alcance = request.GET.get("alcance", "todos")
     manzana = request.GET.get("manzana", "todas")
     juntas_qs = _filtrar_eventos_asistencia(
-        _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE),
+        _attendance_queryset(Junta, "asistencias", AsistenciaJunta.Estatus.PENDIENTE, request.user),
         request.GET,
         "tema",
         "junta",
@@ -825,6 +972,12 @@ def control_asistencias(request):
         "control_asistencias_junta_detalle",
         "generar_registros_junta",
     )
+    for evento in chain(faenas, juntas):
+        puede_operar = _puede_operar_evento(request.user, evento)
+        evento.puede_operar = puede_operar
+        if not puede_operar:
+            evento.admin_change_url = ""
+            evento.estado_edit_url = ""
 
     return render(
         request,
@@ -845,7 +998,9 @@ def control_asistencias(request):
             "meses": MESES,
             "anios": _attendance_years(),
             "alcances": Faena.Alcances.choices,
-            "manzanas": Manzana.objects.order_by("nombre"),
+            "manzanas": Manzana.objects.filter(
+                pk__in=[r.manzana.pk for r in responsabilidades_activas(request.user) if r.tipo == "MANZANA" and r.manzana]
+            ).order_by("nombre") if not request.user.is_superuser and not request.user.has_perm("operacion.view_faena") else Manzana.objects.order_by("nombre"),
             "tipo_activo": request.GET.get("tipo", ""),
         },
     )
@@ -931,38 +1086,38 @@ def _exportar_participantes_csv(event, registros, event_type, description):
 
 @login_required
 def control_asistencias_faena_detalle(request, faena_id):
-    faena = get_object_or_404(Faena.objects.select_related("comite", "manzana"), pk=faena_id)
-    context = _event_detail_context(faena, faena.registros.all(), "Faena", faena.descripcion)
-    context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk])
+    faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=faena_id)
+    context = _event_detail_context(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
+    context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk]) if _puede_operar_evento(request.user, faena) else ""
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_faena", args=[faena.pk])
-    context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk])
+    context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk]) if _puede_operar_evento(request.user, faena) else ""
     context["export_csv_url"] = reverse("exportar_participantes_faena_csv", args=[faena.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
 
 @login_required
 def control_asistencias_junta_detalle(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
-    context = _event_detail_context(junta, junta.asistencias.all(), "Junta", junta.tema)
-    context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk])
+    junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
+    context = _event_detail_context(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
+    context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk]) if _puede_operar_evento(request.user, junta) else ""
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_junta", args=[junta.pk])
-    context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk])
+    context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk]) if _puede_operar_evento(request.user, junta) else ""
     context["export_csv_url"] = reverse("exportar_participantes_junta_csv", args=[junta.pk])
     return render(request, "dashboard/control_asistencias_detalle.html", context)
 
 
 @login_required
 def exportar_participantes_faena_csv(request, faena_id):
-    faena = get_object_or_404(Faena.objects.select_related("comite"), pk=faena_id)
-    return _exportar_participantes_csv(faena, faena.registros.all(), "Faena", faena.descripcion)
+    faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite"), pk=faena_id)
+    return _exportar_participantes_csv(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
 
 
 @login_required
 def exportar_participantes_junta_csv(request, junta_id):
-    junta = get_object_or_404(Junta.objects.select_related("comite", "manzana"), pk=junta_id)
-    return _exportar_participantes_csv(junta, junta.asistencias.all(), "Junta", junta.tema)
+    junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
+    return _exportar_participantes_csv(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
 
 
 def _capture_config(event_kind):
@@ -1055,8 +1210,11 @@ def _capture_metrics(registros):
     }
 
 
-def _pending_records(event, relation):
-    return getattr(event, relation).select_related("ciudadano").filter(estatus="PENDIENTE").order_by(
+def _pending_records(event, relation, usuario=None):
+    registros = getattr(event, relation).all()
+    if usuario is not None:
+        registros = registros.visibles_para(usuario)
+    return registros.select_related("ciudadano").filter(estatus="PENDIENTE").order_by(
         "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk"
     )
 
@@ -1078,12 +1236,14 @@ def _normal_capture_url(event, config):
     return reverse(config["capture_url"], args=[event.pk])
 
 
-def _capture_payload(event, config):
+def _capture_payload(event, config, usuario=None):
     registros = getattr(event, config["relation"]).all()
+    if usuario is not None:
+        registros = registros.visibles_para(usuario)
     metrics = _capture_metrics(registros)
     siguiente = None
     if metrics["pendientes"] > 1:
-        siguiente = _pending_records(event, config["relation"]).first()
+        siguiente = _pending_records(event, config["relation"], usuario).first()
     return {
         "ok": True,
         "metrics": metrics,
@@ -1103,7 +1263,7 @@ def _json_capture_action(request, event, config):
         return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
 
     with transaction.atomic():
-        registros_locked = getattr(event, config["relation"]).select_for_update()
+        registros_locked = getattr(event, config["relation"]).all().visibles_para(request.user).select_for_update()
         registro = get_object_or_404(registros_locked, pk=record_id)
         expected = request.POST.get("expected_status")
         if action in {"asistio", "falto"}:
@@ -1111,21 +1271,21 @@ def _json_capture_action(request, event, config):
             if pendientes <= 1 and registro.estatus == "PENDIENTE":
                 return JsonResponse(
                     {
-                        **_capture_payload(event, config),
+                        **_capture_payload(event, config, request.user),
                         "ok": False,
                         "error": LAST_PENDING_PRESENTIAL_MESSAGE,
                     },
                     status=409,
                 )
         if action in {"asistio", "falto"} and registro.estatus != "PENDIENTE":
-            return JsonResponse({"ok": False, "error": "Este registro ya fue actualizado.", **_capture_payload(event, config)}, status=409)
+            return JsonResponse({"ok": False, "error": "Este registro ya fue actualizado.", **_capture_payload(event, config, request.user)}, status=409)
         if action == "undo" and expected and registro.estatus != expected:
-            return JsonResponse({"ok": False, "error": "El registro cambió desde la última acción.", **_capture_payload(event, config)}, status=409)
+            return JsonResponse({"ok": False, "error": "El registro cambió desde la última acción.", **_capture_payload(event, config, request.user)}, status=409)
         registro.estatus = valid[action]
         if isinstance(registro, AsistenciaJunta):
             registro.asistio = registro.estatus == AsistenciaJunta.Estatus.ASISTIO
         registro.save()
-    payload = _capture_payload(event, config)
+    payload = _capture_payload(event, config, request.user)
     payload.update({"updated_record": {"id": registro.pk, "estatus": registro.estatus}})
     return JsonResponse(payload)
 
@@ -1133,12 +1293,12 @@ def _json_capture_action(request, event, config):
 def _captura_asistencia(request, event_kind, event_id):
     config = _capture_config(event_kind)
     event = get_object_or_404(
-        config["event_model"].objects.select_related("comite", "manzana"), pk=event_id
+        config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
     if event.estado != event.Estados.PROGRAMADA:
         messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
         return redirect(config["detail_url"], event.pk)
-    registros_qs = getattr(event, config["relation"]).select_related("ciudadano").order_by(
+    registros_qs = getattr(event, config["relation"]).all().visibles_para(request.user).select_related("ciudadano").order_by(
         "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
     )
 
@@ -1151,7 +1311,7 @@ def _captura_asistencia(request, event_kind, event_id):
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all(),
+        getattr(event, config["relation"]).all().visibles_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
@@ -1160,10 +1320,10 @@ def _captura_asistencia(request, event_kind, event_id):
             "participantes": registros_qs,
             "status_choices": config["status_choices"],
             "detail_url": reverse(config["detail_url"], args=[event.pk]),
-            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
+            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]) if _puede_operar_evento(request.user, event) else "",
             "capture_url": reverse(config["capture_url"], args=[event.pk]),
             "sequential_capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),
-            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]),
+            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]) if _puede_operar_evento(request.user, event) else "",
         }
     )
     return render(request, "dashboard/captura_asistencia.html", context)
@@ -1172,7 +1332,7 @@ def _captura_asistencia(request, event_kind, event_id):
 def _captura_asistencia_secuencial(request, event_kind, event_id):
     config = _capture_config(event_kind)
     event = get_object_or_404(
-        config["event_model"].objects.select_related("comite", "manzana"), pk=event_id
+        config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
     if event.estado != event.Estados.PROGRAMADA:
         if request.method == "POST":
@@ -1185,11 +1345,11 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all(),
+        getattr(event, config["relation"]).all().visibles_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
-    payload = _capture_payload(event, config)
+    payload = _capture_payload(event, config, request.user)
     context.update(
         {
             "current_record": payload["next_record"],
@@ -1237,7 +1397,9 @@ def editar_estado_evento(request, event_kind, event_id):
         return redirect("control_asistencias")
 
     model, event_type, description_attr, detail_url = configs[event_kind]
-    event = get_object_or_404(model.objects.select_related("comite"), pk=event_id)
+    event = get_object_or_404(model.objects.visibles_para(request.user).select_related("comite"), pk=event_id)
+    if not _puede_operar_evento(request.user, event):
+        raise Http404
     form = EstadoEventoForm(
         request.POST or None,
         initial={"estado": event.estado},
@@ -1270,7 +1432,14 @@ def perfil_ciudadano(request, pk):
         obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
     )
 
-    ciudadano = get_object_or_404(Ciudadano.objects.select_related("toma", "manzana", "manzana__responsable"), pk=pk)
+    puede_ver_finanzas = bool(
+        request.user.is_superuser or request.user.has_perm("core.view_ciudadano")
+    )
+    ciudadanos_visibles = Ciudadano.objects.visibles_para(request.user)
+    ciudadano = get_object_or_404(
+        ciudadanos_visibles.select_related("toma", "manzana", "manzana__responsable"),
+        pk=pk,
+    )
     retorno_solicitado = request.GET.get("return_to", "")
     retorno_valido = bool(retorno_solicitado and url_has_allowed_host_and_scheme(
         retorno_solicitado, allowed_hosts={request.get_host()}, require_https=request.is_secure()
@@ -1285,8 +1454,8 @@ def perfil_ciudadano(request, pk):
     else:
         origen = "Ciudadanos"
 
-    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page")
-    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page")
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
     asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
     for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
         params = request.GET.copy()
@@ -1304,6 +1473,7 @@ def perfil_ciudadano(request, pk):
         {
             "ciudadano": ciudadano,
             "resumen": obtener_resumen_ciudadano(ciudadano),
+            "puede_ver_finanzas": puede_ver_finanzas,
             "obligaciones_page": obligaciones_page,
             "abonos_page": abonos_page,
             "asistencias_page": asistencias_page,

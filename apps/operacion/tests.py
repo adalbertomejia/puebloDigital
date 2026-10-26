@@ -148,7 +148,7 @@ class JuntaAlcanceTests(TestCase):
 
 class TerritorialInterfaceTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="operador", password="test")
+        self.user = get_user_model().objects.create_superuser(username="operador", password="test")
         self.factory = RequestFactory()
         self.comite = Comite.objects.create(nombre="Comité interfaz")
         self.m4 = Manzana.objects.create(nombre="Manzana 4")

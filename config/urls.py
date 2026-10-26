@@ -40,6 +40,7 @@ from apps.core.views import (
     resumen_aportaciones,
     exportar_aportaciones_csv,
     buscar_aportaciones,
+    mis_responsabilidades,
 )
 
 urlpatterns = [
@@ -47,6 +48,7 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('dashboard/', dashboard_operativo, name='dashboard_operativo'),
+    path('mi-acceso/', mis_responsabilidades, name='mis_responsabilidades'),
     path('ciudadanos/', padron_ciudadanos, name='padron_ciudadanos'),
     path('ciudadanos/nuevo/', crear_ciudadano_operativo, name='crear_ciudadano_operativo'),
     path('ciudadanos/<int:pk>/editar/', editar_ciudadano_operativo, name='editar_ciudadano_operativo'),

@@ -2,6 +2,31 @@ from django.conf import settings
 from django.db import models
 from apps.core.models import TimeStampedModel, Ciudadano
 
+
+class PerfilAcceso(TimeStampedModel):
+    """Links one authenticated account to one person in the community roster."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="perfil_acceso",
+        verbose_name="Cuenta de usuario",
+    )
+    ciudadano = models.OneToOneField(
+        Ciudadano,
+        on_delete=models.PROTECT,
+        related_name="perfil_acceso",
+        verbose_name="Ciudadano",
+    )
+
+    class Meta:
+        verbose_name = "Perfil de acceso"
+        verbose_name_plural = "Perfiles de acceso"
+        ordering = ["ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"]
+
+    def __str__(self):
+        return f"{self.ciudadano.nombre_completo} — {self.user}"
+
 class Comite(TimeStampedModel):
     class Tipos(models.TextChoices):
         AGUA = 'AGUA', 'Agua'

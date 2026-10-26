@@ -1,0 +1,373 @@
+from datetime import date
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+
+from apps.comites.models import PerfilAcceso, Comite, UsuarioApp
+from apps.core.models import Ciudadano, Manzana
+from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
+
+
+class AlcanceOperacionTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.responsable = User.objects.create_user(username="operacion-centro", password="test-pass")
+        self.comite = Comite.objects.create(nombre="Comité de agua")
+        self.ciudadano_responsable = Ciudadano.objects.create(nombre="Rosa", apellido_paterno="Responsable")
+        self.manzana = Manzana.objects.create(nombre="Centro", responsable=self.ciudadano_responsable)
+        self.ciudadano_responsable.manzana = self.manzana
+        self.ciudadano_responsable.save(update_fields=["manzana"])
+        PerfilAcceso.objects.create(user=self.responsable, ciudadano=self.ciudadano_responsable)
+        self.ciudadano_local = Ciudadano.objects.create(nombre="Ana", apellido_paterno="Local", manzana=self.manzana)
+        otra_manzana = Manzana.objects.create(nombre="Norte")
+        self.ciudadano_ajeno = Ciudadano.objects.create(nombre="Luis", apellido_paterno="Ajeno", manzana=otra_manzana)
+
+        self.faena_local = Faena.objects.create(
+            comite=self.comite, fecha=date(2026, 10, 1), alcance=Faena.Alcances.MANZANA,
+            manzana=self.manzana, descripcion="Limpieza Centro",
+        )
+        self.faena_ajena = Faena.objects.create(
+            comite=self.comite, fecha=date(2026, 10, 2), alcance=Faena.Alcances.MANZANA,
+            manzana=otra_manzana, descripcion="Limpieza Norte",
+        )
+        self.faena_general = Faena.objects.create(
+            comite=self.comite, fecha=date(2026, 10, 3), alcance=Faena.Alcances.GENERAL,
+            descripcion="Limpieza general",
+        )
+        self.registro_local = RegistroFaena.objects.create(faena=self.faena_general, ciudadano=self.ciudadano_local)
+        self.registro_ajeno = RegistroFaena.objects.create(faena=self.faena_general, ciudadano=self.ciudadano_ajeno)
+        self.junta_general = Junta.objects.create(
+            comite=self.comite, fecha=date(2026, 10, 4), alcance=Junta.Alcances.GENERAL, tema="Asamblea general",
+        )
+        self.asistencia_local = AsistenciaJunta.objects.create(junta=self.junta_general, ciudadano=self.ciudadano_local)
+        self.asistencia_ajena = AsistenciaJunta.objects.create(junta=self.junta_general, ciudadano=self.ciudadano_ajeno)
+
+    def test_queryset_de_faenas_y_registros_deriva_el_alcance_del_responsable(self):
+        self.assertQuerySetEqual(
+            Faena.objects.visibles_para(self.responsable).order_by("pk"),
+            [self.faena_local, self.faena_general],
+        )
+        self.assertQuerySetEqual(
+            RegistroFaena.objects.visibles_para(self.responsable).order_by("pk"),
+            [self.registro_local],
+        )
+
+    def test_queryset_de_juntas_y_asistencias_limita_participantes_en_evento_general(self):
+        self.assertQuerySetEqual(
+            Junta.objects.visibles_para(self.responsable).order_by("pk"),
+            [self.junta_general],
+        )
+        self.assertQuerySetEqual(
+            AsistenciaJunta.objects.visibles_para(self.responsable).order_by("pk"),
+            [self.asistencia_local],
+        )
+
+    def test_detalle_y_exportacion_de_evento_general_solo_muestran_su_manzana(self):
+        self.client.force_login(self.responsable)
+        detalle = self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_general.pk]))
+        exportacion = self.client.get(reverse("exportar_participantes_faena_csv", args=[self.faena_general.pk]))
+        texto = exportacion.content.decode("utf-8-sig")
+
+        self.assertEqual(detalle.status_code, 200)
+        self.assertContains(detalle, "Ana Local")
+        self.assertNotContains(detalle, "Luis Ajeno")
+        self.assertIn("Ana Local", texto)
+        self.assertNotIn("Luis Ajeno", texto)
+
+    def test_detalle_y_exportacion_de_junta_general_solo_muestran_su_manzana(self):
+        self.client.force_login(self.responsable)
+        detalle = self.client.get(reverse("control_asistencias_junta_detalle", args=[self.junta_general.pk]))
+        exportacion = self.client.get(reverse("exportar_participantes_junta_csv", args=[self.junta_general.pk]))
+        texto = exportacion.content.decode("utf-8-sig")
+
+        self.assertEqual(detalle.status_code, 200)
+        self.assertContains(detalle, "Ana Local")
+        self.assertNotContains(detalle, "Luis Ajeno")
+        self.assertIn("Ana Local", texto)
+        self.assertNotIn("Luis Ajeno", texto)
+
+    def test_peticion_directa_a_evento_de_otra_manzana_devuelve_404(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_ajena.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_lista_operativa_no_incluye_eventos_de_otra_manzana(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("control_asistencias"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Limpieza Centro")
+        self.assertNotContains(response, "Limpieza Norte")
+
+    def test_edicion_y_cambio_de_estado_de_evento_general_no_se_abren_al_responsable(self):
+        self.client.force_login(self.responsable)
+        edicion = self.client.get(reverse("editar_faena_operativa", args=[self.faena_general.pk]))
+        estado = self.client.get(reverse("editar_estado_evento", args=["faena", self.faena_general.pk]))
+
+        self.assertEqual(edicion.status_code, 404)
+        self.assertEqual(estado.status_code, 404)
+
+    def test_responsable_puede_editar_y_cambiar_estado_de_evento_de_su_manzana(self):
+        self.client.force_login(self.responsable)
+        edicion = self.client.get(reverse("editar_faena_operativa", args=[self.faena_local.pk]))
+        estado = self.client.post(
+            reverse("editar_estado_evento", args=["faena", self.faena_local.pk]),
+            {"estado": Faena.Estados.CANCELADA},
+        )
+
+        self.faena_local.refresh_from_db()
+        self.assertEqual(edicion.status_code, 200)
+        self.assertEqual(estado.status_code, 302)
+        self.assertEqual(self.faena_local.estado, Faena.Estados.CANCELADA)
+
+    def test_tesorero_no_recibe_alcance_operativo_por_su_cargo(self):
+        tesorero = get_user_model().objects.create_user(username="tesorero-sin-operacion")
+        UsuarioApp.objects.create(user=tesorero, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
+        self.assertFalse(Faena.objects.visibles_para(tesorero).exists())
+        self.client.force_login(tesorero)
+        self.assertEqual(
+            self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_local.pk])).status_code,
+            404,
+        )
+
+    def test_exportacion_directa_de_evento_ajeno_devuelve_404(self):
+        self.client.force_login(self.responsable)
+        response = self.client.get(reverse("exportar_participantes_faena_csv", args=[self.faena_ajena.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_responsable_crea_faena_solo_en_su_manzana(self):
+        self.client.force_login(self.responsable)
+        formulario = self.client.get(reverse("crear_faena_operativa"))
+        self.assertEqual(formulario.status_code, 200)
+        self.assertNotIn("comite", formulario.context["form"].fields)
+        self.assertIn("motivo", formulario.context["form"].fields)
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "fecha": "2026-10-20",
+                "descripcion": "Poda Centro",
+                "alcance": Faena.Alcances.MANZANA,
+                "manzana": self.manzana.pk,
+                "motivo": "Retirar ramas que obstruyen el paso",
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+
+        creada = Faena.objects.get(descripcion="Poda Centro")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(creada.alcance, Faena.Alcances.MANZANA)
+        self.assertEqual(creada.manzana_id, self.manzana.pk)
+        self.assertIsNone(creada.comite_id)
+        self.assertEqual(creada.motivo, "Retirar ramas que obstruyen el paso")
+
+    def test_responsable_no_puede_tamperar_alcance_o_manzana_al_crear_faena(self):
+        otra_manzana = self.ciudadano_ajeno.manzana
+        self.client.force_login(self.responsable)
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-10-20",
+                "descripcion": "Poda ajena",
+                "alcance": Faena.Alcances.MANZANA,
+                "manzana": otra_manzana.pk,
+                "motivo": "Trabajo de prueba en otra manzana",
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Faena.objects.filter(descripcion="Poda ajena").exists())
+
+    def test_presidente_solo_ve_y_edita_eventos_generales_de_su_comite(self):
+        presidente = get_user_model().objects.create_user(username="presidente-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        otro_comite = Comite.objects.create(nombre="Comité vecino")
+        general_ajena = Faena.objects.create(
+            comite=otro_comite,
+            fecha=date(2026, 10, 5),
+            alcance=Faena.Alcances.GENERAL,
+            descripcion="Faena de otro comité",
+        )
+
+        self.assertQuerySetEqual(
+            Faena.objects.visibles_para(presidente).order_by("pk"),
+            [self.faena_general],
+        )
+        self.assertQuerySetEqual(
+            RegistroFaena.objects.visibles_para(presidente).order_by("pk"),
+            [self.registro_local, self.registro_ajeno],
+        )
+        self.assertQuerySetEqual(
+            AsistenciaJunta.objects.visibles_para(presidente).order_by("pk"),
+            [self.asistencia_local, self.asistencia_ajena],
+        )
+        self.client.force_login(presidente)
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[self.faena_general.pk])).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[general_ajena.pk])).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(reverse("editar_faena_operativa", args=[self.faena_local.pk])).status_code,
+            404,
+        )
+
+    def test_presidente_crea_evento_general_limitado_a_su_comite(self):
+        presidente = get_user_model().objects.create_user(username="presidente-crea-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        otro_comite = Comite.objects.create(nombre="Comité vecino")
+        self.client.force_login(presidente)
+
+        formulario = self.client.get(reverse("crear_faena_operativa"))
+        self.assertEqual(formulario.status_code, 200)
+        form = formulario.context["form"]
+        self.assertEqual(set(form.fields["comite"].queryset.values_list("pk", flat=True)), {self.comite.pk})
+        self.assertEqual(form.fields["alcance"].choices, [(Faena.Alcances.GENERAL, "Toda la comunidad")])
+
+        response = self.client.post(
+            reverse("crear_faena_operativa"),
+            {
+                "comite": self.comite.pk,
+                "fecha": "2026-10-20",
+                "descripcion": "Faena presidencial",
+                "alcance": Faena.Alcances.GENERAL,
+                "manzana": "",
+                "estado": Faena.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Faena.objects.get(descripcion="Faena presidencial").comite_id, self.comite.pk)
+        self.assertFalse(Faena.objects.filter(descripcion="Faena presidencial", comite=otro_comite).exists())
+
+    def test_presidente_captura_y_exporta_todos_los_registros_de_su_faena_general(self):
+        presidente = get_user_model().objects.create_user(username="presidente-captura-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        otro_comite = Comite.objects.create(nombre="Comité ajeno")
+        faena_ajena = Faena.objects.create(
+            comite=otro_comite,
+            fecha=date(2026, 10, 5),
+            alcance=Faena.Alcances.GENERAL,
+            descripcion="Faena ajena",
+        )
+        RegistroFaena.objects.create(faena=faena_ajena, ciudadano=self.ciudadano_local)
+        self.client.force_login(presidente)
+
+        exportacion = self.client.get(
+            reverse("exportar_participantes_faena_csv", args=[self.faena_general.pk])
+        )
+        exportacion_ajena = self.client.get(
+            reverse("exportar_participantes_faena_csv", args=[faena_ajena.pk])
+        )
+        captura = self.client.post(
+            reverse("captura_asistencia_faena", args=[self.faena_general.pk]),
+            {
+                f"registro_{self.registro_local.pk}_estatus": RegistroFaena.Estatus.ASISTIO,
+                f"registro_{self.registro_ajeno.pk}_estatus": RegistroFaena.Estatus.FALTO,
+            },
+        )
+
+        self.registro_local.refresh_from_db()
+        self.registro_ajeno.refresh_from_db()
+        self.assertEqual(exportacion.status_code, 200)
+        self.assertIn("Ana Local", exportacion.content.decode("utf-8-sig"))
+        self.assertIn("Luis Ajeno", exportacion.content.decode("utf-8-sig"))
+        self.assertEqual(exportacion_ajena.status_code, 404)
+        self.assertEqual(captura.status_code, 302)
+        self.assertEqual(self.registro_local.estatus, RegistroFaena.Estatus.ASISTIO)
+        self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.FALTO)
+
+    def test_control_asistencias_muestra_metricas_de_todas_las_manzanas_al_presidente(self):
+        presidente = get_user_model().objects.create_user(username="presidente-metricas-op")
+        UsuarioApp.objects.create(
+            user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
+        )
+        self.client.force_login(presidente)
+
+        response = self.client.get(reverse("control_asistencias"))
+
+        faena = next(evento for evento in response.context["faenas"] if evento.pk == self.faena_general.pk)
+        self.assertEqual(faena.total_participantes, 2)
+        self.assertEqual(faena.pendientes, 2)
+
+    def test_responsable_crea_junta_de_manzana_sin_comite_y_con_motivo(self):
+        self.client.force_login(self.responsable)
+        formulario = self.client.get(reverse("crear_junta_operativa"))
+        self.assertEqual(formulario.status_code, 200)
+        self.assertNotIn("comite", formulario.context["form"].fields)
+        response = self.client.post(
+            reverse("crear_junta_operativa"),
+            {
+                "fecha": "2026-10-20",
+                "tipo": Junta.Tipos.ORDINARIA,
+                "lugar": "Centro de la manzana",
+                "tema": "Organización vecinal",
+                "alcance": Junta.Alcances.MANZANA,
+                "manzana": self.manzana.pk,
+                "motivo": "Coordinar la reparación del alumbrado",
+                "estado": Junta.Estados.PROGRAMADA,
+                "notas": "",
+            },
+        )
+
+        creada = Junta.objects.get(tema="Organización vecinal")
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(creada.comite_id)
+        self.assertEqual(creada.manzana_id, self.manzana.pk)
+        self.assertEqual(creada.motivo, "Coordinar la reparación del alumbrado")
+
+    def test_captura_no_actualiza_registros_de_otra_manzana(self):
+        self.client.force_login(self.responsable)
+        self.registro_local.estatus = RegistroFaena.Estatus.PENDIENTE
+        self.registro_local.save(update_fields=["estatus", "updated_at"])
+        self.registro_ajeno.estatus = RegistroFaena.Estatus.PENDIENTE
+        self.registro_ajeno.save(update_fields=["estatus", "updated_at"])
+
+        response = self.client.post(
+            reverse("captura_asistencia_faena", args=[self.faena_general.pk]),
+            {f"registro_{self.registro_local.pk}_estatus": RegistroFaena.Estatus.ASISTIO,
+             f"registro_{self.registro_ajeno.pk}_estatus": RegistroFaena.Estatus.FALTO},
+        )
+
+        self.registro_local.refresh_from_db()
+        self.registro_ajeno.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.registro_local.estatus, RegistroFaena.Estatus.ASISTIO)
+        self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.PENDIENTE)
+
+    def test_captura_secuencial_rechaza_id_de_participante_ajeno(self):
+        self.client.force_login(self.responsable)
+        response = self.client.post(
+            reverse("captura_asistencia_secuencial_faena", args=[self.faena_general.pk]),
+            {"action": "asistio", "record_id": self.registro_ajeno.pk},
+        )
+
+        self.registro_ajeno.refresh_from_db()
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.registro_ajeno.estatus, RegistroFaena.Estatus.PENDIENTE)
+
+    def test_superusuario_mantiene_acceso_global_a_eventos_y_registros(self):
+        admin = get_user_model().objects.create_superuser(
+            username="admin-op", password="test-pass", email="admin@example.com"
+        )
+        self.assertQuerySetEqual(
+            Faena.objects.visibles_para(admin).order_by("pk"),
+            [self.faena_local, self.faena_ajena, self.faena_general],
+        )
+        self.assertQuerySetEqual(
+            RegistroFaena.objects.visibles_para(admin).order_by("pk"),
+            [self.registro_local, self.registro_ajeno],
+        )

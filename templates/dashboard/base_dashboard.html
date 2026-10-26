@@ -19,6 +19,7 @@
         </a>
         <nav class="pd-navigation" aria-label="Navegación principal">
           <a class="pd-navigation__link" href="{% url 'dashboard_operativo' %}" {% if request.resolver_match.url_name == 'dashboard_operativo' %}aria-current="page"{% endif %}>Inicio</a>
+          <a class="pd-navigation__link" href="{% url 'mis_responsabilidades' %}" {% if request.resolver_match.url_name == 'mis_responsabilidades' %}aria-current="page"{% endif %}>Mi acceso</a>
           <a class="pd-navigation__link" href="{% url 'padron_ciudadanos' %}" {% if 'ciudadano' in request.resolver_match.url_name or request.resolver_match.url_name == 'padron_ciudadanos' %}aria-current="page"{% endif %}>Ciudadanos</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}" {% if 'asistencia' in request.resolver_match.url_name %}aria-current="page"{% endif %}>Control de Asistencias</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#faenas">Faenas</a>

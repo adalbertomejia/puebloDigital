@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.forms import Select
 from django.test import TestCase
@@ -19,7 +20,7 @@ from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 
 class BusquedaDinamicaCiudadanosTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="busqueda", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="busqueda", password="testpass123")
         self.client.force_login(self.user)
         self.ana = Ciudadano.objects.create(
             nombre="Ana", apellido_paterno="López", edad=30, numero_contrato="CONT-ANA"
@@ -89,6 +90,7 @@ class MotivoAltaCiudadanoTests(TestCase):
             ciudadano.full_clean()
         self.assertIn("motivo_alta", error.exception.message_dict)
 
+
     def test_formulario_usa_selector_y_rechaza_motivo_no_definido(self):
         form = CiudadanoOperativoForm(
             data={
@@ -128,9 +130,46 @@ class MotivoAltaCiudadanoTests(TestCase):
         self.assertNotIn("ciudadano.motivo_alta|default", template)
 
 
+class PerfilAccesoIdentidadTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_user(username="responsable-manzana")
+        self.otro_usuario = get_user_model().objects.create_user(username="otro-responsable")
+        self.ciudadano = Ciudadano.objects.create(
+            nombre="Rosa", apellido_paterno="Ejemplo", edad=35
+        )
+        self.otro_ciudadano = Ciudadano.objects.create(
+            nombre="Luis", apellido_paterno="Ejemplo", edad=41
+        )
+
+    def _perfil_model(self):
+        try:
+            return apps.get_model("comites", "PerfilAcceso")
+        except LookupError:
+            self.fail("Debe existir PerfilAcceso independiente del cargo de comité.")
+
+    def test_perfil_acceso_relaciona_cuenta_y_ciudadano_uno_a_uno(self):
+        perfil_model = self._perfil_model()
+        self.assertTrue(perfil_model._meta.get_field("user").one_to_one)
+        self.assertTrue(perfil_model._meta.get_field("ciudadano").one_to_one)
+
+    def test_una_cuenta_no_puede_vincularse_a_dos_ciudadanos(self):
+        perfil_model = self._perfil_model()
+        perfil_model.objects.create(user=self.usuario, ciudadano=self.ciudadano)
+        perfil = perfil_model(user=self.usuario, ciudadano=self.otro_ciudadano)
+        with self.assertRaises(ValidationError):
+            perfil.full_clean()
+
+    def test_un_ciudadano_no_puede_vincularse_a_dos_cuentas(self):
+        perfil_model = self._perfil_model()
+        perfil_model.objects.create(user=self.usuario, ciudadano=self.ciudadano)
+        perfil = perfil_model(user=self.otro_usuario, ciudadano=self.ciudadano)
+        with self.assertRaises(ValidationError):
+            perfil.full_clean()
+
+
 class ExportacionParticipantesCsvTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="secretaria", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="secretaria", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Delegación Ñuu", tipo=Comite.Tipos.DELEGACION)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="García", apellido_materno="Ruiz", edad=30)
@@ -191,7 +230,7 @@ class ExportacionParticipantesCsvTests(TestCase):
 
 class ExportacionCiudadanosCsvTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="padron", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="padron", password="testpass123")
         self.client.force_login(self.user)
         self.ana = Ciudadano.objects.create(
             nombre="Ana María",
@@ -268,7 +307,7 @@ class ExportacionCiudadanosCsvTests(TestCase):
 
 class PadronCiudadanosFiltrosTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="secretaria-padron", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="secretaria-padron", password="testpass123")
         self.client.force_login(self.user)
         self.manzana_uno = Manzana.objects.create(nombre="Manzana 1")
         self.manzana_dos = Manzana.objects.create(nombre="Manzana 2", activa=False)
@@ -399,7 +438,7 @@ class PadronCiudadanosFiltrosTests(TestCase):
 
 class CiudadanoOperativoManzanaFormTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="edicion-ciudadanos", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="edicion-ciudadanos", password="testpass123")
         self.client.force_login(self.user)
         self.activa = Manzana.objects.create(nombre="Manzana activa")
         self.inactiva = Manzana.objects.create(nombre="Manzana histórica", activa=False)
@@ -440,7 +479,7 @@ class CiudadanoOperativoManzanaFormTests(TestCase):
 
 class OperationalEventCreationViewTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="operadora", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="operadora", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Operativo", tipo=Comite.Tipos.DELEGACION)
 
@@ -479,6 +518,7 @@ class OperationalEventCreationViewTests(TestCase):
                 "tipo": Junta.Tipos.ORDINARIA,
                 "lugar": "Salón comunitario",
                 "tema": "Seguimiento operativo",
+                "alcance": Junta.Alcances.GENERAL,
                 "estado": Junta.Estados.PROGRAMADA,
                 "notas": "Confirmar asistencia",
             },
@@ -492,7 +532,7 @@ class OperationalEventCreationViewTests(TestCase):
 
 class CapturaPresencialUltimoPendienteTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="capturista", password="testpass123")
+        self.user = get_user_model().objects.create_superuser(username="capturista", password="testpass123")
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Captura", tipo=Comite.Tipos.DELEGACION)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="García", apellido_materno="Ruiz", edad=30)
@@ -565,7 +605,7 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 class SecureDeletionFlowTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="deleter", password="pw")
-        perms = Permission.objects.filter(codename__in=["delete_faena", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
+        perms = Permission.objects.filter(codename__in=["add_faena", "view_faena", "change_faena", "delete_faena", "add_junta", "view_junta", "change_junta", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
         self.user.user_permissions.set(perms)
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
@@ -582,7 +622,7 @@ class SecureDeletionFlowTests(TestCase):
         self.assertContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
         self.assertNotContains(self.client.get(reverse("crear_concepto_tesoreria")), "Eliminar concepto")
         limited = get_user_model().objects.create_user(username="limited", password="pw")
-        limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria"]))
+        limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria", "view_faena", "change_faena", "view_junta", "change_junta"]))
         self.client.force_login(limited)
         self.assertNotContains(self.client.get(reverse("editar_faena_operativa", args=[faena.pk])), "Eliminar faena")
         self.assertNotContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")

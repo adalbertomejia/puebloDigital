@@ -26,7 +26,7 @@
     </div>
     <div class="flex flex-wrap gap-2 text-sm">
       <a href="{{ detail_url }}" class="pd-button pd-button--secondary pd-button--sm">Ver detalle</a>
-      <a href="{{ admin_change_url }}" class="pd-button pd-button--warning pd-button--sm">Editar evento</a>
+      {% if admin_change_url %}<a href="{{ admin_change_url }}" class="pd-button pd-button--warning pd-button--sm">Editar evento</a>{% endif %}
     </div>
   </div>
 </section>
