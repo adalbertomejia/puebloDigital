@@ -683,7 +683,7 @@ class ResumenAportacionesTests(TestCase):
         textos = (
             ("Aportaciones por concepto", "Agrupa el dinero recibido por concepto, naturaleza y territorio."),
             ("Resumen por manzana", "Consulta las aportaciones registradas para cada territorio."),
-            ("Movimientos recientes", "Consulta los últimos abonos registrados en Tesorería."),
+            ("Aportaciones recientes", "Consulta los últimos abonos registrados en Tesorería."),
             ("Aportaciones por ciudadano", "Identifica a quienes más han aportado según los filtros aplicados."),
         )
         for titulo, descripcion in textos:
@@ -705,11 +705,19 @@ class ResumenAportacionesTests(TestCase):
         response = self.get()
         for mensaje in (
             "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
-            "Sin movimientos registrados",
             "No hay movimientos recientes con los filtros seleccionados.",
             "No se encontraron ciudadanos con aportaciones para los filtros seleccionados.",
         ):
             self.assertContains(response, mensaje)
+
+        # El resumen territorial conserva las manzanas aun sin movimientos.
+        self.assertContains(response, "Toda la comunidad")
+        self.assertContains(response, self.manzana_historica.nombre)
+        self.assertContains(response, self.manzana_actual.nombre)
+        self.assertEqual(response.context["metricas"]["total_recibido"], Decimal("0.00"))
+        for fila in response.context["manzanas_resumen"]:
+            self.assertEqual(fila["total_recibido"], Decimal("0.00"))
+            self.assertEqual(fila["cantidad_abonos"], 0)
 
     def test_componentes_analiticos_admiten_opcionales_ausentes(self):
         from django.template.loader import render_to_string
@@ -746,7 +754,11 @@ class ResumenAportacionesTests(TestCase):
         self.assertEqual(response.context["aportaciones_ciudadanos_visibles"], 2)
         self.assertEqual(response.context["monto_movimientos_visible"], Decimal("75"))
         nombres = {campo["name"] for campo in response.context["campos_control_movimientos"]}
-        self.assertIn("limite_ciudadanos", nombres)
+        self.assertIn("ciudadanos_por_pagina", nombres)
+        self.assertNotIn("limite_ciudadanos", nombres)
+        cantidad = next(campo["value"] for campo in response.context["campos_control_movimientos"]
+                        if campo["name"] == "ciudadanos_por_pagina")
+        self.assertEqual(cantidad, 5)
         self.assertIn("orden_ciudadanos", nombres)
         self.assertNotIn("desconocido", nombres)
 
@@ -770,11 +782,21 @@ class ResumenAportacionesTests(TestCase):
         self.assertContains(response, enlace)
 
     def test_busqueda_textual_nombre_apellidos_contrato_y_concepto(self):
-        casos = (("Ana", 2), ("López Ríos", 2), ("C-10", 2), ("Feria manzana", 2), (str(self.a3.pk), 1))
-        for texto, cantidad in casos:
+        # La consulta es general: «Ana» también coincide con «manzana» en
+        # el concepto de Beto. Apellidos y contrato sí identifican solo a Ana.
+        casos = (
+            ("Ana", {self.a1.pk, self.a2.pk, self.a3.pk}),
+            ("López Ríos", {self.a1.pk, self.a2.pk}),
+            ("C-10", {self.a1.pk, self.a2.pk}),
+            ("Feria manzana", {self.a2.pk, self.a3.pk}),
+            (str(self.a3.pk), {self.a3.pk}),
+            ("sin-coincidencias-xyz", set()),
+        )
+        for texto, esperados in casos:
             with self.subTest(texto=texto):
                 response = self.buscar({"q": texto})
-                self.assertEqual(response.context["cantidad_resultados"], cantidad)
+                self.assertEqual(response.context["cantidad_resultados"], len(esperados))
+                self.assertEqual({abono.pk for abono in response.context["pagina"]}, esperados)
 
     def test_busqueda_combina_filtros_rangos_estado_y_orden(self):
         response = self.buscar({

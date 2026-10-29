@@ -51,3 +51,7 @@ La verificación reproduce una tabla histórica con monto NULL y comprueba avanc
 
 
 Si después aparece `duplicate column name: faena_id`, la base ya contenía esa relación antes de registrar 0004. La migración revisada inspecciona la estructura, reutiliza columnas opcionales con la clave foránea correcta y añade las ausentes. Comprueba vínculos huérfanos y duplicados antes de aplicar unicidad; si no son compatibles, se detiene sin borrar ni fusionar datos. Una columna histórica adoptada tampoco se elimina al revertir esta migración. Se probó específicamente el esquema reportado: faena única preexistente, monto nullable y ausencia de junta. Los valores previos y el vínculo de faena se conservan; pasan 18 pruebas de migración, adeudos y recibos.
+
+## Estado actual de las pruebas
+
+La revisión posterior resolvió las siete incidencias históricas de expectativas y datos de prueba. La suite completa de 254 pruebas pasa. El diagnóstico y el comando reproducible están en [auditoria_pruebas.md](auditoria_pruebas.md); los resultados con incidencias citados en entregas anteriores describen su estado en aquel momento.
