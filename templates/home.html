@@ -120,7 +120,10 @@
       {% if user.is_authenticated %}
         <a class="btn btn-primary" href="/dashboard/">Abrir Dashboard</a>
         <a class="btn btn-secondary" href="/admin/">Panel Admin</a>
-        <a class="btn btn-secondary" href="/logout/">Cerrar sesión</a>
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-secondary">Cerrar sesión</button>
+        </form>
       {% else %}
         <a class="btn btn-primary" href="/login/">Iniciar sesión</a>
         <a class="btn btn-secondary" href="/admin/">Panel Admin</a>

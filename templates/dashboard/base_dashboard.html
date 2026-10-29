@@ -43,7 +43,10 @@
           <nav class="pd-account" aria-label="Cuenta de usuario">
             <span class="pd-account__user">Sesión: <strong>{{ request.user.get_full_name|default:request.user.get_username }}</strong></span>
             {% if request.user.is_staff %}<a href="/admin/">Administración</a>{% endif %}
-            <a href="/logout/">Cerrar sesión</a>
+            <form method="post" action="{% url 'logout' %}">
+              {% csrf_token %}
+              <button type="submit">Cerrar sesión</button>
+            </form>
           </nav>
         </div>
       </header>
