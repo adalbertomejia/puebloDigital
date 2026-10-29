@@ -4,6 +4,30 @@
 
 El **PRESIDENTE opera su comité**. Sustituye la propuesta inicial de un operador separado. En este corte se mantiene el alcance implementado: eventos **generales** de sus comités activos; la operación de eventos de manzana corresponde a su responsable. Tener comité convocante en un evento territorial no concede su gestión al presidente.
 
+## Siguiente paso planificado: jerarquía por comité
+
+**Decisión del cliente:** estructura padre-hijo; PRESIDENTE en primer nivel y TESORERO en segundo nivel. La jerarquía se aplica dentro del comité de cada asignación activa. Esta sección registra el requisito; la autorización financiera todavía no está implementada.
+
+| Actor | Capacidades previstas | Ámbito obligatorio |
+|---|---|---|
+| PRESIDENTE | Capacidades financieras de TESORERO más gestión de eventos generales ya implementada | Sus comités con presidencia activa |
+| TESORERO | Consultar y gestionar conceptos, obligaciones y abonos; reportes y exportaciones financieros | Sus comités con tesorería activa |
+| Responsable de manzana | Operación territorial existente; el cargo no concede tesorería | Su manzana y participantes propios según las reglas existentes |
+| Superusuario | Administración global explícita | Comunidad completa |
+
+La herencia expresa capacidades, no subordinación entre cuentas: no requiere crear un UsuarioApp TESORERO adicional para un PRESIDENTE, y no concede staff ni administración de cargos. Cancelación/reversa y borrado conservan las condiciones acordadas para cada acción; la jerarquía no implementa automáticamente funciones aún pendientes.
+
+Una cuenta puede tener cargos distintos en comités distintos. Sus capacidades se calculan por cada pareja rol-comité: ser presidente de Agua y tesorero de Feria no convierte a la cuenta en presidente de Feria. No basta con detectar un rol alto en cualquier asignación.
+
+Criterios de implementación y aceptación:
+
+1. Resolver comités financieros desde asignaciones activas PRESIDENTE o TESORERO y comité activo; cuenta inactiva o sin asignaciones no obtiene acceso. Superusuario es la excepción global explícita.
+2. Aplicar el ámbito antes de filtros GET, anotaciones, métricas, paginación y exportaciones. Conceptos, obligaciones y abonos derivan su comité del concepto; no duplicar el comité en esos registros.
+3. Verificar acciones sobre el objeto autorizado en GET y POST; limitar comités del formulario e impedir cambiar un objeto a un comité ajeno. Ningún permiso Django por modelo debe ampliar silenciosamente el ámbito de un cargo contextual.
+4. Cubrir listados, detalle por ID, creación/edición, generación de obligaciones, abonos, búsquedas, CSV, resúmenes y datos financieros relacionados en expediente/dashboard. Resolver también admin como entrada independiente antes de declarar aislamiento completo.
+5. Probar al menos dos comités con presidentes y tesoreros diferentes, cargos combinados, asignaciones/comités inactivos, cuenta sin cargos y superusuario. Comprobar tanto lectura denegada como ausencia de modificaciones ajenas y de importes ajenos en métricas/exportaciones.
+6. Mantener los cambios en `codex/permisos-presidente`, con pruebas sintéticas y entrega revisable; no desplegar al VPS como parte de la planificación.
+
 ## Segundo paso: autorización de operación
 
 - `PerfilAcceso` enlaza cuenta y ciudadano. La responsabilidad territorial se deriva de `Manzana.responsable`, la pertenencia del ciudadano y los estados activos de cuenta, ciudadano y manzana.
@@ -24,7 +48,7 @@ El **PRESIDENTE opera su comité**. Sustituye la propuesta inicial de un operado
 
 ## Trabajo pendiente, fuera de este paso
 
-1. Tesorería por comité para TESORERO: consultas, exportaciones, escritura y cancelación/reversa con motivo. La consulta financiera aún no queda aislada por este cambio.
+1. Tesorería por comité para TESORERO y PRESIDENTE según la jerarquía planificada: consultas, exportaciones, escritura y cancelación/reversa con motivo. La consulta financiera aún no queda aislada por este cambio.
 2. Decidir si admin será exclusivo del administrador global o aplicará aislamiento contextual en modelos, relaciones, inlines, acciones y autocomplete. Actualmente conserva permisos Django por modelo.
 3. Asegurar unicidad de responsable y pertenencia a su manzana, previo inventario y migración revisable de conflictos.
 4. Vigencias e historial de cargos y territorio; decidir acceso histórico cuando un participante cambia de manzana.
