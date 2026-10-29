@@ -371,3 +371,186 @@ class AlcanceOperacionTests(TestCase):
             RegistroFaena.objects.visibles_para(admin).order_by("pk"),
             [self.registro_local, self.registro_ajeno],
         )
+
+    def _presidente(self):
+        usuario = get_user_model().objects.create_user(username="presidente-politica")
+        self.cargo = UsuarioApp.objects.create(user=usuario, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE)
+        return usuario
+
+    def _eventos_generales(self):
+        return (("faena", self.faena_general, self.registro_local, self.registro_ajeno),
+                ("junta", self.junta_general, self.asistencia_local, self.asistencia_ajena))
+
+    def test_presidente_genera_participantes_de_faena_y_junta_idempotentemente(self):
+        self.client.force_login(self._presidente())
+        for tipo, evento, _, _ in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                relacion = evento.registros if tipo == "faena" else evento.asistencias
+                antes = dict(relacion.values_list("pk", "estatus"))
+                url = reverse(f"generar_registros_{tipo}", args=[evento.pk])
+                self.assertEqual(self.client.post(url).status_code, 302)
+                self.assertSetEqual(set(relacion.values_list("ciudadano_id", flat=True)),
+                                    set(Ciudadano.objects.filter(activo=True).values_list("pk", flat=True)))
+                total = relacion.count()
+                self.assertEqual(self.client.post(url).status_code, 302)
+                self.assertEqual(relacion.count(), total)
+                for pk, estado in antes.items():
+                    self.assertEqual(relacion.get(pk=pk).estatus, estado)
+
+    def test_lector_no_puede_capturar_generar_editar_ni_cambiar_estado(self):
+        from django.contrib.auth.models import Permission
+        lector = get_user_model().objects.create_user(username="lector-operacion")
+        lector.user_permissions.set(Permission.objects.filter(content_type__app_label="operacion", codename__startswith="view_"))
+        self.client.force_login(lector)
+        for tipo, evento, local, ajeno in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                detalle = self.client.get(reverse(f"control_asistencias_{tipo}_detalle", args=[evento.pk]))
+                self.assertEqual(detalle.status_code, 200)
+                self.assertFalse(detalle.context["can_capture"])
+                for ruta in (f"captura_asistencia_{tipo}", f"captura_asistencia_secuencial_{tipo}"):
+                    url = reverse(ruta, args=[evento.pk])
+                    self.assertEqual(self.client.get(url).status_code, 404)
+                    self.assertEqual(self.client.post(url, {
+                        f"registro_{ajeno.pk}_estatus": "ASISTIO", "action": "asistio", "record_id": ajeno.pk,
+                    }).status_code, 404)
+                self.assertEqual(self.client.post(reverse(f"generar_registros_{tipo}", args=[evento.pk])).status_code, 404)
+                self.assertEqual(self.client.post(reverse(f"editar_{tipo}_operativa", args=[evento.pk]), {"estado": "CANCELADA"}).status_code, 404)
+                self.assertEqual(self.client.post(reverse("editar_estado_evento", args=[tipo, evento.pk]), {"estado": "CANCELADA"}).status_code, 404)
+                ajeno.refresh_from_db()
+                evento.refresh_from_db()
+                self.assertEqual(ajeno.estatus, "PENDIENTE")
+                self.assertEqual(evento.estado, "PROGRAMADA")
+
+    def test_permiso_de_lectura_global_no_amplia_captura_del_responsable(self):
+        from django.contrib.auth.models import Permission
+        self.responsable.user_permissions.set(Permission.objects.filter(content_type__app_label="operacion", codename__startswith="view_"))
+        self.client.force_login(self.responsable)
+        for tipo, evento, local, ajeno in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                response = self.client.post(reverse(f"captura_asistencia_{tipo}", args=[evento.pk]), {
+                    f"registro_{local.pk}_estatus": "ASISTIO", f"registro_{ajeno.pk}_estatus": "ASISTIO",
+                })
+                self.assertEqual(response.status_code, 302)
+                local.refresh_from_db()
+                ajeno.refresh_from_db()
+                self.assertEqual(local.estatus, "ASISTIO")
+                self.assertEqual(ajeno.estatus, "PENDIENTE")
+                self.assertEqual(self.client.post(reverse(f"captura_asistencia_secuencial_{tipo}", args=[evento.pk]), {
+                    "action": "asistio", "record_id": ajeno.pk,
+                }).status_code, 404)
+        # Visibility alone cannot authorize generation even in a block event.
+        self.assertEqual(self.client.post(reverse("generar_registros_faena", args=[self.faena_ajena.pk])).status_code, 404)
+        self.assertFalse(self.faena_ajena.registros.exists())
+
+    def test_presidente_captura_secuencial_y_cambia_estado_en_ambos_eventos(self):
+        self.client.force_login(self._presidente())
+        for tipo, evento, local, ajeno in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                response = self.client.post(reverse(f"captura_asistencia_secuencial_{tipo}", args=[evento.pk]), {
+                    "action": "asistio", "record_id": ajeno.pk,
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.json()["ok"])
+                ajeno.refresh_from_db()
+                self.assertEqual(ajeno.estatus, "ASISTIO")
+                self.assertEqual(self.client.post(reverse("editar_estado_evento", args=[tipo, evento.pk]), {"estado": "REALIZADA"}).status_code, 302)
+                evento.refresh_from_db()
+                self.assertEqual(evento.estado, "REALIZADA")
+
+    def test_presidente_con_lectura_global_no_opera_eventos_de_otro_comite(self):
+        from django.contrib.auth.models import Permission
+        presidente = self._presidente()
+        presidente.user_permissions.set(Permission.objects.filter(content_type__app_label="operacion", codename__startswith="view_"))
+        self.client.force_login(presidente)
+        otro = Comite.objects.create(nombre="Otro comité para denegación")
+        for tipo, evento, local, ajeno in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                evento.comite = otro
+                evento.save()
+                for ruta in (f"generar_registros_{tipo}", f"editar_{tipo}_operativa", f"captura_asistencia_{tipo}", f"captura_asistencia_secuencial_{tipo}"):
+                    self.assertEqual(self.client.post(reverse(ruta, args=[evento.pk]), {
+                        f"registro_{ajeno.pk}_estatus": "ASISTIO", "action": "asistio", "record_id": ajeno.pk,
+                    }).status_code, 404)
+                self.assertEqual(self.client.post(reverse("editar_estado_evento", args=[tipo, evento.pk]), {"estado": "CANCELADA"}).status_code, 404)
+                ajeno.refresh_from_db()
+                evento.refresh_from_db()
+                self.assertEqual(ajeno.estatus, "PENDIENTE")
+                self.assertEqual(evento.estado, "PROGRAMADA")
+
+    def test_cargo_o_comite_inactivo_revoca_operacion_del_presidente(self):
+        presidente = self._presidente()
+        self.client.force_login(presidente)
+        for campo in ("cargo", "comite"):
+            objeto = self.cargo if campo == "cargo" else self.comite
+            objeto.activo = False
+            objeto.save(update_fields=["activo"])
+            for tipo, evento, _, _ in self._eventos_generales():
+                with self.subTest(inactivo=campo, tipo=tipo):
+                    self.assertEqual(self.client.post(reverse(f"generar_registros_{tipo}", args=[evento.pk])).status_code, 404)
+                    self.assertEqual(self.client.post(reverse(f"captura_asistencia_{tipo}", args=[evento.pk])).status_code, 404)
+            objeto.activo = True
+            objeto.save(update_fields=["activo"])
+
+    def test_presidente_responsable_conserva_ambos_ambitos_al_crear(self):
+        UsuarioApp.objects.create(user=self.responsable, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE)
+        self.client.force_login(self.responsable)
+        for alcance, manzana, comite in (("GENERAL", "", self.comite.pk), ("MANZANA", self.manzana.pk, "")):
+            with self.subTest(alcance=alcance):
+                descripcion = f"Doble responsabilidad {alcance}"
+                response = self.client.post(reverse("crear_faena_operativa"), {
+                    "fecha": "2026-10-29", "descripcion": descripcion,
+                    "alcance": alcance, "manzana": manzana, "comite": comite,
+                    "motivo": "Trabajo comunitario", "estado": "PROGRAMADA", "notas": "",
+                })
+                self.assertEqual(response.status_code, 302)
+                creada = Faena.objects.get(descripcion=descripcion)
+                self.assertEqual(creada.alcance, alcance)
+                self.assertEqual(creada.manzana_id, manzana or None)
+                self.assertEqual(creada.comite_id, comite or None)
+
+    def test_presidente_sin_permisos_globales_no_recibe_tesoreria_ni_roles(self):
+        presidente = self._presidente()
+        self.assertFalse(presidente.is_staff)
+        self.assertFalse(presidente.has_perm("tesoreria.add_conceptotesoreria"))
+        self.assertFalse(presidente.has_perm("comites.change_usuarioapp"))
+        self.client.force_login(presidente)
+        for tipo, evento, _, _ in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                response = self.client.post(reverse(f"eliminar_{tipo}_operativa", args=[evento.pk]))
+                self.assertEqual(response.status_code, 302)
+                self.assertTrue(type(evento).objects.filter(pk=evento.pk).exists())
+
+    def test_presidente_crea_y_edita_junta_sin_cambiar_comite_por_post(self):
+        self.client.force_login(self._presidente())
+        otro = Comite.objects.create(nombre="Comité no autorizado en formulario")
+        datos = {
+            "fecha": "2026-10-29", "tipo": Junta.Tipos.ORDINARIA, "lugar": "Salón",
+            "tema": "Nueva junta presidencial", "alcance": "GENERAL", "manzana": "",
+            "comite": otro.pk, "motivo": "", "estado": "PROGRAMADA", "notas": "",
+        }
+        url = reverse("crear_junta_operativa")
+        self.assertEqual(self.client.post(url, datos).status_code, 200)
+        self.assertFalse(Junta.objects.filter(tema=datos["tema"]).exists())
+        datos["comite"] = self.comite.pk
+        self.assertEqual(self.client.post(url, datos).status_code, 302)
+        creada = Junta.objects.get(tema=datos["tema"])
+        datos.update(comite=otro.pk, tema="Junta editada")
+        self.assertEqual(self.client.post(reverse("editar_junta_operativa", args=[creada.pk]), datos).status_code, 302)
+        creada.refresh_from_db()
+        self.assertEqual(creada.tema, "Junta editada")
+        self.assertEqual(creada.comite_id, self.comite.pk)
+
+    def test_captura_con_permiso_global_de_cambio_explicito_sigue_disponible(self):
+        from django.contrib.auth.models import Permission
+        operador = get_user_model().objects.create_user(username="operador-global-explicito")
+        operador.user_permissions.set(Permission.objects.filter(content_type__app_label="operacion", codename__in=[
+            "view_faena", "view_junta", "change_registrofaena", "change_asistenciajunta",
+        ]))
+        self.client.force_login(operador)
+        for tipo, evento, _, ajeno in self._eventos_generales():
+            with self.subTest(tipo=tipo):
+                self.assertEqual(self.client.post(reverse(f"captura_asistencia_{tipo}", args=[evento.pk]), {
+                    f"registro_{ajeno.pk}_estatus": "ASISTIO",
+                }).status_code, 302)
+                ajeno.refresh_from_db()
+                self.assertEqual(ajeno.estatus, "ASISTIO")

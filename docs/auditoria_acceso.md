@@ -1,5 +1,7 @@
 # Auditoría de acceso — Dahiedhi
 
+> Documento histórico: describe el estado anterior a la implementación de autorización contextual. Para las decisiones vigentes y el alcance del segundo paso, consultar [Roles y alcance](pendientes_roles.md).
+
 **Revisión de solo lectura:** rama `dahiedhi_client`, 20-10-2026. No se modificó código ni se ejecutaron pruebas.  
 **Mapa de referencia:** [`mapa_dominio_autorizacion_dahiedhi.md`](mapa_dominio_autorizacion_dahiedhi.md). En el repositorio no existe `docs/mapa_dominio_autorizacion.md`; se leyó la versión con sufijo `dahiedhi`.
 

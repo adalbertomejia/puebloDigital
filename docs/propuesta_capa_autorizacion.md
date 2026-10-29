@@ -1,6 +1,8 @@
 # Plan inicial de roles y alcance — Dahiedhi
 
-**Estado:** propuesta revisada con el cliente; no se ha cambiado código.
+**Estado:** propuesta histórica del 20 de octubre de 2026; parte del diseño ya está implementada.
+
+**Actualización confirmada por el cliente (29 de octubre de 2026):** el PRESIDENTE opera los eventos generales de su comité. Queda superada la propuesta de un operador de comité separado y la exclusión del presidente de permisos nuevos. El estado vigente y sus límites se mantienen en [`pendientes_roles.md`](pendientes_roles.md); las decisiones originales se conservan debajo como antecedente.
 **Base:** [`auditoria_acceso.md`](auditoria_acceso.md) y los primeros casos de uso confirmados.
 
 ## Decisiones recibidas

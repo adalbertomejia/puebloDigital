@@ -44,6 +44,13 @@ from apps.tesoreria.forms import BuscarAportacionesForm
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
 from .autorizacion import responsabilidades_activas
+from apps.operacion.autorizacion import (
+    manzanas_responsables as _manzanas_responsables,
+    comites_presididos as _comites_presididos,
+    puede_operar_evento as _puede_operar_evento,
+    puede_crear_evento as _puede_crear_evento,
+    puede_capturar_evento as _puede_capturar_evento,
+)
 from .query_helpers import filtro_busqueda_ciudadano
 
 
@@ -526,35 +533,6 @@ def _can_delete_operacion_event(user, permission_codename):
     return user.is_superuser or user.has_perm(permission_codename)
 
 
-def _manzanas_responsables(usuario):
-    return [r.manzana.pk for r in responsabilidades_activas(usuario) if r.tipo == "MANZANA" and r.manzana]
-
-
-def _comites_presididos(usuario):
-    return [
-        r.comite.pk
-        for r in responsabilidades_activas(usuario)
-        if r.tipo == "COMITE" and r.rol == "PRESIDENTE" and r.comite
-    ]
-
-
-def _puede_operar_evento(usuario, evento):
-    if usuario.is_superuser or usuario.has_perm(f"operacion.change_{evento._meta.model_name}"):
-        return True
-    if evento.alcance == evento.Alcances.MANZANA:
-        return evento.manzana_id in _manzanas_responsables(usuario)
-    return evento.comite_id in _comites_presididos(usuario)
-
-
-def _puede_crear_evento(usuario, model):
-    return bool(
-        usuario.is_superuser
-        or usuario.has_perm(f"operacion.add_{model._meta.model_name}")
-        or _manzanas_responsables(usuario)
-        or _comites_presididos(usuario)
-    )
-
-
 def _money(value):
     return f"${value:.2f}"
 
@@ -569,6 +547,7 @@ def _evento_operativo_form_view(
     instance=None,
     manzana_restringida_id=None,
     comites_restringidos_ids=None,
+    manzanas_restringidas_ids=None,
     delete_url_name="",
     delete_permission="",
 ):
@@ -578,7 +557,11 @@ def _evento_operativo_form_view(
     else:
         form = form_class(instance=instance)
 
-    if manzana_restringida_id:
+    if manzanas_restringidas_ids is not None:
+        # A president who also represents a block retains both responsibilities.
+        form.fields["manzana"].queryset = Manzana.objects.filter(pk__in=manzanas_restringidas_ids, activa=True)
+        form.fields["comite"].queryset = Comite.objects.filter(pk__in=comites_restringidos_ids, activo=True)
+    elif manzana_restringida_id:
         form.fields["alcance"].choices = [(form.instance.Alcances.MANZANA, "Por manzana")]
         form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
         form.fields["manzana"].initial = manzana_restringida_id
@@ -601,6 +584,8 @@ def _evento_operativo_form_view(
 
     if request.method == "POST":
         if form.is_valid():
+            if manzanas_restringidas_ids is not None and not _puede_operar_evento(request.user, form.instance):
+                raise Http404
             event = form.save()
             action = "actualizó" if is_edit else "creó"
             messages.success(request, f"Se {action} correctamente la {event_label.lower()}.")
@@ -634,7 +619,13 @@ def _crear_evento_operativo(request, form_class, event_label, description, detai
     manzanas = _manzanas_responsables(request.user)
     if not request.user.is_superuser and not request.user.has_perm(f"operacion.add_{model._meta.model_name}"):
         comites_presididos = _comites_presididos(request.user)
-        if comites_presididos and not manzanas:
+        if comites_presididos and manzanas:
+            return _evento_operativo_form_view(
+                request, form_class, event_label, description, detail_url_name,
+                comites_restringidos_ids=comites_presididos,
+                manzanas_restringidas_ids=manzanas,
+            )
+        if comites_presididos:
             return _evento_operativo_form_view(
                 request, form_class, event_label, description, detail_url_name,
                 comites_restringidos_ids=comites_presididos,
@@ -758,7 +749,7 @@ def generar_registros_faena(request, faena_id):
         return redirect("dashboard_operativo")
 
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("manzana"), pk=faena_id)
-    if faena.alcance != Faena.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_faena"):
+    if not _puede_operar_evento(request.user, faena):
         raise Http404
     if faena.estado != Faena.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para faenas programadas.")
@@ -781,7 +772,7 @@ def generar_registros_junta(request, junta_id):
         return redirect("dashboard_operativo")
 
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("manzana"), pk=junta_id)
-    if junta.alcance != Junta.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_junta"):
+    if not _puede_operar_evento(request.user, junta):
         raise Http404
     if junta.estado != Junta.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para juntas programadas.")
@@ -975,6 +966,11 @@ def control_asistencias(request):
     for evento in chain(faenas, juntas):
         puede_operar = _puede_operar_evento(request.user, evento)
         evento.puede_operar = puede_operar
+        evento.can_generate = puede_operar and evento.estado == evento.Estados.PROGRAMADA
+        puede_capturar = _puede_capturar_evento(request.user, evento)
+        evento.can_capture = evento.can_capture and puede_capturar
+        if not puede_capturar:
+            evento.sequential_capture_url = ""
         if not puede_operar:
             evento.admin_change_url = ""
             evento.estado_edit_url = ""
@@ -1089,6 +1085,7 @@ def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=faena_id)
     context = _event_detail_context(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
     context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk]) if _puede_operar_evento(request.user, faena) else ""
+    context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, faena)
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_faena", args=[faena.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk]) if _puede_operar_evento(request.user, faena) else ""
@@ -1101,6 +1098,7 @@ def control_asistencias_junta_detalle(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
     context = _event_detail_context(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
     context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk]) if _puede_operar_evento(request.user, junta) else ""
+    context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, junta)
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_junta", args=[junta.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk]) if _puede_operar_evento(request.user, junta) else ""
@@ -1213,7 +1211,7 @@ def _capture_metrics(registros):
 def _pending_records(event, relation, usuario=None):
     registros = getattr(event, relation).all()
     if usuario is not None:
-        registros = registros.visibles_para(usuario)
+        registros = registros.capturables_para(usuario)
     return registros.select_related("ciudadano").filter(estatus="PENDIENTE").order_by(
         "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk"
     )
@@ -1239,7 +1237,7 @@ def _normal_capture_url(event, config):
 def _capture_payload(event, config, usuario=None):
     registros = getattr(event, config["relation"]).all()
     if usuario is not None:
-        registros = registros.visibles_para(usuario)
+        registros = registros.capturables_para(usuario)
     metrics = _capture_metrics(registros)
     siguiente = None
     if metrics["pendientes"] > 1:
@@ -1263,7 +1261,7 @@ def _json_capture_action(request, event, config):
         return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
 
     with transaction.atomic():
-        registros_locked = getattr(event, config["relation"]).all().visibles_para(request.user).select_for_update()
+        registros_locked = getattr(event, config["relation"]).all().capturables_para(request.user).select_for_update()
         registro = get_object_or_404(registros_locked, pk=record_id)
         expected = request.POST.get("expected_status")
         if action in {"asistio", "falto"}:
@@ -1295,10 +1293,12 @@ def _captura_asistencia(request, event_kind, event_id):
     event = get_object_or_404(
         config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
+    if not _puede_capturar_evento(request.user, event):
+        raise Http404
     if event.estado != event.Estados.PROGRAMADA:
         messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
         return redirect(config["detail_url"], event.pk)
-    registros_qs = getattr(event, config["relation"]).all().visibles_para(request.user).select_related("ciudadano").order_by(
+    registros_qs = getattr(event, config["relation"]).all().capturables_para(request.user).select_related("ciudadano").order_by(
         "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
     )
 
@@ -1311,7 +1311,7 @@ def _captura_asistencia(request, event_kind, event_id):
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all().visibles_para(request.user),
+        getattr(event, config["relation"]).all().capturables_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
@@ -1334,6 +1334,8 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
     event = get_object_or_404(
         config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
+    if not _puede_capturar_evento(request.user, event):
+        raise Http404
     if event.estado != event.Estados.PROGRAMADA:
         if request.method == "POST":
             return JsonResponse({"ok": False, "error": "Solo se puede capturar asistencia en eventos programados."}, status=403)
@@ -1345,7 +1347,7 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all().visibles_para(request.user),
+        getattr(event, config["relation"]).all().capturables_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
@@ -1358,10 +1360,10 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
             "normal_capture_url": payload["normal_capture_url"],
             "last_pending_message": payload["last_pending_message"],
             "detail_url": reverse(config["detail_url"], args=[event.pk]),
-            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
+            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]) if _puede_operar_evento(request.user, event) else "",
             "capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),
             "bulk_capture_url": reverse(config["capture_url"], args=[event.pk]),
-            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]),
+            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]) if _puede_operar_evento(request.user, event) else "",
         }
     )
     return render(request, "dashboard/captura_asistencia_secuencial.html", context)

@@ -2,6 +2,7 @@ from django.db import models
 from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
 from .alcance import validar_territorio_evento
+from .autorizacion import comites_presididos, manzanas_responsables, usuario_activo
 
 
 def validar_comite_y_motivo(instancia, nombre_entidad):
@@ -20,40 +21,14 @@ def validar_comite_y_motivo(instancia, nombre_entidad):
         raise ValidationError(errors)
 
 
-def _responsabilidad_manzana_ids(usuario):
-    if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
-        return []
-    from apps.core.autorizacion import responsabilidades_activas
-
-    return [
-        responsabilidad.manzana.pk
-        for responsabilidad in responsabilidades_activas(usuario)
-        if responsabilidad.tipo == "MANZANA" and responsabilidad.manzana
-    ]
-
-
-def _comites_presididos_ids(usuario):
-    if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
-        return []
-    from apps.core.autorizacion import responsabilidades_activas
-
-    return [
-        responsabilidad.comite.pk
-        for responsabilidad in responsabilidades_activas(usuario)
-        if responsabilidad.tipo == "COMITE"
-        and responsabilidad.rol == "PRESIDENTE"
-        and responsabilidad.comite
-    ]
-
-
 class AlcanceEventoQuerySet(models.QuerySet):
     def visibles_para(self, usuario):
         if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
             return self.none()
         if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
             return self
-        manzana_ids = _responsabilidad_manzana_ids(usuario)
-        comite_ids = _comites_presididos_ids(usuario)
+        manzana_ids = manzanas_responsables(usuario)
+        comite_ids = comites_presididos(usuario)
         if not manzana_ids and not comite_ids:
             return self.none()
         relation = "registros" if self.model.__name__ == "Faena" else "asistencias"
@@ -75,8 +50,24 @@ class AlcanceParticipanteQuerySet(models.QuerySet):
             return self.none()
         if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
             return self
-        manzana_ids = _responsabilidad_manzana_ids(usuario)
-        comite_ids = _comites_presididos_ids(usuario)
+        return self._por_responsabilidades(usuario)
+
+    def capturables_para(self, usuario):
+        """Read grants never expand the set of records that can be changed."""
+        if not usuario_activo(usuario):
+            return self.none()
+        event_name = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
+        if (
+            usuario.is_superuser
+            or usuario.has_perm(f"operacion.change_{self.model._meta.model_name}")
+            or usuario.has_perm(f"operacion.change_{event_name}")
+        ):
+            return self
+        return self._por_responsabilidades(usuario)
+
+    def _por_responsabilidades(self, usuario):
+        manzana_ids = manzanas_responsables(usuario)
+        comite_ids = comites_presididos(usuario)
         if not manzana_ids and not comite_ids:
             return self.none()
         event_relation = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
