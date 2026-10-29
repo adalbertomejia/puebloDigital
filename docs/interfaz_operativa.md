@@ -25,3 +25,18 @@ Después de registrar un abono aparece el enlace para imprimirlo. El historial d
 El ticket incluye nombre e ID del ciudadano, contrato, manzana, fecha del abono, comité, concepto, tipo, monto de ese abono, autor y referencia cuando existe. El pie indica «Conserve este recibo». La reimpresión consulta los datos actuales relacionados; no representa una instantánea histórica de nombres o domicilios. No genera ni duplica pagos.
 
 En el diálogo de impresión seleccionar la impresora y papel de 80 mm, escala 100 %, y desactivar encabezados y pies del navegador. El contenido utiliza 72 mm, dejando 4 mm por lado. El largo depende de la configuración de la impresora. Se verificó el ancho y la ocultación de controles en Chromium; falta comprobar el resultado en la impresora física.
+
+
+## Adeudos de asistencia y Tesorería
+
+Diagnóstico: la captura almacenaba `genera_adeudo` y `monto_adeudo` en RegistroFaena/AsistenciaJunta, sin una integración que creara o actualizara obligaciones financieras. Por ello las métricas de asistencia podían mostrar adeudos ausentes en Tesorería.
+
+La captura normal utiliza un único importe: cero desactiva el adeudo; un valor positivo lo activa. Permite buscar participantes por nombre o contrato, guardar por fila o guardar el formulario mediante solicitudes POST sin recargar. El estado «Sin guardar» distingue la edición del registro confirmado; los contadores se actualizan después de guardar. Sin JavaScript conserva el envío convencional. La captura presencial mantiene su flujo actual.
+
+Un evento crea un concepto vinculado mediante una relación única; cada ciudadano tiene una sola obligación por ese concepto. Las correcciones actualizan su importe. Retirar un adeudo sin abonos cancela la obligación, conservando evidencia; volver a activarlo reutiliza la obligación. No se permite retirar un adeudo con abonos ni reducirlo por debajo de lo recibido. Toda la captura y la sincronización forman una transacción: un error revierte el envío completo. Se conserva el alcance autorizado de participantes y comité. Un evento sin comité requiere asignarlo antes de emitir adeudos.
+
+La migración `tesoreria.0004_vinculo_adeudos_asistencia` añade dos relaciones opcionales a ConceptoTesoreria. No cambia importes ni genera cobros históricos. Al guardar participantes existentes desde captura normal se sincronizan sus adeudos. No se relacionan conceptos anteriores por coincidencia de nombres: cualquier cobro histórico creado manualmente debe revisarse antes de guardar para evitar duplicarlo. Los conceptos vinculados no admiten la generación masiva para todo el padrón. El borrado del evento queda protegido mientras conserve un concepto financiero vinculado.
+
+Esta entrega integra el panel de captura normal; la edición directa del administrador no ejecuta esta sincronización. No se han aplicado migraciones ni cambios sobre la base de producción, ni publicado el borrador.
+
+Verificación de esta entrega: 10 pruebas nuevas pasan; la regresión enfocada de 92 pruebas pasó antes del último caso añadido. La suite explícita completa ejecutó 252 pruebas y conservó las 5 fallas y 2 errores preexistentes. Chromium con datos sintéticos verificó guardar una fila sin guardar la otra, guardar todos los cambios, actualización de contadores, retirada de adeudo y búsqueda por contrato sin recargar el documento. No se probó contra datos de producción.

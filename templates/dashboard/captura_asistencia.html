@@ -1,4 +1,5 @@
 {% extends 'dashboard/base_dashboard.html' %}
+{% load static l10n %}
 {% block title %}Captura de asistencia - {{ event_type }}{% endblock %}
 {% block content %}
 <nav class="text-sm mb-4 text-slate-500">
@@ -32,34 +33,38 @@
 </section>
 
 <section class="grid md:grid-cols-4 gap-4 mb-6">
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total participantes</p><p class="text-2xl font-bold">{{ metricas.total_participantes }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias registradas</p><p class="text-2xl font-bold">{{ metricas.asistencias_registradas }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pendientes</p><p class="text-2xl font-bold">{{ metricas.pendientes }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Avance</p><p class="text-2xl font-bold">{{ metricas.porcentaje_asistencia }}%</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total participantes</p><p class="text-2xl font-bold"><span data-metric="total">{{ metricas.total_participantes }}</span></p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Asistencias registradas</p><p class="text-2xl font-bold"><span data-metric="registradas">{{ metricas.asistencias_registradas }}</span></p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Pendientes</p><p class="text-2xl font-bold"><span data-metric="pendientes">{{ metricas.pendientes }}</span></p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Avance</p><p class="text-2xl font-bold"><span data-metric="porcentaje">{{ metricas.porcentaje_asistencia }}</span>%</p></article>
 </section>
 
-<form method="post" class="bg-white rounded-2xl border p-4 md:p-5">
+<p id="captura-mensaje" role="status" aria-live="polite">{{ error_captura }}</p>
+<form method="post" data-captura-normal class="bg-white rounded-2xl border p-4 md:p-5">
   {% csrf_token %}
   <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <div>
       <h4 class="font-semibold text-lg">Registros de asistencia</h4>
-      <p class="text-sm text-slate-500">Actualiza el estatus de todos los participantes generados para este evento sin crear registros nuevos.</p>
+      <p class="text-sm text-slate-500">Indica la asistencia y el importe del adeudo. Cero significa sin adeudo. Guarda cada fila o todos los cambios; los adeudos se reflejan en Tesorería.</p>
     </div>
     <button class="pd-button pd-button--primary">Guardar cambios</button>
   </div>
+  <label for="captura-buscar">Buscar participante</label>
+  <input id="captura-buscar" type="search" placeholder="Nombre o contrato" class="w-full rounded-lg border px-2 py-1 mb-4">
+  <p>Adeudos guardados: <strong data-metric="cantidad_adeudos">{{ metricas.cantidad_adeudos }}</strong> · Importe: $<strong data-metric="monto_total_adeudos">{{ metricas.monto_total_adeudos|floatformat:2 }}</strong></p>
   <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <thead class="text-left text-slate-500 border-b">
         <tr>
           <th class="py-2 pr-3">Ciudadano</th>
           <th class="py-2 pr-3">Estatus</th>
-          <th class="py-2 pr-3">Adeudo</th><th class="py-2 pr-3">Monto</th>
-          <th class="py-2 pr-3">Observaciones</th>
+          <th class="py-2 pr-3">Adeudo ($)</th>
+          <th class="py-2 pr-3">Observaciones</th><th>Guardar</th>
         </tr>
       </thead>
       <tbody class="divide-y">
         {% for registro in participantes %}
-          <tr>
+          <tr data-registro="{{ registro.pk }}" data-busqueda="{{ registro.ciudadano.nombre_completo }} {{ registro.ciudadano.numero_contrato|default:'' }}">
             <td class="py-2 pr-3 font-medium">{{ registro.ciudadano.nombre_completo }}</td>
             <td class="py-2 pr-3">
               <select name="registro_{{ registro.pk }}_estatus" class="rounded-lg border px-2 py-1">
@@ -68,9 +73,9 @@
                 {% endfor %}
               </select>
             </td>
-            <td class="py-2 pr-3 text-center"><input type="checkbox" name="registro_{{ registro.pk }}_genera_adeudo" {% if registro.genera_adeudo %}checked{% endif %}></td>
-              <td class="py-2 pr-3"><input type="number" step="0.01" min="0" name="registro_{{ registro.pk }}_monto_adeudo" value="{{ registro.monto_adeudo }}" class="w-28 rounded-lg border px-2 py-1"></td>
+            <td class="py-2 pr-3"><input aria-label="Adeudo de {{ registro.ciudadano.nombre_completo }}" type="number" inputmode="decimal" step="0.01" min="0" max="99999999.99" name="registro_{{ registro.pk }}_monto_adeudo" value="{% if registro.genera_adeudo %}{{ registro.monto_adeudo|unlocalize }}{% else %}0{% endif %}" class="w-28 rounded-lg border px-2 py-1"></td>
             <td class="py-2 pr-3"><input type="text" name="registro_{{ registro.pk }}_observaciones" value="{{ registro.observaciones }}" class="w-full min-w-48 rounded-lg border px-2 py-1" placeholder="Observaciones"></td>
+            <td><button type="submit" data-guardar-fila name="registro_fila" value="{{ registro.pk }}" formnovalidate class="pd-button pd-button--secondary pd-button--sm">Guardar fila</button><span data-estado-fila role="status"></span></td>
           </tr>
         {% empty %}
           <tr><td colspan="5" class="py-4 text-slate-500">Este evento aún no tiene registros generados. Usa la acción masiva antes de capturar asistencia.</td></tr>
@@ -83,3 +88,5 @@
   </div>
 </form>
 {% endblock %}
+
+{% block extra_js %}<script src="{% static 'js/captura-normal.js' %}" defer></script>{% endblock %}

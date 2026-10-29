@@ -72,6 +72,8 @@ class Cooperacion(TimeStampedModel):
 
 
 class ConceptoTesoreria(TimeStampedModel):
+    faena = models.OneToOneField("operacion.Faena", on_delete=models.PROTECT, null=True, blank=True, related_name="concepto_financiero", editable=False)
+    junta = models.OneToOneField("operacion.Junta", on_delete=models.PROTECT, null=True, blank=True, related_name="concepto_financiero", editable=False)
     periodo_agua = models.DateField(null=True, blank=True, verbose_name="Periodo mensual de agua")
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,

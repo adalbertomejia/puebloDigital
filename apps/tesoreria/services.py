@@ -22,6 +22,8 @@ def construir_obligacion(concepto, ciudadano_id, *, usuario=None):
 @transaction.atomic
 def generar_obligaciones_faltantes(concepto, *, usuario=None):
     """Create only obligations missing from the concept's current territory."""
+    if concepto.faena_id or concepto.junta_id:
+        raise ValidationError("Los adeudos de asistencia se generan desde Capturar asistencia, solo para los participantes con importe positivo.")
     # Serialize generation for this concept on databases with row locking so
     # the recorded author/count describe this request's new obligations.
     ConceptoTesoreria.objects.select_for_update().get(pk=concepto.pk)
@@ -70,3 +72,49 @@ def generar_obligaciones_faltantes(concepto, *, usuario=None):
         existentes=len(objetivo_ids) - creados,
         total_objetivo=len(objetivo_ids),
     )
+
+
+@transaction.atomic
+def sincronizar_adeudo_asistencia(registro, *, usuario):
+    """One event concept and one citizen obligation; never discard paid money."""
+    from apps.operacion.models import RegistroFaena
+    campo = "faena" if isinstance(registro, RegistroFaena) else "junta"
+    evento = getattr(registro, campo)
+    type(evento).objects.select_for_update().get(pk=evento.pk)
+    concepto = ConceptoTesoreria.objects.filter(**{campo: evento}).first()
+    monto = registro.monto_adeudo if registro.genera_adeudo else 0
+    if not concepto and monto <= 0:
+        return
+    if not evento.comite_id:
+        raise ValidationError("Asigna un comité al evento antes de registrar adeudos para Tesorería.")
+    if not concepto:
+        descripcion = evento.descripcion if campo == "faena" else evento.tema
+        concepto = ConceptoTesoreria.objects.create(
+            **{campo: evento}, comite=evento.comite, creado_por=usuario,
+            concepto=f"Adeudos de {campo} #{evento.pk}: {descripcion}"[:200],
+            origen=campo.upper(), naturaleza="PAGO", monto_individual=monto,
+            fecha=evento.fecha, alcance=evento.alcance, manzana=evento.manzana,
+            registros_generados=True,
+        )
+        registrar_movimiento(usuario, concepto, RegistroFinanciero.Acciones.CREAR)
+    if concepto.comite_id != evento.comite_id:
+        raise ValidationError("El comité del evento cambió. Revisa su vínculo financiero antes de modificar los adeudos.")
+    obligacion = concepto.obligaciones.select_for_update().filter(ciudadano_id=registro.ciudadano_id).first()
+    if not obligacion:
+        if monto <= 0:
+            return
+        obligacion = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano_id=registro.ciudadano_id, monto_asignado=monto, creado_por=usuario)
+        registrar_movimiento(usuario, obligacion, RegistroFinanciero.Acciones.GENERAR)
+        return
+    abonado = obligacion.total_abonado
+    if (monto <= 0 and abonado > 0) or monto < abonado:
+        raise ValidationError(f"{registro.ciudadano.nombre_completo}: el adeudo ya tiene abonos por ${abonado:.2f}. No puedes retirarlo ni reducirlo por debajo de lo cobrado.")
+    estado = "CANCELADO" if monto <= 0 else ("PAGADO" if monto == abonado else "PENDIENTE")
+    nuevo_monto = monto if monto > 0 else obligacion.monto_asignado
+    if obligacion.estado == estado and obligacion.monto_asignado == nuevo_monto:
+        return
+    anterior = str(obligacion.monto_asignado)
+    obligacion.monto_asignado = nuevo_monto
+    obligacion.estado = estado
+    obligacion.save(update_fields=["monto_asignado", "estado", "updated_at"])
+    registrar_movimiento(usuario, obligacion, RegistroFinanciero.Acciones.EDITAR, detalle={"monto_anterior": anterior, "adeudo_retirado": monto <= 0})

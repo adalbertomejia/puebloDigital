@@ -1083,9 +1083,13 @@ def _capture_config(event_kind):
 
 
 def _update_attendance_records(request, registros, config):
+    from apps.tesoreria.services import sincronizar_adeudo_asistencia
     updated = 0
+    fila = request.POST.get("registro_fila")
     valid_statuses = {value for value, _label in config["status_choices"]}
     for registro in registros:
+        if fila and str(registro.pk) != fila:
+            continue
         prefix = f"registro_{registro.pk}"
         estatus = request.POST.get(f"{prefix}_estatus")
         if estatus not in valid_statuses:
@@ -1102,14 +1106,18 @@ def _update_attendance_records(request, registros, config):
             changed = True
 
         if isinstance(registro, (RegistroFaena, AsistenciaJunta)):
-            genera_adeudo = request.POST.get(f"{prefix}_genera_adeudo") == "on"
-            monto_raw = request.POST.get(f"{prefix}_monto_adeudo") or "0"
-            if registro.genera_adeudo != genera_adeudo:
-                registro.genera_adeudo = genera_adeudo
-                changed = True
-            if str(registro.monto_adeudo) != monto_raw:
-                registro.monto_adeudo = monto_raw
-                changed = True
+            campo_monto = f"{prefix}_monto_adeudo"
+            if campo_monto in request.POST:
+                try:
+                    monto = forms.DecimalField(min_value=0, max_digits=10, decimal_places=2).clean(request.POST.get(campo_monto) or "0")
+                except ValidationError:
+                    raise ValidationError(f"{registro.ciudadano.nombre_completo}: escribe un adeudo válido, mayor o igual a cero, con máximo dos decimales.")
+                if request.POST.get(f"{prefix}_genera_adeudo") == "on" and monto <= 0:
+                    raise ValidationError(f"{registro.ciudadano.nombre_completo}: indica un importe mayor que cero para el adeudo.")
+                if registro.monto_adeudo != monto or registro.genera_adeudo != (monto > 0):
+                    registro.monto_adeudo = monto
+                    registro.genera_adeudo = monto > 0
+                    changed = True
         if isinstance(registro, AsistenciaJunta):
             asistio = estatus == AsistenciaJunta.Estatus.ASISTIO
             if registro.asistio != asistio:
@@ -1119,6 +1127,7 @@ def _update_attendance_records(request, registros, config):
         if changed:
             registro.save()
             updated += 1
+        sincronizar_adeudo_asistencia(registro, usuario=request.user)
     return updated
 
 
@@ -1139,7 +1148,7 @@ def _capture_metrics(registros):
         "actual": registradas + 1 if pendientes else total,
         "porcentaje": round((registradas / total) * 100) if total else 0,
         "cantidad_adeudos": cantidad_adeudos,
-        "monto_total_adeudos": str(monto_total_adeudos),
+        "monto_total_adeudos": f"{monto_total_adeudos:.2f}",
         "porcentaje_asistencia": round((asistieron / total) * 100) if total else 0,
     }
 
@@ -1238,12 +1247,24 @@ def _captura_asistencia(request, event_kind, event_id):
         "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
     )
 
+    error_captura = ""
     if request.method == "POST":
-        with transaction.atomic():
-            registros = list(registros_qs.select_for_update())
-            updated = _update_attendance_records(request, registros, config)
-        messages.success(request, f"Se guardaron {updated} cambios de asistencia para {config['event_type'].lower()}.")
-        return redirect(config["capture_url"], event.pk)
+        try:
+            with transaction.atomic():
+                # Serialize capture for the event, then lock only submitted rows.
+                type(event).objects.select_for_update().get(pk=event.pk)
+                ids = [int(m[1]) for key in request.POST if (m := re.fullmatch(r"registro_([0-9]{1,18})_estatus", key))]
+                registros = list(registros_qs.filter(pk__in=ids).select_for_update())
+                updated = _update_attendance_records(request, registros, config)
+        except ValidationError as exc:
+            error_captura = " ".join(exc.messages)
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"ok": False, "error": error_captura}, status=400)
+        else:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"ok": True, "updated": updated, "metrics": _capture_metrics(registros_qs)})
+            messages.success(request, f"Se guardaron {updated} cambios de asistencia y se sincronizaron los adeudos con Tesorería.")
+            return redirect(config["capture_url"], event.pk)
 
     context = _event_detail_context(
         event,
@@ -1262,7 +1283,8 @@ def _captura_asistencia(request, event_kind, event_id):
             "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]) if _puede_operar_evento(request.user, event) else "",
         }
     )
-    return render(request, "dashboard/captura_asistencia.html", context)
+    context["error_captura"] = error_captura
+    return render(request, "dashboard/captura_asistencia.html", context, status=400 if error_captura else 200)
 
 
 def _captura_asistencia_secuencial(request, event_kind, event_id):
