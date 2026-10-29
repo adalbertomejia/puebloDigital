@@ -398,3 +398,12 @@ a.concept-pagination__item:hover { border-color: #c7d2fe; background: #fff; colo
 @media (max-width: 1023px) { .treasury-concept-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 639px) { .treasury-concept-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { #conceptos-paginados, .concept-pagination__item { transition: none; } #conceptos-paginados.is-loading { transform: none; } }
+
+/* Six operational columns fit a laptop panel; small screens can scroll locally. */
+.pd-table.pd-obligaciones-table { min-width: 42rem; table-layout: fixed; font-size: .875rem; }
+.pd-obligaciones-table__ciudadano { width: 30%; }
+.pd-obligaciones-table th, .pd-obligaciones-table td { padding: .75rem .65rem; overflow-wrap: anywhere; }
+.pd-obligaciones-table .pd-obligaciones-table__importe { text-align: right; font-variant-numeric: tabular-nums; }
+.pd-obligaciones-table td.pd-obligaciones-table__importe { white-space: nowrap; overflow-wrap: normal; }
+.pd-obligaciones-table__historial { margin-top: .35rem; }
+.pd-obligaciones-table__historial li { margin-top: .5rem; }
