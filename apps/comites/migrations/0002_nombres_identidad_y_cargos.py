@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('comites', '0001_initial'),
+        ('comites', '0003_perfilacceso'),
     ]
 
     operations = [

@@ -95,7 +95,7 @@ class AddNullableUniqueRelation(migrations.AddField):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('operacion', '0002_evento_motivo_comite_opcional'),
+        ('operacion', '0004_evento_motivo_comite_opcional'),
         ('tesoreria', '0003_cuotas_mensuales_agua'),
     ]
 

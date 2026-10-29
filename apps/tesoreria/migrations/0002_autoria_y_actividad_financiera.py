@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('comites', '0002_nombres_identidad_y_cargos'),
-        ('tesoreria', '0001_initial'),
+        ('tesoreria', '0002_conceptotesoreria_territorio'),
     ]
 
     operations = [
