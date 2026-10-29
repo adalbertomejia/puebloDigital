@@ -5,6 +5,7 @@ from apps.agua.models import Toma
 from apps.comites.models import PerfilAcceso
 from apps.operacion.models import RegistroFaena
 from apps.tesoreria.models import Cooperacion, Pago
+from apps.core.admin_seguridad import AdministracionGlobal
 
 from .models import Ciudadano, Manzana
 
@@ -43,7 +44,7 @@ class ManzanaAdmin(admin.ModelAdmin):
         return obj._cantidad_ciudadanos
 
 
-class PagoInline(admin.TabularInline):
+class PagoInline(AdministracionGlobal, admin.TabularInline):
     model = Pago
     extra = 0
     fields = (
@@ -67,7 +68,7 @@ class PagoInline(admin.TabularInline):
         return False
 
 
-class CooperacionInline(admin.TabularInline):
+class CooperacionInline(AdministracionGlobal, admin.TabularInline):
     model = Cooperacion
     extra = 0
     fields = ("fecha", "tipo", "monto", "comite", "concepto", "anio_periodo", "comprobante")
@@ -109,7 +110,7 @@ class TomaInline(admin.StackedInline):
     verbose_name_plural = "Agua"
 
 
-class PerfilAccesoInline(admin.StackedInline):
+class PerfilAccesoInline(AdministracionGlobal, admin.StackedInline):
     model = PerfilAcceso
     extra = 0
     max_num = 1

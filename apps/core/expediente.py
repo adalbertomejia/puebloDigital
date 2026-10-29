@@ -11,15 +11,18 @@ from django.db.models.functions import Coalesce
 from apps.operacion.models import AsistenciaJunta, RegistroFaena
 from apps.tesoreria.models import Abono, ObligacionCiudadano
 from apps.tesoreria.queries import anotar_obligaciones
+from apps.tesoreria.autorizacion import limitar_finanzas
 
 
 DINERO = DecimalField(max_digits=14, decimal_places=2)
 CERO = Value(Decimal("0.00"), output_field=DINERO)
 
 
-def obtener_resumen_ciudadano(ciudadano):
+def obtener_resumen_ciudadano(ciudadano, *, usuario=None):
     """Métricas agregadas; su cantidad de consultas no depende de las filas."""
     obligaciones = ObligacionCiudadano.objects.filter(ciudadano=ciudadano)
+    if usuario is not None:
+        obligaciones = limitar_finanzas(obligaciones, usuario, "concepto__comite_id")
     finanzas = obligaciones.aggregate(
         conceptos=Count("concepto_id", distinct=True),
         pendientes=Count("pk", filter=Q(estado=ObligacionCiudadano.Estados.PENDIENTE)),
@@ -28,7 +31,10 @@ def obtener_resumen_ciudadano(ciudadano):
             Sum("monto_asignado", filter=~Q(estado=ObligacionCiudadano.Estados.CANCELADO)), CERO
         ),
     )
-    total_abonado = Abono.objects.filter(obligacion__ciudadano=ciudadano).aggregate(
+    abonos = Abono.objects.filter(obligacion__ciudadano=ciudadano)
+    if usuario is not None:
+        abonos = limitar_finanzas(abonos, usuario, "obligacion__concepto__comite_id")
+    total_abonado = abonos.aggregate(
         total=Coalesce(Sum("monto"), CERO)
     )["total"]
     estados_faena = RegistroFaena.objects.filter(ciudadano=ciudadano).aggregate(
@@ -55,16 +61,22 @@ def obtener_resumen_ciudadano(ciudadano):
     }
 
 
-def obtener_obligaciones_ciudadano(ciudadano):
+def obtener_obligaciones_ciudadano(ciudadano, *, usuario=None):
+    obligaciones = ObligacionCiudadano.objects.filter(ciudadano=ciudadano)
+    if usuario is not None:
+        obligaciones = limitar_finanzas(obligaciones, usuario, "concepto__comite_id")
     return anotar_obligaciones(
-        ObligacionCiudadano.objects.filter(ciudadano=ciudadano).select_related(
+        obligaciones.select_related(
             "concepto", "concepto__comite", "concepto__manzana"
         )
     ).order_by("-concepto__fecha", "-concepto_id", "-pk")
 
 
-def obtener_abonos_ciudadano(ciudadano):
-    return Abono.objects.filter(obligacion__ciudadano=ciudadano).select_related(
+def obtener_abonos_ciudadano(ciudadano, *, usuario=None):
+    abonos = Abono.objects.filter(obligacion__ciudadano=ciudadano)
+    if usuario is not None:
+        abonos = limitar_finanzas(abonos, usuario, "obligacion__concepto__comite_id")
+    return abonos.select_related(
         "obligacion", "obligacion__concepto", "obligacion__concepto__comite",
         "obligacion__concepto__manzana",
     ).order_by("-fecha", "-created_at", "-pk")

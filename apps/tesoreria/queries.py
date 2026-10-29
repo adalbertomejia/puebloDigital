@@ -18,7 +18,8 @@ CERO = Value(Decimal("0.00"), output_field=DINERO)
 
 def anotar_conceptos(queryset=None):
     """Añade todas las métricas de tarjeta sin multiplicar montos por cada abono."""
-    queryset = queryset or ConceptoTesoreria.objects.all()
+    if queryset is None:
+        queryset = ConceptoTesoreria.objects.all()
     obligaciones = ObligacionCiudadano.objects.filter(concepto=OuterRef("pk"))
     abonos = Abono.objects.filter(
         obligacion__concepto=OuterRef("pk"),
@@ -76,8 +77,8 @@ def aplicar_filtros_conceptos(queryset, params):
     return queryset.order_by("-fecha", "-created_at", "-pk")
 
 
-def conceptos_filtrados(params):
-    return aplicar_filtros_conceptos(anotar_conceptos(), params)
+def conceptos_filtrados(params, *, queryset=None):
+    return aplicar_filtros_conceptos(anotar_conceptos(queryset), params)
 
 
 def anotar_obligaciones(queryset):
@@ -150,14 +151,18 @@ def aplicar_filtros_aportaciones(queryset, params):
     return queryset
 
 
-def abonos_filtrados(params):
+def abonos_filtrados(params, *, queryset=None):
     """QuerySet base reutilizado por la vista, sus agregados y el CSV."""
-    return aplicar_filtros_aportaciones(Abono.objects.all(), params)
+    if queryset is None:
+        queryset = Abono.objects.all()
+    return aplicar_filtros_aportaciones(queryset, params)
 
 
-def buscar_movimientos_aportaciones(filtros):
+def buscar_movimientos_aportaciones(filtros, *, queryset=None):
     """Devuelve abonos reales filtrados; no mezcla obligaciones con movimientos."""
-    queryset = Abono.objects.select_related(
+    if queryset is None:
+        queryset = Abono.objects.all()
+    queryset = queryset.select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana",
         "obligacion__concepto", "obligacion__concepto__manzana",
     )

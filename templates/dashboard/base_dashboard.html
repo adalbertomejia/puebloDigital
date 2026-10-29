@@ -24,8 +24,10 @@
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}" {% if 'asistencia' in request.resolver_match.url_name %}aria-current="page"{% endif %}>Control de Asistencias</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#faenas">Faenas</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#juntas">Juntas</a>
+          {% if puede_operar_finanzas %}
           <a class="pd-navigation__link {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% endif %}" href="{% url 'tesoreria_operativa' %}" {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}aria-current="page"{% endif %}>Tesorería</a>
           <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' or request.resolver_match.url_name == 'buscar_aportaciones' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
+          {% endif %}
           <a class="pd-navigation__link" href="{% url 'control_agua' %}" {% if request.resolver_match.url_name == 'control_agua' %}aria-current="page"{% endif %}>Agua</a>
         </nav>
       </div>
@@ -36,7 +38,7 @@
           <p class="pd-header__title">Panel de Gestión Comunitaria</p>
           <nav class="pd-account" aria-label="Cuenta de usuario">
             <span class="pd-account__user">Sesión: <strong>{{ request.user.get_full_name|default:request.user.get_username }}</strong></span>
-            <a href="/admin/">Administración</a>
+            {% if request.user.is_staff %}<a href="/admin/">Administración</a>{% endif %}
             <a href="/logout/">Cerrar sesión</a>
           </nav>
         </div>

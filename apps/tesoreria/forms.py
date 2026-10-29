@@ -75,8 +75,11 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
             "anio_periodo": "Año del periodo (opcional)",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if usuario is not None:
+            from .autorizacion import comites_financieros
+            self.fields["comite"].queryset = comites_financieros(usuario)
         self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
         self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()

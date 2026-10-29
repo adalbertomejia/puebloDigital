@@ -40,6 +40,10 @@ from apps.tesoreria.queries import (
     buscar_movimientos_aportaciones,
 )
 from apps.tesoreria.forms import BuscarAportacionesForm
+from apps.tesoreria.autorizacion import (
+    acceso_financiero_requerido, comites_financieros, limitar_finanzas, tiene_acceso_financiero,
+)
+
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
@@ -63,9 +67,10 @@ class EstadoEventoForm(DashboardFormMixin, forms.Form):
         self._apply_dashboard_widgets()
 
 
-def _ciudadanos_operativos_queryset():
+def _ciudadanos_operativos_queryset(usuario=None):
+    filtro_pago = Q() if usuario is None else Q(pagos__comite_id__in=comites_financieros(usuario).values("pk"))
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
-        ultimo_pago_fecha=Max("pagos__fecha"),
+        ultimo_pago_fecha=Max("pagos__fecha", filter=filtro_pago),
         adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
     )
 
@@ -191,7 +196,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
 def padron_ciudadanos(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
     ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     paginator = Paginator(ciudadanos_qs, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
@@ -245,7 +250,7 @@ def padron_ciudadanos(request):
 def exportar_ciudadanos_csv(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
     ciudadanos = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     manzana = request.GET.get("manzana", "todas")
     if manzana == "sin_asignar":
@@ -434,8 +439,8 @@ def dashboard_operativo(request):
     ciudadanos_qs = (
         Ciudadano.objects.select_related("toma", "manzana")
         .annotate(
-            total_pagos=Count("pagos", distinct=True),
-            ultimo_pago_fecha=Max("pagos__fecha"),
+            total_pagos=Count("pagos", filter=Q(pagos__comite_id__in=comites_financieros(request.user).values("pk")), distinct=True),
+            ultimo_pago_fecha=Max("pagos__fecha", filter=Q(pagos__comite_id__in=comites_financieros(request.user).values("pk"))),
             adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
             ultima_faena_fecha=Max("registros_faena__faena__fecha"),
         )
@@ -455,12 +460,12 @@ def dashboard_operativo(request):
         "ciudadanos_activos": Ciudadano.objects.filter(activo=True).count(),
         "morosos_faena": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
         "tomas_suspendidas": Toma.objects.filter(estado=Toma.Estados.SUSPENDIDA).count(),
-        "pagos_mes": Pago.objects.filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
+        "pagos_mes": limitar_finanzas(Pago.objects.all(), request.user).filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
     }
 
-    pagos_recientes = list(Pago.objects.select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5])
+    pagos_recientes = list(limitar_finanzas(Pago.objects.all(), request.user).select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5])
     cooperaciones_recientes = list(
-        Cooperacion.objects.select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5]
+        limitar_finanzas(Cooperacion.objects.all(), request.user).select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5]
     )
     faenas_recientes = list(Faena.objects.select_related("comite").order_by("-fecha", "-created_at")[:5])
     juntas_programadas = (
@@ -489,7 +494,7 @@ def dashboard_operativo(request):
 
     tarjeta_agua = {
         "tomas_pendientes": Toma.objects.filter(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]).count(),
-        "morosos_agua": Pago.objects.filter(tipo=Pago.Tipos.SERVICIO).values("ciudadano").distinct().count(),
+        "morosos_agua": limitar_finanzas(Pago.objects.all(), request.user).filter(tipo=Pago.Tipos.SERVICIO).values("ciudadano").distinct().count(),
     }
 
     tarjeta_faena = {
@@ -1440,9 +1445,7 @@ def perfil_ciudadano(request, pk):
         obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
     )
 
-    puede_ver_finanzas = bool(
-        request.user.is_superuser or request.user.has_perm("core.view_ciudadano")
-    )
+    puede_ver_finanzas = tiene_acceso_financiero(request.user)
     ciudadanos_visibles = Ciudadano.objects.visibles_para(request.user)
     ciudadano = get_object_or_404(
         ciudadanos_visibles.select_related("toma", "manzana", "manzana__responsable"),
@@ -1462,8 +1465,8 @@ def perfil_ciudadano(request, pk):
     else:
         origen = "Ciudadanos"
 
-    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
-    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano, usuario=request.user), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano, usuario=request.user), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
     asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
     for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
         params = request.GET.copy()
@@ -1480,7 +1483,7 @@ def perfil_ciudadano(request, pk):
         "dashboard/perfil_ciudadano.html",
         {
             "ciudadano": ciudadano,
-            "resumen": obtener_resumen_ciudadano(ciudadano),
+            "resumen": obtener_resumen_ciudadano(ciudadano, usuario=request.user),
             "puede_ver_finanzas": puede_ver_finanzas,
             "obligaciones_page": obligaciones_page,
             "abonos_page": abonos_page,
@@ -1502,11 +1505,11 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 
 def _can_modify_tesoreria(user):
-    return user.has_perm("tesoreria.add_conceptotesoreria") or user.has_perm("tesoreria.change_conceptotesoreria") or user.is_superuser
+    return tiene_acceso_financiero(user)
 
 
 def _can_delete_tesoreria(user):
-    return user.is_superuser or user.has_perm("tesoreria.delete_conceptotesoreria")
+    return tiene_acceso_financiero(user)
 
 
 def _filtros_tesoreria(params):
@@ -1552,8 +1555,9 @@ def _metricas_conceptos(conceptos):
 
 
 @login_required
+@acceso_financiero_requerido
 def tesoreria_operativa(request):
-    conceptos_qs = conceptos_filtrados(request.GET)
+    conceptos_qs = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
     metricas = _metricas_conceptos(conceptos_qs)
     pagos_page = Paginator(
         conceptos_qs.filter(naturaleza=ConceptoTesoreria.Naturalezas.PAGO), 3,
@@ -1584,10 +1588,10 @@ def tesoreria_operativa(request):
         "pagos_page": pagos_page, "cooperaciones_page": cooperaciones_page,
         "metricas": metricas, "filtros": filtros,
         "meses": MESES,
-        "anios": ConceptoTesoreria.objects.dates("fecha", "year", order="DESC"),
-        "comites": Comite.objects.filter(activo=True), "manzanas": Manzana.objects.order_by("nombre"),
+        "anios": limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).dates("fecha", "year", order="DESC"),
+        "comites": comites_financieros(request.user), "manzanas": Manzana.objects.order_by("nombre"),
         "can_modify": _can_modify_tesoreria(request.user),
-        "hay_conceptos": ConceptoTesoreria.objects.exists(),
+        "hay_conceptos": limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).exists(),
         "export_querystring": export_params.urlencode(),
         "manzana_activa": Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None,
     }
@@ -1596,8 +1600,9 @@ def tesoreria_operativa(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_tesoreria_csv(request):
-    conceptos = conceptos_filtrados(request.GET)
+    conceptos = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
     partes = ["tesoreria"]
     naturaleza = request.GET.get("naturaleza")
     if naturaleza in dict(ConceptoTesoreria.Naturalezas.choices):
@@ -1738,11 +1743,12 @@ def _querystring_sin_pagina(params, **cambios):
 
 
 @login_required
+@acceso_financiero_requerido
 def buscar_aportaciones(request):
     """Coordina la búsqueda SSR y su respuesta parcial progresiva."""
     manzanas = list(Manzana.objects.order_by("nombre"))
-    comites = list(Comite.objects.filter(activo=True).order_by("nombre"))
-    anios = {fecha.year for fecha in Abono.objects.dates("fecha", "year", order="DESC")}
+    comites = list(comites_financieros(request.user).order_by("nombre"))
+    anios = {fecha.year for fecha in limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").dates("fecha", "year", order="DESC")}
     if request.GET.get("anio", "").isdigit():
         anios.add(int(request.GET["anio"]))
     datos = request.GET.copy()
@@ -1756,7 +1762,7 @@ def buscar_aportaciones(request):
         comites=comites, meses=MESES,
     )
     filtros = form.cleaned_data if form.is_valid() else {}
-    movimientos = buscar_movimientos_aportaciones(filtros) if form.is_valid() else Abono.objects.none()
+    movimientos = buscar_movimientos_aportaciones(filtros, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")) if form.is_valid() else Abono.objects.none()
     total = movimientos.count()
     por_pagina = int(filtros.get("por_pagina") or 25) if form.is_valid() else 25
     pagina = Paginator(movimientos, por_pagina).get_page(request.GET.get("pagina"))
@@ -1791,6 +1797,7 @@ def buscar_aportaciones(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def resumen_aportaciones(request):
     opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
     opciones_limite_movimientos = (5, 10, 20, 25, 50, 100)
@@ -1822,7 +1829,7 @@ def resumen_aportaciones(request):
     incluir_inactivas = _opcion(
         request.GET.get("incluir_manzanas_inactivas"), permitidos={"0", "1"}, predeterminado="0",
     ) == "1"
-    base = abonos_filtrados(request.GET)
+    base = abonos_filtrados(request.GET, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id"))
     dinero = DecimalField(max_digits=14, decimal_places=2)
     cero = Value(Decimal("0.00"), output_field=dinero)
     metricas = base.aggregate(
@@ -1896,7 +1903,7 @@ def resumen_aportaciones(request):
         etiquetas_contexto.append("Pagos" if filtros["naturaleza"] == "PAGO" else "Cooperaciones")
     if filtros["alcance"] in dict(ConceptoTesoreria.Alcances.choices): etiquetas_contexto.append(dict(ConceptoTesoreria.Alcances.choices)[filtros["alcance"]])
     manzana_contexto = Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None
-    comite_contexto = Comite.objects.filter(pk=filtros["comite"]).first() if filtros["comite"].isdigit() else None
+    comite_contexto = comites_financieros(request.user).filter(pk=filtros["comite"]).first() if filtros["comite"].isdigit() else None
     if manzana_contexto: etiquetas_contexto.append(str(manzana_contexto))
     if comite_contexto: etiquetas_contexto.append(comite_contexto.nombre)
     if filtros["concepto"]: etiquetas_contexto.append(f"Concepto: {filtros['concepto']}")
@@ -1958,8 +1965,8 @@ def resumen_aportaciones(request):
         "movimientos_page": movimientos_page,
         "ciudadanos_page": ciudadanos_page,
         "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
-        "anios": Abono.objects.dates("fecha", "year", order="DESC"), "comites": Comite.objects.filter(activo=True),
-        "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
+        "anios": limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").dates("fecha", "year", order="DESC"), "comites": comites_financieros(request.user),
+        "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").exists(),
         "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
         "export_querystring": export_params.urlencode(),
         "buscar_querystring": urlencode(buscar_params),
@@ -2001,8 +2008,9 @@ def resumen_aportaciones(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_aportaciones_csv(request):
-    abonos = abonos_filtrados(request.GET).select_related(
+    abonos = abonos_filtrados(request.GET, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")).select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
         "obligacion__concepto__manzana", "obligacion__concepto__comite",
     ).order_by("-fecha", "-created_at", "-pk")
@@ -2034,12 +2042,13 @@ def exportar_aportaciones_csv(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def crear_concepto_tesoreria(request, pk=None):
-    concepto = get_object_or_404(ConceptoTesoreria, pk=pk) if pk else None
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user), pk=pk) if pk else None
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para modificar tesorería.")
         return redirect("tesoreria_operativa")
-    form = ConceptoTesoreriaForm(request.POST or None, instance=concepto)
+    form = ConceptoTesoreriaForm(request.POST or None, instance=concepto, usuario=request.user)
     if request.method == "POST" and form.is_valid():
         obj = form.save()
         messages.success(request, "Se guardó correctamente el concepto de tesorería.")
@@ -2050,8 +2059,9 @@ def crear_concepto_tesoreria(request, pk=None):
 
 
 @login_required
+@acceso_financiero_requerido
 def eliminar_concepto_tesoreria(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana"), pk=pk)
     if not _can_delete_tesoreria(request.user):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
@@ -2076,11 +2086,12 @@ def eliminar_concepto_tesoreria(request, pk):
 
 @login_required
 @require_POST
+@acceso_financiero_requerido
 def generar_obligaciones_tesoreria(request, pk):
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para generar obligaciones.")
         return redirect("tesoreria_operativa")
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     try:
         resultado = generar_obligaciones_faltantes(concepto)
     except ValidationError as error:
@@ -2138,8 +2149,9 @@ def _metricas_concepto(concepto):
 
 
 @login_required
+@acceso_financiero_requerido
 def tesoreria_concepto_detalle(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana"), pk=pk)
     metricas = _metricas_concepto(concepto)
     concepto.cantidad_obligaciones = metricas["total"]
     concepto.cantidad_pagada = metricas["pagadas"]
@@ -2163,8 +2175,9 @@ def tesoreria_concepto_detalle(request, pk):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_obligaciones_tesoreria_csv(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     obligaciones = aplicar_filtros_obligaciones(
         anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto)), request.GET
     )
@@ -2187,8 +2200,9 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
 
 
 @login_required
+@acceso_financiero_requerido
 def acreditar_obligacion(request, pk):
-    obligacion = get_object_or_404(ObligacionCiudadano.objects.select_related("ciudadano", "concepto"), pk=pk)
+    obligacion = get_object_or_404(limitar_finanzas(ObligacionCiudadano.objects.all(), request.user, "concepto__comite_id").select_related("ciudadano", "concepto"), pk=pk)
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para acreditar pagos.")
         return redirect("tesoreria_concepto_detalle", obligacion.concepto_id)
