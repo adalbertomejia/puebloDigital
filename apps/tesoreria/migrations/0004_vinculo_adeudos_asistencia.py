@@ -19,27 +19,68 @@ class AddNullableUniqueRelation(migrations.AddField):
         if not self.allow_migrate_model(schema_editor.connection.alias, model):
             return
         field = model._meta.get_field(self.name)
-        # SQLite supports ADD COLUMN for a nullable non-unique foreign key.
-        # Enforce uniqueness separately with an equivalent unique index.
-        column = models.ForeignKey(field.remote_field.model, on_delete=field.remote_field.on_delete,
-                                   null=True, db_index=False)
-        column.set_attributes_from_name(field.name)
-        column.model = model
-        schema_editor.add_field(model, column)
         quote = schema_editor.quote_name
-        schema_editor.execute("CREATE UNIQUE INDEX %s ON %s (%s)" % (
-            quote(f"tes_concepto_{self.name}_unique"), quote(model._meta.db_table), quote(field.column),
-        ))
+        table = model._meta.db_table
+        with schema_editor.connection.cursor() as cursor:
+            columns = schema_editor.connection.introspection.get_table_description(cursor, table)
+            constraints = schema_editor.connection.introspection.get_constraints(cursor, table)
+        existing = next((column for column in columns if column.name == field.column), None)
+        if existing:
+            expected = (field.remote_field.model._meta.db_table, field.target_field.column)
+            compatible_fk = any(c.get("columns") == [field.column] and c.get("foreign_key") == expected for c in constraints.values())
+            if not existing.null_ok or not compatible_fk:
+                raise RuntimeError(
+                    f"La columna histórica {table}.{field.column} ya existe, pero su nulabilidad o clave foránea no coincide con el vínculo esperado {expected}. "
+                    "Se necesita revisar PRAGMA table_info y foreign_key_list antes de continuar. No se modificaron sus valores."
+                )
+            # Keep historical columns on rollback; only our additional index
+            # belongs to this migration. Never drop an adopted column's data.
+            index = f"tes_concepto_{self.name}_legacy_unique"
+        else:
+            column = models.ForeignKey(field.remote_field.model, on_delete=field.remote_field.on_delete,
+                                       null=True, db_index=False)
+            column.set_attributes_from_name(field.name)
+            column.model = model
+            schema_editor.add_field(model, column)
+            index = f"tes_concepto_{self.name}_unique"
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("SELECT %s, COUNT(*) FROM %s WHERE %s IS NOT NULL GROUP BY %s HAVING COUNT(*) > 1 LIMIT 10" % (
+                quote(field.column), quote(table), quote(field.column), quote(field.column),
+            ))
+            duplicates = cursor.fetchall()
+            if duplicates:
+                raise RuntimeError(
+                    f"Hay varios conceptos asociados a la misma {self.name}: {duplicates}. "
+                    "Revisa esos vínculos antes de continuar; no se fusionaron ni eliminaron conceptos."
+                )
+            cursor.execute("SELECT t.%s FROM %s t LEFT JOIN %s r ON t.%s = r.%s WHERE t.%s IS NOT NULL AND r.%s IS NULL LIMIT 10" % (
+                quote(field.column), quote(table), quote(field.remote_field.model._meta.db_table),
+                quote(field.column), quote(field.target_field.column), quote(field.column), quote(field.target_field.column),
+            ))
+            if cursor.fetchall():
+                raise RuntimeError(f"Hay vínculos huérfanos en {table}.{field.column}. Deben revisarse antes de migrar.")
+        if index in constraints:
+            constraint = constraints[index]
+            if not constraint.get("unique") or constraint.get("columns") != [field.column]:
+                raise RuntimeError(f"El índice {index} ya existe con una definición distinta. Revisa la estructura antes de migrar.")
+        else:
+            schema_editor.execute("CREATE UNIQUE INDEX %s ON %s (%s)" % (
+                quote(index), quote(table), quote(field.column),
+            ))
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         model = from_state.apps.get_model(app_label, self.model_name)
         if not self.allow_migrate_model(schema_editor.connection.alias, model):
             return
-        if schema_editor.connection.vendor == "sqlite" and schema_editor.connection.features.can_alter_table_drop_column:
+        if schema_editor.connection.vendor == "sqlite":
             index = f"tes_concepto_{self.name}_unique"
             with schema_editor.connection.cursor() as cursor:
                 constraints = schema_editor.connection.introspection.get_constraints(cursor, model._meta.db_table)
-            if index in constraints:
+            legacy_index = f"tes_concepto_{self.name}_legacy_unique"
+            if legacy_index in constraints:
+                schema_editor.execute("DROP INDEX %s" % schema_editor.quote_name(legacy_index))
+                return
+            if index in constraints and schema_editor.connection.features.can_alter_table_drop_column:
                 quote = schema_editor.quote_name
                 schema_editor.execute("DROP INDEX %s" % quote(index))
                 schema_editor.execute("ALTER TABLE %s DROP COLUMN %s" % (

@@ -89,3 +89,67 @@ class MigracionVinculosAsistenciaTests(TransactionTestCase):
                 with connection.schema_editor() as editor:
                     editor.alter_field(modelo, nullable, campo_original)
             MigrationExecutor(connection).migrate(destinos)
+
+
+class MigracionFaenaHistoricaTests(TransactionTestCase):
+    def test_reutiliza_faena_unica_existente_con_monto_null_y_agrega_junta(self):
+        if connection.vendor != 'sqlite':
+            self.skipTest('Reproduce la estructura histórica SQLite reportada.')
+        from django.db import migrations, models, IntegrityError, transaction
+
+        executor = MigrationExecutor(connection)
+        destinos = executor.loader.graph.leaf_nodes()
+        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0002_evento_motivo_comite_opcional')]
+        legacy_model = None
+        modelo = None
+        pk = None
+        try:
+            executor.migrate(anterior)
+            estado = executor.loader.project_state(anterior)
+            modelo = estado.apps.get_model('tesoreria', 'ConceptoTesoreria')
+            legado = estado.clone()
+            migrations.AddField('conceptotesoreria', 'faena', models.OneToOneField('operacion.Faena', null=True, blank=True, on_delete=models.PROTECT)).state_forwards('tesoreria', legado)
+            monto = modelo._meta.get_field('monto_individual').clone()
+            monto.null = True
+            migrations.AlterField('conceptotesoreria', 'monto_individual', monto).state_forwards('tesoreria', legado)
+            legacy_model = legado.apps.get_model('tesoreria', 'ConceptoTesoreria')
+            with connection.schema_editor() as editor:
+                # This builds the historical nullable monetary column plus the
+                # embedded UNIQUE faena relation, matching the reported schema.
+                editor.add_field(legacy_model, legacy_model._meta.get_field('faena'))
+            comite = legado.apps.get_model('comites', 'Comite').objects.create(nombre='Comité con faena histórica')
+            evento = legado.apps.get_model('operacion', 'Faena').objects.create(comite_id=comite.pk, descripcion='Faena previa', fecha=date(2026, 10, 1))
+            concepto = legacy_model.objects.create(comite_id=comite.pk, concepto='Adeudo previo', origen='FAENA', naturaleza='PAGO', monto_individual=None, faena_id=evento.pk, fecha=date(2026, 10, 1))
+            pk = concepto.pk
+            # Capture all original business values, not just the new link.
+            datos_previos = legacy_model.objects.values().get(pk=pk)
+            MigrationExecutor(connection).migrate(destinos)
+            actual = ConceptoTesoreria.objects.get(pk=pk)
+            self.assertEqual(actual.faena_id, evento.pk)
+            self.assertIsNone(actual.junta_id)
+            self.assertIsNone(actual.monto_individual)
+            self.assertEqual({k: getattr(actual, k) for k in datos_previos}, datos_previos)
+            with connection.cursor() as cursor:
+                constraints = connection.introspection.get_constraints(cursor, actual._meta.db_table)
+            self.assertTrue(any(c.get('foreign_key') == ('operacion_junta', 'id') for c in constraints.values()))
+            self.assertTrue(any(c.get('unique') and c.get('columns') == ['junta_id'] for c in constraints.values()))
+            otro = legacy_model.objects.create(comite_id=comite.pk, concepto='Otro concepto', naturaleza='PAGO', monto_individual=15, fecha=date(2026, 10, 1))
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                ConceptoTesoreria.objects.filter(pk=otro.pk).update(faena_id=evento.pk)
+            MigrationExecutor(connection).migrate(anterior)
+            # Reversing our migration must never remove an adopted column.
+            self.assertEqual(legacy_model.objects.get(pk=pk).faena_id, evento.pk)
+            self.assertIsNone(legacy_model.objects.get(pk=pk).monto_individual)
+        finally:
+            if legacy_model is not None:
+                MigrationExecutor(connection).migrate(anterior)
+                if pk is not None:
+                    legacy_model.objects.filter(pk=pk, monto_individual__isnull=True).update(monto_individual=100)
+                with connection.schema_editor() as editor:
+                    editor.remove_field(legacy_model, legacy_model._meta.get_field('faena'))
+                    nullable = modelo._meta.get_field('monto_individual').clone()
+                    nullable.null = True
+                    nullable.set_attributes_from_name('monto_individual')
+                    nullable.model = modelo
+                    editor.alter_field(modelo, nullable, modelo._meta.get_field('monto_individual'))
+            MigrationExecutor(connection).migrate(destinos)
