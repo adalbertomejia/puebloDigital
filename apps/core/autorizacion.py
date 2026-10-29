@@ -17,7 +17,7 @@ class ResponsabilidadActiva:
     def funciones(self):
         """Describe this assignment, without granting additional permissions."""
         finanzas = (
-            "Consultar finanzas y exportar reportes de este comité",
+            "Consultar finanzas, actividad y exportar reportes de este comité",
             "Crear y editar conceptos de este comité",
             "Generar obligaciones y registrar abonos de este comité",
             "Eliminar conceptos de este comité con confirmación",

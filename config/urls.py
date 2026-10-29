@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from apps.core.views import (
+    actividad_financiera,
     control_asistencias,
     control_agua,
     control_asistencias_faena_detalle,
@@ -57,6 +58,7 @@ urlpatterns = [
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
     path('agua/', control_agua, name='control_agua'),
     path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
+    path('tesoreria/actividad/', actividad_financiera, name='actividad_financiera'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),
     path('tesoreria/aportaciones/buscar/', buscar_aportaciones, name='buscar_aportaciones'),
     path('tesoreria/aportaciones/exportar-csv/', exportar_aportaciones_csv, name='exportar_aportaciones_csv'),

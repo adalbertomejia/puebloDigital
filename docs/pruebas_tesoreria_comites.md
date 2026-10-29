@@ -1,6 +1,6 @@
 # Probar la herencia financiera por comité
 
-Estos pasos son para una copia local de desarrollo y no deben ejecutarse sobre los datos del VPS. La migración de nombres de identidad/cargos solo registra opciones de presentación, sin cambios de esquema ni datos.
+Estos pasos son para una copia local de desarrollo y no deben ejecutarse sobre los datos del VPS. La migración de nombres registra opciones de presentación. La migración de autoría financiera añade columnas y una tabla de actividad; conserva importes y datos previos sin inventar autores. Ejecuta `migrate` en la copia de desarrollo antes de usar estas funciones.
 
 ## Actualizar y ejecutar las pruebas
 
@@ -11,7 +11,7 @@ git switch codex/permisos-presidente
 git pull --ff-only origin codex/permisos-presidente
 python manage.py migrate
 python manage.py check
-python manage.py test apps.tesoreria.test_autorizacion --noinput
+python manage.py test apps.tesoreria.test_autorizacion apps.tesoreria.test_trazabilidad apps.tesoreria.test_migraciones_financieras --noinput
 ```
 
 Las pruebas usan una base temporal de Django y datos sintéticos, incluido un padrón de 2,000 ciudadanos. No crean usuarios en tu base de desarrollo.
@@ -52,4 +52,15 @@ Se acotan conceptos, obligaciones, abonos, métricas, fechas disponibles, búsqu
 
 El superusuario conserva lectura y mantenimiento global, incluso para comités inactivos. Las pantallas administrativas financieras, sus inlines, la asignación de cargos/vínculos y la administración de usuarios/grupos se reservan al superusuario; no se usa staff como sustituto de un cargo financiero.
 
-No se modifica el vínculo cuenta-ciudadano ni la operación de responsables de manzana. No se añaden cancelaciones/reversas ni bitácoras de movimientos en este corte. Estos pasos no equivalen a haber probado el VPS ni a desplegar el cambio.
+No se modifica el vínculo cuenta-ciudadano ni la operación de responsables de manzana. La bitácora de actividad registra nuevas operaciones del flujo de conceptos, obligaciones y abonos. Cancelaciones/reversas siguen pendientes. Estos pasos no equivalen a haber probado el VPS ni a desplegar el cambio.
+
+## Comprobar Mi acceso y actividad financiera
+
+1. En Mi acceso, verificar que el ciudadano vinculado, cada cargo y su comité aparecen separados. Presidente incluye funciones de eventos generales y finanzas; tesorero muestra finanzas; cargos sin capacidades asignadas lo indican.
+2. Con un tesorero, crear un concepto y generar obligaciones. Abrir su detalle: el concepto y las obligaciones nuevas muestran quién los registró y cuándo.
+3. Registrar un abono con referencia de prueba. Verificar el autor real, fecha de registro y referencia en historial, búsqueda por referencia y CSV.
+4. Consultar Actividad financiera: verificar creación, generación y abono. Cambiar a una cuenta de otro comité: no debe aparecer esta actividad ni al modificar filtros o IDs.
+5. Con un presidente del mismo comité, editar el concepto sin alterar configuraciones protegidas. Debe conservar el autor original y mostrar una edición atribuida al presidente en la actividad.
+6. Repetir la generación sin nuevos ciudadanos: no debe cambiar autores ni crear actividad de generación sin cambios.
+7. Solo con datos desechables, borrar el concepto con confirmación. Sus obligaciones y abonos se eliminan como antes; la constancia de generación, abono y eliminación sigue disponible en Actividad financiera.
+8. Los datos previos a esta entrega deben mostrar «Autor no registrado». No esperar una reconstrucción automática de autores históricos.

@@ -52,7 +52,7 @@ Criterios de implementación y aceptación:
 2. Vínculo general cuenta-ciudadano para usuarios con cargo de comité: revisar consistencia entre `PerfilAcceso` y el campo heredado `UsuarioApp.ciudadano`, preservar asignaciones existentes y mantener `Mi acceso` como visualización de la identidad general. No se sincronizan ni reinterpretan esos datos en este corte. Encargados de manzana quedan para pasos futuros según la prioridad del cliente.
 3. Asegurar unicidad de responsable y pertenencia a su manzana, previo inventario y migración revisable de conflictos.
 4. Vigencias e historial de cargos y territorio; decidir acceso histórico cuando un participante cambia de manzana.
-5. Auditoría de quién creó/actualizó eventos y registros.
+5. Auditoría de eventos operativos y asistencia; la trazabilidad financiera se implementa en la sección siguiente.
 6. Reconciliar migraciones regeneradas con el esquema e historial reales del VPS antes del siguiente despliegue; probar sobre una copia restaurada, sin reset ni fake automático.
 7. Revisar fallos existentes de la suite general, manteniéndolos separados de la cobertura de autorización de este paso.
 
@@ -95,3 +95,23 @@ El campo opcional de ciudadano ya capturado dentro del cargo se conserva y el fo
 ## Mi acceso: funciones de cada cargo
 
 La pantalla conserva la identidad general y las asignaciones activas, y describe las funciones de cada una por separado: presidente (eventos generales y tesorería del comité), tesorero (tesorería del comité), responsable territorial (operación de su manzana) y administrador general. Los cargos sin capacidades operativas asignadas lo indican expresamente. Estas descripciones no conceden permisos ni mezclan capacidades entre comités; los controles de servidor continúan aplicándose en cada operación.
+
+## Autoría y actividad financiera
+
+- Conceptos, obligaciones y abonos guardan la cuenta que los registró y conservan su fecha de creación. La creación de conceptos y la generación de obligaciones usan la cuenta autenticada; la repetición de generación no sobrescribe autores ni duplica registros de actividad cuando no cambia datos.
+- Abonos aceptan una referencia de comprobante opcional de hasta 100 caracteres, disponible en captura, historial, búsqueda y CSV. La fecha contable del abono sigue siendo independiente de la fecha real de registro.
+- Actividad financiera (`/tesoreria/actividad/`) muestra una bitácora paginada por los comités financieros activos de la cuenta, con usuario, fecha, acción, concepto, registro, importe y referencia. Se puede consultar la actividad de un concepto desde su detalle.
+- La bitácora registra creación/edición de conceptos, generación de obligaciones, abonos y eliminación de conceptos desde el panel. El admin de conceptos, obligaciones, abonos y sus inlines también registra creaciones, modificaciones y eliminaciones; la consulta administrativa de la bitácora es de solo lectura incluso para el superusuario.
+- Cada escritura financiera y su evidencia se guardan en la misma transacción. Si no puede registrarse la evidencia, no se confirma el movimiento. El actor se toma del servidor, no de campos enviados por el formulario.
+- La evidencia conserva nombres de usuario y concepto e identificadores del momento de la operación; no depende de la existencia posterior del concepto o abono. El borrado físico conserva la constancia de la operación y el total abonado, pero no equivale a mantener todas las líneas financieras eliminadas ni a una reversa contable.
+- Las cuentas y comités referenciados quedan protegidos contra eliminación; se pueden desactivar. Esto conserva la atribución histórica. No se registran contraseñas ni credenciales en la bitácora.
+- La migración `tesoreria.0002_autoria_y_actividad_financiera` añade columnas opcionales de autor, referencia de abono y la tabla de actividad. Los registros anteriores conservan sus importes, fechas y notas, con autor desconocido y sin actividad ficticia. No se deducen autores a partir de cargos actuales.
+- Esta entrega cubre el flujo de conceptos → obligaciones → abonos. No convierte automáticamente los modelos heredados Pago/Cooperacion ni añade reversas, conciliación de identidad o cambios en responsables de manzana.
+
+### Verificación de Mi acceso y trazabilidad
+
+- 44 pruebas específicas de identidad, aislamiento financiero, trazabilidad y migración aprobadas.
+- Suite completa: **212 ejecutadas, 205 aprobadas, 5 fallos y 2 errores**. Los siete casos que no pasan siguen siendo los mismos de la línea base previa.
+- La prueba de migración usa una base temporal: conserva un concepto, obligación y abono anteriores con sus importes/notas, sin atribuir autor ni inventar actividad al actualizar el esquema.
+- También se prueba autoría desde admin e inline, referencias en búsqueda/CSV, conservación de evidencia tras borrar el concepto, denegación de edición/borrado de bitácora y rollback de concepto/generación/abono cuando falla el registro de evidencia.
+- No se ha ejecutado esta migración contra el VPS ni contra datos reales del cliente. La reconciliación del historial productivo de migraciones sigue siendo un requisito antes de desplegar.

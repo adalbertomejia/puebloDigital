@@ -10,7 +10,7 @@ from .models import Abono, ConceptoTesoreria, ObligacionCiudadano
 class BuscarAportacionesForm(DashboardFormMixin, forms.Form):
     """Valida la URL compartible de la búsqueda de movimientos."""
 
-    q = forms.CharField(required=False, label="Buscar ciudadano, contrato o concepto")
+    q = forms.CharField(required=False, label="Buscar ciudadano, contrato, concepto o referencia")
     mes = forms.ChoiceField(required=False, choices=[("todos", "Todos")], label="Mes")
     anio = forms.ChoiceField(required=False, choices=[("todos", "Todos")], label="Año")
     naturaleza = forms.ChoiceField(
@@ -45,7 +45,7 @@ class BuscarAportacionesForm(DashboardFormMixin, forms.Form):
         self.fields["anio"].choices += [(str(a), str(a)) for a in anios]
         self.fields["manzana"].choices += [(str(m.pk), str(m)) for m in manzanas]
         self.fields["comite"].choices += [(str(c.pk), c.nombre) for c in comites]
-        self.fields["q"].widget.attrs.update({"placeholder": "Nombre, apellidos, contrato o concepto", "autocomplete": "off"})
+        self.fields["q"].widget.attrs.update({"placeholder": "Nombre, contrato, concepto o referencia", "autocomplete": "off"})
         self.fields["concepto"].widget.attrs["placeholder"] = "Nombre o descripción"
         self._apply_dashboard_widgets()
 
@@ -88,7 +88,7 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
 class AbonoForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Abono
-        fields = ["monto", "fecha", "notas"]
+        fields = ["monto", "fecha", "referencia", "notas"]
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "notas": forms.Textarea(attrs={"rows": 3})}
         labels = {"monto": "Monto a abonar", "fecha": "Fecha", "notas": "Notas"}
 

@@ -31,6 +31,8 @@ from apps.operacion.services import (
 )
 from apps.tesoreria.models import Cooperacion, Pago
 from apps.tesoreria.services import generar_obligaciones_faltantes
+from apps.tesoreria.auditoria import registrar_movimiento
+from apps.tesoreria.models import RegistroFinanciero
 from apps.tesoreria.queries import (
     abonos_filtrados,
     aplicar_filtros_obligaciones,
@@ -1615,13 +1617,14 @@ def exportar_tesoreria_csv(request):
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response)
-    writer.writerow(["ID", "Naturaleza", "Concepto", "Descripción", "Comité", "Alcance", "Manzana", "Fecha", "Año del periodo", "Monto base", "Obligaciones totales", "Pagadas", "Pendientes", "Canceladas", "Total asignado", "Total abonado", "Saldo pendiente", "Estado general"])
+    writer.writerow(["ID", "Naturaleza", "Concepto", "Descripción", "Comité", "Alcance", "Manzana", "Fecha", "Año del periodo", "Monto base", "Obligaciones totales", "Pagadas", "Pendientes", "Canceladas", "Total asignado", "Total abonado", "Saldo pendiente", "Estado general", "Registrado por", "Fecha de registro"])
     for c in conceptos.iterator():
         writer.writerow([c.pk, c.get_naturaleza_display(), c.concepto, c.descripcion or "", c.comite.nombre,
             c.get_alcance_display(), str(c.manzana) if c.manzana_id else "Sin asignar", c.fecha.isoformat(),
             c.anio_periodo or c.fecha.year, c.monto_individual, c.cantidad_obligaciones, c.cantidad_pagada,
             c.cantidad_pendiente, c.cantidad_cancelada, c.total_asignado, c.total_abonado,
-            c.saldo_pendiente, _etiqueta_estado_general(c.estado_general)])
+            c.saldo_pendiente, _etiqueta_estado_general(c.estado_general),
+            c.creado_por.get_username() if c.creado_por else "Autor no registrado", c.created_at.isoformat()])
     return response
 
 
@@ -1857,7 +1860,7 @@ def resumen_aportaciones(request):
         "reciente": ("-ultima_aportacion", "-total_abonado", "obligacion__ciudadano_id"),
     }
     mayores_qs = mayores_qs.order_by(*ordenes_ciudadanos[orden_ciudadanos])
-    movimientos_qs = base.select_related(
+    movimientos_qs = base.select_related("creado_por",
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
         "obligacion__concepto__manzana", "obligacion__concepto__comite",
     ).order_by("-fecha", "-created_at", "-pk")
@@ -2012,7 +2015,7 @@ def resumen_aportaciones(request):
 def exportar_aportaciones_csv(request):
     abonos = abonos_filtrados(request.GET, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")).select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
-        "obligacion__concepto__manzana", "obligacion__concepto__comite",
+        "obligacion__concepto__manzana", "obligacion__concepto__comite", "creado_por",
     ).order_by("-fecha", "-created_at", "-pk")
     partes = ["aportaciones"]
     naturaleza = request.GET.get("naturaleza")
@@ -2027,7 +2030,7 @@ def exportar_aportaciones_csv(request):
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response)
-    writer.writerow(["ID de abono", "Fecha", "Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Naturaleza", "Concepto", "Comité", "Alcance", "Manzana del concepto", "Monto abonado", "Estado de la obligación"])
+    writer.writerow(["ID de abono", "Fecha", "Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Naturaleza", "Concepto", "Comité", "Alcance", "Manzana del concepto", "Monto abonado", "Estado de la obligación", "Registrado por", "Fecha de registro", "Referencia del comprobante"])
     for abono in abonos.iterator(chunk_size=1000):
         obligacion, concepto, ciudadano = abono.obligacion, abono.obligacion.concepto, abono.obligacion.ciudadano
         writer.writerow([
@@ -2037,12 +2040,15 @@ def exportar_aportaciones_csv(request):
             concepto.get_naturaleza_display(), concepto.concepto, concepto.comite.nombre,
             concepto.get_alcance_display(), str(concepto.manzana) if concepto.manzana_id else "Sin asignar",
             abono.monto, obligacion.get_estado_display(),
+            abono.creado_por.get_username() if abono.creado_por else "Autor no registrado",
+            abono.created_at.isoformat(), abono.referencia,
         ])
     return response
 
 
 @login_required
 @acceso_financiero_requerido
+@transaction.atomic
 def crear_concepto_tesoreria(request, pk=None):
     concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user), pk=pk) if pk else None
     if not _can_modify_tesoreria(request.user):
@@ -2050,7 +2056,14 @@ def crear_concepto_tesoreria(request, pk=None):
         return redirect("tesoreria_operativa")
     form = ConceptoTesoreriaForm(request.POST or None, instance=concepto, usuario=request.user)
     if request.method == "POST" and form.is_valid():
-        obj = form.save()
+        obj = form.save(commit=False)
+        if concepto is None:
+            obj.creado_por = request.user
+        obj.save()
+        if concepto is None or form.has_changed():
+            registrar_movimiento(request.user, obj,
+                RegistroFinanciero.Acciones.CREAR if concepto is None else RegistroFinanciero.Acciones.EDITAR,
+                detalle={"campos": form.changed_data})
         messages.success(request, "Se guardó correctamente el concepto de tesorería.")
         return redirect("tesoreria_concepto_detalle", obj.pk)
     can_delete = bool(concepto and _can_delete_tesoreria(request.user))
@@ -2061,7 +2074,7 @@ def crear_concepto_tesoreria(request, pk=None):
 @login_required
 @acceso_financiero_requerido
 def eliminar_concepto_tesoreria(request, pk):
-    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
     if not _can_delete_tesoreria(request.user):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
@@ -2075,6 +2088,8 @@ def eliminar_concepto_tesoreria(request, pk):
     if request.method == "POST":
         try:
             with transaction.atomic():
+                registrar_movimiento(request.user, concepto, RegistroFinanciero.Acciones.ELIMINAR,
+                    detalle={"obligaciones": cantidad_obligaciones, "abonos": cantidad_abonos, "total_abonado": str(total_abonado)})
                 concepto.delete()
         except ProtectedError:
             messages.error(request, "No se pudo eliminar porque existen registros protegidos relacionados.")
@@ -2093,7 +2108,7 @@ def generar_obligaciones_tesoreria(request, pk):
         return redirect("tesoreria_operativa")
     concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     try:
-        resultado = generar_obligaciones_faltantes(concepto)
+        resultado = generar_obligaciones_faltantes(concepto, usuario=request.user)
     except ValidationError as error:
         detalle = "; ".join(error.messages)
         messages.error(request, f"No se generaron obligaciones: {detalle}")
@@ -2151,7 +2166,7 @@ def _metricas_concepto(concepto):
 @login_required
 @acceso_financiero_requerido
 def tesoreria_concepto_detalle(request, pk):
-    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
     metricas = _metricas_concepto(concepto)
     concepto.cantidad_obligaciones = metricas["total"]
     concepto.cantidad_pagada = metricas["pagadas"]
@@ -2159,7 +2174,7 @@ def tesoreria_concepto_detalle(request, pk):
     concepto.cantidad_cancelada = metricas["canceladas"]
     obligaciones = anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto))
     obligaciones = aplicar_filtros_obligaciones(obligaciones, request.GET).prefetch_related(
-        Prefetch("abonos", queryset=Abono.objects.order_by("-fecha", "-created_at"))
+        Prefetch("abonos", queryset=Abono.objects.select_related("creado_por").order_by("-fecha", "-created_at"))
     )
     page = Paginator(obligaciones, 25).get_page(request.GET.get("page"))
     page.previous_querystring = _page_querystring(request, "page", page.previous_page_number()) if page.has_previous() else ""
@@ -2187,7 +2202,7 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff"); writer = csv.writer(response)
-    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono"])
+    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono", "Registrado por", "Fecha de registro"])
     for o in obligaciones.iterator():
         c = o.ciudadano
         writer.writerow([c.nombre_completo, c.nombre, c.apellido_paterno, c.apellido_materno or "Sin información",
@@ -2195,7 +2210,8 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
             c.get_sexo_display() or "No especificado", c.fecha_nacimiento.isoformat() if c.fecha_nacimiento else "Sin información",
             c.edad_actual if c.edad_actual is not None else "Sin información", c.get_motivo_alta_display() or "Sin información",
             o.monto_asignado, o.total_abonado_calc, o.saldo_pendiente_calc, o.get_estado_display(),
-            o.ultimo_abono.isoformat() if o.ultimo_abono else "Sin información"])
+            o.ultimo_abono.isoformat() if o.ultimo_abono else "Sin información",
+            o.creado_por.get_username() if o.creado_por else "Autor no registrado", o.created_at.isoformat()])
     return response
 
 
@@ -2210,7 +2226,7 @@ def acreditar_obligacion(request, pk):
         form = AbonoForm(request.POST, obligacion=obligacion)
         if form.is_valid():
             try:
-                obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"])
+                obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"])
                 messages.success(request, "Se registró correctamente el abono.")
                 siguiente = request.POST.get("next", "")
                 if siguiente.startswith(f"/tesoreria/conceptos/{obligacion.concepto_id}/"):
@@ -2221,4 +2237,20 @@ def acreditar_obligacion(request, pk):
     else:
         form = AbonoForm(obligacion=obligacion)
     siguiente = request.GET.get("next", "")
-    return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.all(), "next": siguiente})
+    return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.select_related("creado_por"), "next": siguiente})
+
+
+@login_required
+@acceso_financiero_requerido
+def actividad_financiera(request):
+    registros = limitar_finanzas(RegistroFinanciero.objects.select_related("usuario", "comite"), request.user)
+    comite = request.GET.get("comite", "")
+    if comite.isdigit():
+        registros = registros.filter(comite_id=int(comite))
+    concepto = request.GET.get("concepto", "")
+    if concepto.isdigit():
+        registros = registros.filter(concepto_id_registrado=int(concepto))
+    pagina = _pagina_aportaciones(request, registros, "pagina", 50)
+    return render(request, "dashboard/actividad_financiera.html", {
+        "pagina": pagina, "comites": comites_financieros(request.user), "comite_actual": comite,
+    })

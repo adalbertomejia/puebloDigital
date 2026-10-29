@@ -77,7 +77,7 @@ def obtener_abonos_ciudadano(ciudadano, *, usuario=None):
     if usuario is not None:
         abonos = limitar_finanzas(abonos, usuario, "obligacion__concepto__comite_id")
     return abonos.select_related(
-        "obligacion", "obligacion__concepto", "obligacion__concepto__comite",
+        "creado_por", "obligacion", "obligacion__concepto", "obligacion__concepto__comite",
         "obligacion__concepto__manzana",
     ).order_by("-fecha", "-created_at", "-pk")
 

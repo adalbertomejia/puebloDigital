@@ -34,7 +34,7 @@ def anotar_conceptos(queryset=None):
         total=Sum("monto_asignado")
     ).values("total")[:1]
     abonado = abonos.values("obligacion__concepto").annotate(total=Sum("monto")).values("total")[:1]
-    queryset = queryset.select_related("comite", "manzana").annotate(
+    queryset = queryset.select_related("comite", "manzana", "creado_por").annotate(
         cantidad_obligaciones=cuenta(),
         cantidad_pagada=cuenta(ObligacionCiudadano.Estados.PAGADO),
         cantidad_pendiente=cuenta(ObligacionCiudadano.Estados.PENDIENTE),
@@ -88,7 +88,7 @@ def anotar_obligaciones(queryset):
     ultimo = Abono.objects.filter(obligacion=OuterRef("pk")).values("obligacion").annotate(
         fecha=Max("fecha")
     ).values("fecha")[:1]
-    return queryset.select_related("ciudadano", "ciudadano__manzana").annotate(
+    return queryset.select_related("ciudadano", "ciudadano__manzana", "creado_por").annotate(
         total_abonado_calc=Coalesce(Subquery(abonado, output_field=DINERO), CERO),
         ultimo_abono=Subquery(ultimo),
     ).annotate(
@@ -163,7 +163,7 @@ def buscar_movimientos_aportaciones(filtros, *, queryset=None):
     if queryset is None:
         queryset = Abono.objects.all()
     queryset = queryset.select_related(
-        "obligacion__ciudadano", "obligacion__ciudadano__manzana",
+        "creado_por", "obligacion__ciudadano", "obligacion__ciudadano__manzana",
         "obligacion__concepto", "obligacion__concepto__manzana",
     )
     params = {
@@ -181,6 +181,7 @@ def buscar_movimientos_aportaciones(filtros, *, queryset=None):
             | Q(obligacion__ciudadano__numero_contrato__icontains=termino)
             | Q(obligacion__concepto__concepto__icontains=termino)
             | Q(obligacion__concepto__descripcion__icontains=termino)
+            | Q(referencia__icontains=termino)
         )
         if termino.isdigit():
             coincidencia |= Q(pk=int(termino))
