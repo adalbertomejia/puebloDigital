@@ -116,8 +116,8 @@ class PerfilAccesoInline(AdministracionGlobal, admin.StackedInline):
     max_num = 1
     fields = ("user",)
     autocomplete_fields = ("user",)
-    verbose_name = "Cuenta de acceso"
-    verbose_name_plural = "Cuenta vinculada"
+    verbose_name = "Vínculo de cuenta y ciudadano"
+    verbose_name_plural = "Cuenta vinculada al ciudadano"
 
 
 @admin.register(Ciudadano)

@@ -1,6 +1,6 @@
 # Probar la herencia financiera por comité
 
-Estos pasos son para una copia local de desarrollo. No requieren cambios de esquema y no deben ejecutarse sobre los datos del VPS.
+Estos pasos son para una copia local de desarrollo y no deben ejecutarse sobre los datos del VPS. La migración de nombres de identidad/cargos solo registra opciones de presentación, sin cambios de esquema ni datos.
 
 ## Actualizar y ejecutar las pruebas
 
@@ -9,6 +9,7 @@ Con el repositorio local sin cambios pendientes y el entorno Python del proyecto
 ```sh
 git switch codex/permisos-presidente
 git pull --ff-only origin codex/permisos-presidente
+python manage.py migrate
 python manage.py check
 python manage.py test apps.tesoreria.test_autorizacion --noinput
 ```
@@ -21,8 +22,8 @@ Desde una cuenta superusuaria de tu base local:
 
 1. Crear o elegir dos comités activos, por ejemplo Agua y Feria.
 2. Crear cuentas activas diferentes para presidente de Agua, tesorero de Agua, presidente de Feria y tesorero de Feria. No necesitan staff ni permisos Django de tesorería.
-3. Asignar sus cargos mediante `UsuarioApp`, en `/admin/comites/usuarioapp/`, con el comité y rol correspondientes y la asignación activa.
-4. Usar algunos ciudadanos de prueba activos. El vínculo de identidad en `PerfilAcceso` no es un requisito nuevo de este corte; su consistencia con cargos se trabajará después.
+3. Asignar sus cargos en **Cargos de comité** (`UsuarioApp`), en `/admin/comites/usuarioapp/`, con el comité y rol correspondientes y la asignación activa.
+4. Usar algunos ciudadanos de prueba activos. El vínculo de identidad en **Vínculos de cuenta y ciudadano** (`PerfilAcceso`) no es un requisito nuevo de este corte; su consistencia con cargos se trabajará después.
 5. Abrir sesiones separadas para cada cuenta, en diferentes perfiles de navegador o cerrando sesión entre pruebas. El login de la aplicación lleva al dashboard; Tesorería aparece en el menú de quienes tienen cargo financiero.
 
 ## Recorrido esperado

@@ -14,6 +14,10 @@ class ComiteAdmin(AdministracionGlobal, admin.ModelAdmin):
 
 @admin.register(PerfilAcceso)
 class PerfilAccesoAdmin(AdministracionGlobal, admin.ModelAdmin):
+    fieldsets = ((None, {
+        "fields": ("user", "ciudadano"),
+        "description": "Vincula una cuenta con su ciudadano. Esta identidad se muestra en Mi acceso; los cargos se asignan en Cargos de comité.",
+    }),)
     list_display = ("user", "ciudadano", "created_at")
     search_fields = (
         "user__username",
@@ -29,6 +33,16 @@ class PerfilAccesoAdmin(AdministracionGlobal, admin.ModelAdmin):
 
 @admin.register(UsuarioApp)
 class UsuarioAppAdmin(AdministracionGlobal, admin.ModelAdmin):
+    fieldsets = (
+        ("Asignación del cargo", {
+            "fields": ("user", "comite", "rol", "activo"),
+            "description": "Asigna un rol a una cuenta dentro de un comité. Una cuenta puede tener varios cargos.",
+        }),
+        ("Ciudadano registrado en el cargo", {
+            "fields": ("ciudadano",),
+            "description": "Este dato pertenece al cargo y se conserva tal como fue registrado. Para establecer la identidad que aparece en Mi acceso, usa Vínculos de cuenta y ciudadano.",
+        }),
+    )
     list_display = ('user', 'comite', 'rol', 'activo', 'created_at')
     list_filter = ('rol', 'activo', 'comite')
     search_fields = ('user__username', 'user__first_name', 'user__last_name', 'ciudadano__nombre', 'ciudadano__apellido_paterno')

@@ -82,3 +82,12 @@ Los permisos Django globales de operación del segundo paso siguen pendientes de
 - Los fixtures funcionales existentes de tesorería declaran ahora sus cargos de comité. La cuenta limitada sin cargo espera 404 financiero en lugar de acceso de edición sin botón de borrado.
 - `manage.py check` sin incidencias, `makemigrations --check --dry-run` sin cambios y `git diff --check` sin errores.
 - Guía manual y comandos: [Probar la herencia financiera por comité](pruebas_tesoreria_comites.md).
+
+## Nombres de administración de identidad y cargos
+
+Para distinguir las dos secciones antes llamadas «Perfiles de acceso»:
+
+- **Vínculos de cuenta y ciudadano** (`PerfilAcceso`): identidad general uno-a-uno de la cuenta; fuente que muestra «Mi acceso» y que se usa para derivar responsabilidad territorial.
+- **Cargos de comité** (`UsuarioApp`): asignaciones de cuenta, comité, rol y estado activo. Una cuenta puede tener varios cargos.
+
+El campo opcional de ciudadano ya capturado dentro del cargo se conserva y el formulario lo distingue del vínculo general. Este renombre no sincroniza, reasigna ni elimina registros ni cambia las reglas de autorización. La conciliación de vínculos existentes sigue pendiente. Se mantienen nombres técnicos, tablas, URLs y códigos de permisos. La migración de esta entrega solo actualiza opciones de presentación de los modelos, sin operaciones de esquema o datos.
