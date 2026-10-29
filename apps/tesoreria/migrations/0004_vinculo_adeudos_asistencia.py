@@ -4,6 +4,53 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
+class AddNullableUniqueRelation(migrations.AddField):
+    """Avoid SQLite's table copy for a nullable unique foreign key.
+
+    Older installations can contain nullable legacy monetary columns although
+    the migration state declares them NOT NULL. Adding these unrelated links
+    must not rewrite those columns or fabricate replacement amounts.
+    """
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor != "sqlite":
+            return super().database_forwards(app_label, schema_editor, from_state, to_state)
+        model = to_state.apps.get_model(app_label, self.model_name)
+        if not self.allow_migrate_model(schema_editor.connection.alias, model):
+            return
+        field = model._meta.get_field(self.name)
+        # SQLite supports ADD COLUMN for a nullable non-unique foreign key.
+        # Enforce uniqueness separately with an equivalent unique index.
+        column = models.ForeignKey(field.remote_field.model, on_delete=field.remote_field.on_delete,
+                                   null=True, db_index=False)
+        column.set_attributes_from_name(field.name)
+        column.model = model
+        schema_editor.add_field(model, column)
+        quote = schema_editor.quote_name
+        schema_editor.execute("CREATE UNIQUE INDEX %s ON %s (%s)" % (
+            quote(f"tes_concepto_{self.name}_unique"), quote(model._meta.db_table), quote(field.column),
+        ))
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        model = from_state.apps.get_model(app_label, self.model_name)
+        if not self.allow_migrate_model(schema_editor.connection.alias, model):
+            return
+        if schema_editor.connection.vendor == "sqlite" and schema_editor.connection.features.can_alter_table_drop_column:
+            index = f"tes_concepto_{self.name}_unique"
+            with schema_editor.connection.cursor() as cursor:
+                constraints = schema_editor.connection.introspection.get_constraints(cursor, model._meta.db_table)
+            if index in constraints:
+                quote = schema_editor.quote_name
+                schema_editor.execute("DROP INDEX %s" % quote(index))
+                schema_editor.execute("ALTER TABLE %s DROP COLUMN %s" % (
+                    quote(model._meta.db_table), quote(model._meta.get_field(self.name).column),
+                ))
+                return
+        # Includes databases that already applied the original 0004, whose
+        # uniqueness was embedded in the table rather than a named index.
+        return super().database_backwards(app_label, schema_editor, from_state, to_state)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -12,12 +59,12 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
+        AddNullableUniqueRelation(
             model_name='conceptotesoreria',
             name='faena',
             field=models.OneToOneField(blank=True, editable=False, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='concepto_financiero', to='operacion.faena'),
         ),
-        migrations.AddField(
+        AddNullableUniqueRelation(
             model_name='conceptotesoreria',
             name='junta',
             field=models.OneToOneField(blank=True, editable=False, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='concepto_financiero', to='operacion.junta'),

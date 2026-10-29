@@ -40,3 +40,11 @@ La migración `tesoreria.0004_vinculo_adeudos_asistencia` añade dos relaciones 
 Esta entrega integra el panel de captura normal; la edición directa del administrador no ejecuta esta sincronización. No se han aplicado migraciones ni cambios sobre la base de producción, ni publicado el borrador.
 
 Verificación de esta entrega: 10 pruebas nuevas pasan; la regresión enfocada de 92 pruebas pasó antes del último caso añadido. La suite explícita completa ejecutó 252 pruebas y conservó las 5 fallas y 2 errores preexistentes. Chromium con datos sintéticos verificó guardar una fila sin guardar la otra, guardar todos los cambios, actualización de contadores, retirada de adeudo y búsqueda por contrato sin recargar el documento. No se probó contra datos de producción.
+
+### Compatibilidad de la migración 0004 con bases SQLite históricas
+
+Si aparece `NOT NULL constraint failed: new__tesoreria_conceptotesoreria.monto_individual`, SQLite está copiando la tabla al añadir una relación única y encuentra un importe histórico NULL, aunque el estado de migraciones declare ese campo obligatorio. La versión corregida de 0004 añade las columnas opcionales sin copiar la tabla y utiliza índices únicos equivalentes; conserva las claves foráneas. Otros motores mantienen la operación estándar de Django.
+
+Esta corrección no sustituye importes por cero ni genera cobros. Los conceptos con importe NULL requieren revisión posterior con sus datos de origen. Hacer respaldo de la base, actualizar la rama y repetir `python manage.py migrate`. No utilizar `--fake`, borrar la base ni marcar 0004 como aplicada manualmente. Si 0004 ya estaba aplicada correctamente, Django la mantiene aplicada y no la ejecuta otra vez.
+
+La verificación reproduce una tabla histórica con monto NULL y comprueba avance y reversión de 0004 en SQLite, conservación de importes y abonos, unicidad por evento e integridad de las claves foráneas. Pasan 17 pruebas de migraciones, adeudos y recibos.
