@@ -39,8 +39,8 @@
   </section>
 
   <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-    Esta pantalla resume las asignaciones activas. La aplicación de estos alcances en cada operación
-    del sistema se incorporará por etapas.
+    Cada cargo se aplica únicamente al ámbito indicado. Los cargos de diferentes comités
+    conservan sus funciones por separado.
   </div>
 
   <div class="grid gap-4 md:grid-cols-2">
@@ -60,6 +60,16 @@
           <p class="mt-1 text-base text-slate-800">
             {% if responsabilidad.manzana %}Manzana: {{ responsabilidad.manzana.nombre }}{% elif responsabilidad.comite %}Comité: {{ responsabilidad.comite.nombre }}{% else %}Toda la plataforma{% endif %}
           </p>
+        </div>
+        <div class="mt-5 border-t border-slate-100 pt-4">
+          <h3 class="text-sm font-semibold text-slate-900">Funciones de este cargo</h3>
+          {% if responsabilidad.funciones %}
+            <ul class="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
+              {% for funcion in responsabilidad.funciones %}<li>{{ funcion }}</li>{% endfor %}
+            </ul>
+          {% else %}
+            <p class="mt-2 text-sm text-slate-600">Este cargo no tiene funciones operativas asignadas.</p>
+          {% endif %}
         </div>
       </article>
     {% empty %}

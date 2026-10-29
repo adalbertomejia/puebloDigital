@@ -91,3 +91,7 @@ Para distinguir las dos secciones antes llamadas «Perfiles de acceso»:
 - **Cargos de comité** (`UsuarioApp`): asignaciones de cuenta, comité, rol y estado activo. Una cuenta puede tener varios cargos.
 
 El campo opcional de ciudadano ya capturado dentro del cargo se conserva y el formulario lo distingue del vínculo general. Este renombre no sincroniza, reasigna ni elimina registros ni cambia las reglas de autorización. La conciliación de vínculos existentes sigue pendiente. Se mantienen nombres técnicos, tablas, URLs y códigos de permisos. La migración de esta entrega solo actualiza opciones de presentación de los modelos, sin operaciones de esquema o datos.
+
+## Mi acceso: funciones de cada cargo
+
+La pantalla conserva la identidad general y las asignaciones activas, y describe las funciones de cada una por separado: presidente (eventos generales y tesorería del comité), tesorero (tesorería del comité), responsable territorial (operación de su manzana) y administrador general. Los cargos sin capacidades operativas asignadas lo indican expresamente. Estas descripciones no conceden permisos ni mezclan capacidades entre comités; los controles de servidor continúan aplicándose en cada operación.

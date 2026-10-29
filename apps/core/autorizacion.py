@@ -13,6 +13,32 @@ class ResponsabilidadActiva:
     manzana: object = None
     comite: object = None
 
+    @property
+    def funciones(self):
+        """Describe this assignment, without granting additional permissions."""
+        finanzas = (
+            "Consultar finanzas y exportar reportes de este comité",
+            "Crear y editar conceptos de este comité",
+            "Generar obligaciones y registrar abonos de este comité",
+            "Eliminar conceptos de este comité con confirmación",
+        )
+        if self.tipo == "GLOBAL":
+            return (
+                "Administrar cuentas, vínculos y cargos",
+                "Gestionar eventos y finanzas de todos los comités",
+            )
+        if self.tipo == "MANZANA":
+            return (
+                "Consultar el padrón de mi manzana",
+                "Crear y gestionar eventos de mi manzana",
+                "Capturar y exportar participantes de mi manzana en eventos generales",
+            )
+        if self.tipo == "COMITE" and self.rol == "PRESIDENTE":
+            return ("Crear y gestionar eventos generales de este comité",) + finanzas
+        if self.tipo == "COMITE" and self.rol == "TESORERO":
+            return finanzas
+        return ()
+
 
 def responsabilidades_activas(usuario):
     """Return current block and committee assignments for an authenticated user.

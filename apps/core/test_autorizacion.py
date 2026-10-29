@@ -200,3 +200,29 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertContains(response, "Centro inactivo")
         self.assertContains(response, "Inactivo")
         self.assertEqual(response.context["responsabilidades"], [])
+
+    def test_mi_acceso_describe_funciones_por_cargo_sin_mezclar_comites(self):
+        usuario = get_user_model().objects.create_user(username="cargos-distintos")
+        agua = Comite.objects.create(nombre="Comité Agua")
+        feria = Comite.objects.create(nombre="Comité Feria")
+        UsuarioApp.objects.create(user=usuario, comite=agua, rol="PRESIDENTE")
+        UsuarioApp.objects.create(user=usuario, comite=feria, rol="TESORERO")
+        self.client.force_login(usuario)
+        response = self.client.get(reverse("mis_responsabilidades"))
+        responsabilidades = {r.comite.pk: r for r in response.context["responsabilidades"]}
+        self.assertIn("Crear y gestionar eventos generales de este comité", responsabilidades[agua.pk].funciones)
+        self.assertNotIn("Crear y gestionar eventos generales de este comité", responsabilidades[feria.pk].funciones)
+        self.assertIn("Generar obligaciones y registrar abonos de este comité", responsabilidades[feria.pk].funciones)
+        self.assertContains(response, "Funciones de este cargo", count=2)
+        self.assertContains(response, "Comité Agua")
+        self.assertContains(response, "Comité Feria")
+
+    def test_cargo_sin_capacidades_no_promete_funciones_financieras(self):
+        usuario = get_user_model().objects.create_user(username="solo-secretario")
+        comite = Comite.objects.create(nombre="Comité local")
+        UsuarioApp.objects.create(user=usuario, comite=comite, rol="SECRETARIO")
+        self.client.force_login(usuario)
+        response = self.client.get(reverse("mis_responsabilidades"))
+        self.assertContains(response, "Secretario")
+        self.assertContains(response, "Este cargo no tiene funciones operativas asignadas.")
+        self.assertNotContains(response, "Generar obligaciones y registrar abonos de este comité")
