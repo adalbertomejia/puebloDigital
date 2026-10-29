@@ -522,10 +522,16 @@ def dashboard_operativo(request):
 
 @login_required
 def mis_responsabilidades(request):
+    from apps.comites.models import PerfilAcceso
+
+    perfil = PerfilAcceso.objects.select_related("ciudadano__manzana").filter(user=request.user).first()
     return render(
         request,
         "dashboard/mis_responsabilidades.html",
-        {"responsabilidades": responsabilidades_activas(request.user)},
+        {
+            "responsabilidades": responsabilidades_activas(request.user),
+            "ciudadano_vinculado": perfil.ciudadano if perfil else None,
+        },
     )
 
 
