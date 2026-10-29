@@ -1,4 +1,5 @@
 import csv
+import re
 import calendar
 from datetime import date
 from decimal import Decimal
@@ -17,6 +18,7 @@ from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum, Subquer
 from django.db.models.functions import Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.text import slugify
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
@@ -2148,8 +2150,8 @@ def acreditar_obligacion(request, pk):
         form = AbonoForm(request.POST, obligacion=obligacion)
         if form.is_valid():
             try:
-                obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"])
-                messages.success(request, "Se registró correctamente el abono.")
+                abono = obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"])
+                messages.success(request, format_html('Se registró correctamente el abono. <a href="{}" target="_blank" rel="noopener">Imprimir recibo {}</a>', reverse("recibo_abono", args=[abono.folio_recibo]), abono.folio_recibo))
                 siguiente = request.POST.get("next", "")
                 if siguiente.startswith(f"/tesoreria/conceptos/{obligacion.concepto_id}/"):
                     return redirect(siguiente)
@@ -2222,3 +2224,17 @@ def seleccionar_obligacion(request):
     buscar = request.GET.get("buscar", "").strip()
     opciones = obligaciones_pendientes(request.user).filter(filtro_busqueda_ciudadano(buscar, prefijo="ciudadano__", extra_fields=("ciudadano__toma__numero_toma",)))[:20] if len(buscar) >= 2 else []
     return render(request, "dashboard/seleccionar_obligacion.html", {"form": form, "buscar": buscar, "opciones": opciones})
+
+
+@login_required
+@acceso_financiero_requerido
+def recibo_abono(request, folio=None):
+    folio = (folio or request.GET.get("folio", "")).strip().upper()
+    if not folio:
+        return render(request, "dashboard/buscar_recibo.html")
+    coincidencia = re.fullmatch(r"PD-A-([0-9]{8,19})", folio)
+    if not coincidencia or not 0 < int(coincidencia[1]) <= 2**63 - 1:
+        return render(request, "dashboard/buscar_recibo.html", {"folio": folio, "error": "No se encontró el recibo."}, status=404)
+    abonos = limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")
+    abono = get_object_or_404(abonos.select_related("obligacion__ciudadano__manzana", "obligacion__concepto__comite", "creado_por"), pk=int(coincidencia[1]))
+    return render(request, "dashboard/recibo_abono.html", {"abono": abono, "obligacion": abono.obligacion})

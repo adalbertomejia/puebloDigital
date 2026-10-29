@@ -1,1 +1,3 @@
 <span class="block text-xs text-slate-500">{% if registro.creado_por %}Registrado por {{ registro.creado_por.get_username }}{% else %}Autor no registrado{% endif %} · {{ registro.created_at|date:'d/m/Y H:i' }}{% if registro.referencia %} · Referencia: {{ registro.referencia }}{% endif %}</span>
+
+{% if registro.folio_recibo %}<a class="text-teal-700 underline" href="{% url 'recibo_abono' registro.folio_recibo %}" target="_blank" rel="noopener">Recibo {{ registro.folio_recibo }}</a>{% endif %}

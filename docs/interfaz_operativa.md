@@ -15,3 +15,13 @@ Instalar requirements.txt en el entorno virtual y recopilar estáticos con `pyth
 ## Verificación
 
 13 pruebas nuevas de interfaz, aislamiento de selectores, paginación y retorno pasan. La suite conjunta ejecuta 237 pruebas y conserva las 5 fallas y 2 errores previamente identificados. El navegador con datos sintéticos de 2,000 ciudadanos valida búsqueda por toma, selectores dependientes, retorno al padrón y filtrado de agua sin recargar el documento. No se ha modificado producción.
+
+## Recibos de tesorería de 80 mm
+
+Cada abono tiene un folio `PD-A-` seguido por su identificador con al menos ocho cifras (por ejemplo, `PD-A-00000123`). El folio deriva de la clave primaria del abono: es estable, distingue abonos y también funciona para registros anteriores, sin migraciones. La referencia externa del comprobante sigue siendo independiente.
+
+Después de registrar un abono aparece el enlace para imprimirlo. El historial de abonos, el expediente y los resultados financieros permiten reimprimirlo. Desde Tesorería, «Buscar recibo por folio» localiza el abono dentro de los comités autorizados; conocer un folio ajeno no otorga acceso.
+
+El ticket incluye nombre e ID del ciudadano, contrato, manzana, fecha del abono, comité, concepto, tipo, monto de ese abono, autor y referencia cuando existe. El pie indica «Conserve este recibo». La reimpresión consulta los datos actuales relacionados; no representa una instantánea histórica de nombres o domicilios. No genera ni duplica pagos.
+
+En el diálogo de impresión seleccionar la impresora y papel de 80 mm, escala 100 %, y desactivar encabezados y pies del navegador. El contenido utiliza 72 mm, dejando 4 mm por lado. El largo depende de la configuración de la impresora. Se verificó el ancho y la ocultación de controles en Chromium; falta comprobar el resultado en la impresora física.

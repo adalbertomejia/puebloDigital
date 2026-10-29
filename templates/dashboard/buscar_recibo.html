@@ -1,0 +1,15 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Buscar recibo{% endblock %}
+{% block content %}
+<section class="pd-panel max-w-3xl">
+  <h1 class="text-2xl font-bold">Buscar recibo por folio</h1>
+  <p>Consulta y reimprime recibos de tus comités.</p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  <form method="get" action="{% url 'buscar_recibo' %}">
+    <label for="folio">Folio del recibo</label>
+    <input id="folio" name="folio" value="{{ folio }}" placeholder="PD-A-00000001" maxlength="24" required>
+    <button class="pd-button pd-button--primary" type="submit">Buscar recibo</button>
+  </form>
+  <a href="{% url 'tesoreria_operativa' %}">Volver a Tesorería</a>
+</section>
+{% endblock %}

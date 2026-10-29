@@ -250,6 +250,10 @@ class Abono(TimeStampedModel):
         verbose_name_plural = "Abonos"
         ordering = ["-fecha", "-created_at"]
 
+    @property
+    def folio_recibo(self):
+        return f"PD-A-{self.pk:08d}" if self.pk is not None else ""
+
     def clean(self):
         if self.monto is not None and self.monto <= 0:
             raise ValidationError({"monto": "El monto del abono debe ser mayor que cero."})

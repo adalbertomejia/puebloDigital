@@ -6,6 +6,7 @@ from apps.tesoreria.selectores import CiudadanoFinancieroAutocomplete, Obligacio
 
 from apps.core.views import (
     seleccionar_obligacion,
+    recibo_abono,
     crear_cuota_mensual_agua,
     actividad_financiera,
     control_asistencias,
@@ -66,6 +67,8 @@ urlpatterns = [
     path('tesoreria/seleccionar-obligacion/', seleccionar_obligacion, name='seleccionar_obligacion'),
     path('selectores/ciudadanos-finanzas/', CiudadanoFinancieroAutocomplete.as_view(), name='ciudadano_financiero_autocomplete'),
     path('selectores/obligaciones-finanzas/', ObligacionFinancieraAutocomplete.as_view(), name='obligacion_financiera_autocomplete'),
+    path('tesoreria/recibos/', recibo_abono, name='buscar_recibo'),
+    path('tesoreria/recibos/<str:folio>/', recibo_abono, name='recibo_abono'),
     path('tesoreria/actividad/', actividad_financiera, name='actividad_financiera'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),
     path('tesoreria/aportaciones/buscar/', buscar_aportaciones, name='buscar_aportaciones'),

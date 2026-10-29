@@ -4,7 +4,7 @@
 {% block content %}
 {% if can_modify %}{% url 'crear_concepto_tesoreria' as crear_tesoreria_url %}{% endif %}
 {% include 'dashboard/components/module_header.html' with title='Tesorería' subtitle='Administra pagos, cooperaciones, obligaciones y abonos.' icon='💵' color='green' action_url=crear_tesoreria_url action_label='Nuevo concepto' %}
-<p class="mb-4"><a class="pd-button pd-button--success" href="{% url 'seleccionar_obligacion' %}">Registrar abono de un ciudadano</a></p>
+<p class="mb-4"><a class="pd-button pd-button--success" href="{% url 'seleccionar_obligacion' %}">Registrar abono de un ciudadano</a> <a class="pd-button pd-button--secondary" href="{% url 'buscar_recibo' %}">Buscar recibo por folio</a></p>
 <section class="grid md:grid-cols-4 gap-4 mb-6">
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total asignado{% if manzana_activa %} en {{ manzana_activa }}{% endif %}</p><p class="text-2xl font-bold">${{ metricas.total_asignado|floatformat:2 }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total abonado{% if manzana_activa %} en {{ manzana_activa }}{% endif %}</p><p class="text-2xl font-bold">${{ metricas.total_abonado|floatformat:2 }}</p></article>
