@@ -2,13 +2,15 @@ from django.db import transaction
 
 from apps.operacion.services import ResultadoGeneracion, obtener_ciudadanos_objetivo
 
-from .models import ConceptoTesoreria, ObligacionCiudadano
+from .models import ConceptoTesoreria, ObligacionCiudadano, RegistroFinanciero
+from .auditoria import registrar_movimiento
 
 
-def construir_obligacion(concepto, ciudadano_id):
+def construir_obligacion(concepto, ciudadano_id, *, usuario=None):
     """Build a new historical assignment; future financial rules belong here."""
     return ObligacionCiudadano(
         concepto=concepto,
+        creado_por=usuario,
         ciudadano_id=ciudadano_id,
         monto_asignado=concepto.monto_individual,
         estado=ObligacionCiudadano.Estados.PENDIENTE,
@@ -16,8 +18,11 @@ def construir_obligacion(concepto, ciudadano_id):
 
 
 @transaction.atomic
-def generar_obligaciones_faltantes(concepto):
+def generar_obligaciones_faltantes(concepto, *, usuario=None):
     """Create only obligations missing from the concept's current territory."""
+    # Serialize generation for this concept on databases with row locking so
+    # the recorded author/count describe this request's new obligations.
+    ConceptoTesoreria.objects.select_for_update().get(pk=concepto.pk)
     # The action is operational and may run long after the creation form was used.
     concepto.full_clean()
     objetivo_ids = list(obtener_ciudadanos_objetivo(concepto).values_list("pk", flat=True))
@@ -25,7 +30,7 @@ def generar_obligaciones_faltantes(concepto):
         concepto.obligaciones.filter(ciudadano_id__in=objetivo_ids).values_list("ciudadano_id", flat=True)
     )
     nuevas = [
-        construir_obligacion(concepto, ciudadano_id)
+        construir_obligacion(concepto, ciudadano_id, usuario=usuario)
         for ciudadano_id in objetivo_ids
         if ciudadano_id not in existentes_ids
     ]
@@ -42,6 +47,9 @@ def generar_obligaciones_faltantes(concepto):
     if creados and not concepto.registros_generados:
         ConceptoTesoreria.objects.filter(pk=concepto.pk).update(registros_generados=True)
         concepto.registros_generados = True
+    if creados and usuario is not None:
+        registrar_movimiento(usuario, concepto, RegistroFinanciero.Acciones.GENERAR,
+                             detalle={"creados": creados, "total_objetivo": len(objetivo_ids)})
     return ResultadoGeneracion(
         creados=creados,
         existentes=len(objetivo_ids) - creados,
