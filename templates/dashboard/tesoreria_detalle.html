@@ -31,6 +31,7 @@
         <tr>
           <td>
             <a class="text-teal-700 underline" href="{% url 'perfil_ciudadano' o.ciudadano_id %}?return_to={{ request.get_full_path|urlencode }}" aria-label="Ver expediente de {{ o.ciudadano.nombre_completo }}">{{ o.ciudadano.nombre_completo }}</a>
+            {% if o.toma_id %}<span class="block text-xs text-slate-500">Toma: {{ o.numero_toma_registrado }} · Contrato: {{ o.numero_contrato_registrado|default:"Sin contrato" }}</span>{% endif %}
             <details class="pd-obligaciones-table__historial">
               <summary class="text-xs text-indigo-600 cursor-pointer">Historial de abonos</summary>
               <ul>{% for a in o.abonos.all %}<li>{{ a.fecha }} · ${{ a.monto|floatformat:2 }} · {{ a.notas|default:'Sin notas' }}{% include 'dashboard/components/autoria_financiera.html' with registro=a %}</li>{% empty %}<li>Sin abonos.</li>{% endfor %}</ul>

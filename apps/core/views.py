@@ -11,7 +11,7 @@ from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponse, JsonResponse
 from django import forms
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models.deletion import ProtectedError
 from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum, Subquery, Value
 from django.db.models.functions import Coalesce, ExtractYear
@@ -23,6 +23,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.agua.models import Toma
+from apps.agua.autorizacion import acceso_agua_requerido, comite_agua, puede_operar_agua
+from apps.agua.forms import CuotaMensualAguaForm
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.operacion.services import (
     aplicar_filtros_eventos,
@@ -365,7 +367,8 @@ def _filtrar_tomas_operativas(queryset, params):
 
     if q:
         queryset = queryset.filter(
-            Q(numero_toma__icontains=q)
+            Q(ciudadano__numero_contrato__icontains=q)
+            | Q(numero_toma__icontains=q)
             | Q(ciudadano__nombre__icontains=q)
             | Q(ciudadano__apellido_paterno__icontains=q)
             | Q(ciudadano__apellido_materno__icontains=q)
@@ -375,21 +378,32 @@ def _filtrar_tomas_operativas(queryset, params):
         queryset = queryset.filter(estado=Toma.Estados.ACTIVA)
     elif estado == "suspendidas":
         queryset = queryset.filter(estado=Toma.Estados.SUSPENDIDA)
+    elif estado == "canceladas":
+        queryset = queryset.filter(estado=Toma.Estados.CANCELADA)
 
     if asociacion == "con_ciudadano":
         queryset = queryset.filter(ciudadano__isnull=False)
     elif asociacion == "sin_ciudadano":
         queryset = queryset.filter(ciudadano__isnull=True)
+    elif asociacion == "sin_contrato":
+        queryset = queryset.filter(Q(ciudadano__numero_contrato__isnull=True) | Q(ciudadano__numero_contrato=""))
+    elif asociacion == "con_contrato":
+        queryset = queryset.exclude(ciudadano__numero_contrato__isnull=True).exclude(ciudadano__numero_contrato="")
 
     return queryset.order_by("estado", "numero_toma")
 
 
 @login_required
+@acceso_agua_requerido
 def control_agua(request):
     tomas_base = Toma.objects.select_related("ciudadano")
     tomas_qs = _filtrar_tomas_operativas(tomas_base, request.GET)
     paginator = Paginator(tomas_qs, 20)
     tomas_page = paginator.get_page(request.GET.get("page"))
+    tomas_page.object_list = list(tomas_page.object_list)
+    visibles = set(Ciudadano.objects.visibles_para(request.user).filter(pk__in=[t.ciudadano_id for t in tomas_page.object_list]).values_list("pk", flat=True))
+    for toma in tomas_page.object_list:
+        toma.puede_ver_expediente = toma.ciudadano_id in visibles
 
     total_tomas = Toma.objects.count()
     tomas_activas = Toma.objects.filter(estado=Toma.Estados.ACTIVA).count()
@@ -404,7 +418,14 @@ def control_agua(request):
         .order_by("estado", "numero_toma")[:8]
     )
 
+    try:
+        comite = comite_agua()
+        ultima_cuota = ConceptoTesoreria.objects.filter(comite=comite, origen="AGUA", periodo_agua__isnull=False).order_by("-periodo_agua").first()
+    except ValidationError:
+        ultima_cuota = None
+    sin_contrato = tomas_base.filter(Q(ciudadano__numero_contrato__isnull=True) | Q(ciudadano__numero_contrato="")).count()
     context = {
+        "ultima_cuota": ultima_cuota,
         "tomas": tomas_page,
         "filtros": {
             "q": request.GET.get("q", "").strip(),
@@ -416,13 +437,14 @@ def control_agua(request):
             "tomas_activas": tomas_activas,
             "tomas_suspendidas": tomas_suspendidas,
             "tomas_canceladas": tomas_canceladas,
-            "tomas_sin_ciudadano": tomas_sin_ciudadano,
+            "tomas_sin_ciudadano": tomas_sin_ciudadano, "tomas_sin_contrato": sin_contrato,
             "costo_anual_total": costo_anual_total,
         },
         "distribucion": {
             "activas": round((tomas_activas / total_tomas) * 100) if total_tomas else 0,
             "suspendidas": round((tomas_suspendidas / total_tomas) * 100) if total_tomas else 0,
             "sin_ciudadano": round((tomas_sin_ciudadano / total_tomas) * 100) if total_tomas else 0,
+            "sin_contrato": round((sin_contrato / total_tomas) * 100) if total_tomas else 0,
             "canceladas": round((tomas_canceladas / total_tomas) * 100) if total_tomas else 0,
         },
         "tomas_revision": revision_qs,
@@ -437,6 +459,7 @@ def home(request):
 @login_required
 def dashboard_operativo(request):
     q = request.GET.get("q", "").strip()
+    tomas_visibles = Toma.objects.all() if puede_operar_agua(request.user) else Toma.objects.none()
 
     ciudadanos_qs = (
         Ciudadano.objects.select_related("toma", "manzana")
@@ -461,7 +484,7 @@ def dashboard_operativo(request):
         "total_ciudadanos": Ciudadano.objects.count(),
         "ciudadanos_activos": Ciudadano.objects.filter(activo=True).count(),
         "morosos_faena": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
-        "tomas_suspendidas": Toma.objects.filter(estado=Toma.Estados.SUSPENDIDA).count(),
+        "tomas_suspendidas": tomas_visibles.filter(estado=Toma.Estados.SUSPENDIDA).count(),
         "pagos_mes": limitar_finanzas(Pago.objects.all(), request.user).filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
     }
 
@@ -495,7 +518,7 @@ def dashboard_operativo(request):
     )[:10]
 
     tarjeta_agua = {
-        "tomas_pendientes": Toma.objects.filter(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]).count(),
+        "tomas_pendientes": tomas_visibles.filter(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]).count(),
         "morosos_agua": limitar_finanzas(Pago.objects.all(), request.user).filter(tipo=Pago.Tipos.SERVICIO).values("ciudadano").distinct().count(),
     }
 
@@ -2202,7 +2225,7 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff"); writer = csv.writer(response)
-    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono", "Registrado por", "Fecha de registro"])
+    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono", "Registrado por", "Fecha de registro", "Toma del cobro", "Contrato al generar", "Periodo mensual de agua"])
     for o in obligaciones.iterator():
         c = o.ciudadano
         writer.writerow([c.nombre_completo, c.nombre, c.apellido_paterno, c.apellido_materno or "Sin información",
@@ -2211,7 +2234,8 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
             c.edad_actual if c.edad_actual is not None else "Sin información", c.get_motivo_alta_display() or "Sin información",
             o.monto_asignado, o.total_abonado_calc, o.saldo_pendiente_calc, o.get_estado_display(),
             o.ultimo_abono.isoformat() if o.ultimo_abono else "Sin información",
-            o.creado_por.get_username() if o.creado_por else "Autor no registrado", o.created_at.isoformat()])
+            o.creado_por.get_username() if o.creado_por else "Autor no registrado", o.created_at.isoformat(),
+            o.numero_toma_registrado, o.numero_contrato_registrado, concepto.periodo_agua.isoformat() if concepto.periodo_agua else ""])
     return response
 
 
@@ -2254,3 +2278,30 @@ def actividad_financiera(request):
     return render(request, "dashboard/actividad_financiera.html", {
         "pagina": pagina, "comites": comites_financieros(request.user), "comite_actual": comite,
     })
+
+
+@login_required
+@acceso_agua_requerido
+def crear_cuota_mensual_agua(request):
+    form = CuotaMensualAguaForm(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            with transaction.atomic():
+                comite = comite_agua()
+                periodo = form.cleaned_data["periodo"]
+                concepto = ConceptoTesoreria.objects.create(
+                    creado_por=request.user, origen="AGUA", naturaleza="PAGO", alcance="GENERAL",
+                    comite=comite, periodo_agua=periodo, anio_periodo=periodo.year, fecha=periodo,
+                    concepto=f"Agua · {periodo:%m/%Y}", descripcion=form.cleaned_data["descripcion"],
+                    monto_individual=form.cleaned_data["monto"],
+                )
+                registrar_movimiento(request.user, concepto, RegistroFinanciero.Acciones.CREAR)
+                resultado = generar_obligaciones_faltantes(concepto, usuario=request.user)
+        except ValidationError as error:
+            form.add_error(None, "; ".join(error.messages))
+        except IntegrityError:
+            form.add_error(None, "Ya existe una cuota de agua para ese mes. Revisa Tesorería antes de crear otra.")
+        else:
+            messages.success(request, f"Cuota mensual creada con {resultado.creados} obligaciones para tomas activas.")
+            return redirect("tesoreria_concepto_detalle", concepto.pk)
+    return render(request, "dashboard/cuota_mensual_agua.html", {"form": form})

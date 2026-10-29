@@ -72,6 +72,7 @@ class Cooperacion(TimeStampedModel):
 
 
 class ConceptoTesoreria(TimeStampedModel):
+    periodo_agua = models.DateField(null=True, blank=True, verbose_name="Periodo mensual de agua")
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
         related_name="conceptotesoreria_creados", verbose_name="Registrado por", editable=False,
@@ -109,10 +110,19 @@ class ConceptoTesoreria(TimeStampedModel):
         verbose_name = "Concepto de tesorería"
         verbose_name_plural = "Conceptos de tesorería"
         ordering = ["-fecha", "-created_at"]
+        constraints = [models.UniqueConstraint(fields=["comite", "periodo_agua"], condition=models.Q(origen="AGUA", periodo_agua__isnull=False), name="agua_comite_periodo_unico", violation_error_message="Ya existe una cuota de agua para ese mes.")]
         indexes = [models.Index(fields=["naturaleza", "alcance", "manzana", "fecha"], name="tes_nat_alc_mz_fecha_idx")]
 
     def clean(self):
         super().clean()
+        if self.origen == self.Origenes.AGUA and (self.periodo_agua or self._state.adding):
+            from apps.agua.autorizacion import comite_agua
+            if not self.periodo_agua or self.periodo_agua.day != 1:
+                raise ValidationError({"periodo_agua": "Selecciona el mes de la cuota de agua."})
+            if self.comite_id != comite_agua().pk or self.alcance != self.Alcances.GENERAL or self.naturaleza != self.Naturalezas.PAGO:
+                raise ValidationError("La cuota mensual de agua debe ser un pago general del comité de Agua.")
+        elif self.periodo_agua:
+            raise ValidationError({"periodo_agua": "El periodo de agua solo aplica a cuotas de agua."})
         errors = validar_alcance_y_manzana(
             alcance=self.alcance, manzana_id=self.manzana_id,
             alcance_general=self.Alcances.GENERAL, alcance_manzana=self.Alcances.MANZANA,
@@ -143,6 +153,9 @@ class ConceptoTesoreria(TimeStampedModel):
 
 
 class ObligacionCiudadano(TimeStampedModel):
+    toma = models.ForeignKey(Toma, on_delete=models.PROTECT, null=True, blank=True, related_name="obligaciones", verbose_name="Toma de agua")
+    numero_toma_registrado = models.CharField(max_length=30, blank=True, editable=False)
+    numero_contrato_registrado = models.CharField(max_length=50, blank=True, editable=False)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
         related_name="obligacionciudadano_creados", verbose_name="Registrado por", editable=False,
@@ -163,6 +176,21 @@ class ObligacionCiudadano(TimeStampedModel):
         verbose_name_plural = "Obligaciones ciudadanas"
         ordering = ["ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"]
         constraints = [models.UniqueConstraint(fields=["concepto", "ciudadano"], name="unique_obligacion_por_concepto_ciudadano")]
+
+    def clean(self):
+        super().clean()
+        original = type(self).objects.filter(pk=self.pk).values("toma_id", "ciudadano_id", "concepto_id").first() if self.pk else None
+        if original and all(original[campo] == getattr(self, campo) for campo in original):
+            return
+        if self.concepto_id and self.concepto.origen == "AGUA" and self.concepto.periodo_agua:
+            if not self.toma_id or self.toma.ciudadano_id != self.ciudadano_id:
+                raise ValidationError({"toma": "Selecciona la toma correspondiente al ciudadano de esta obligación."})
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.toma_id:
+            self.numero_toma_registrado = self.toma.numero_toma
+            self.numero_contrato_registrado = self.toma.ciudadano.numero_contrato or ""
+        return super().save(*args, **kwargs)
 
     @property
     def total_abonado(self):

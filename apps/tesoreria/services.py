@@ -1,4 +1,6 @@
 from django.db import transaction
+from django.core.exceptions import ValidationError
+from apps.agua.models import Toma
 
 from apps.operacion.services import ResultadoGeneracion, obtener_ciudadanos_objetivo
 
@@ -25,7 +27,14 @@ def generar_obligaciones_faltantes(concepto, *, usuario=None):
     ConceptoTesoreria.objects.select_for_update().get(pk=concepto.pk)
     # The action is operational and may run long after the creation form was used.
     concepto.full_clean()
-    objetivo_ids = list(obtener_ciudadanos_objetivo(concepto).values_list("pk", flat=True))
+    tomas = {}
+    if concepto.origen == ConceptoTesoreria.Origenes.AGUA:
+        if not concepto.periodo_agua:
+            raise ValidationError("Este concepto de agua no tiene periodo mensual; requiere revisión antes de generar obligaciones.")
+        tomas = {t.ciudadano_id: t for t in Toma.objects.filter(estado=Toma.Estados.ACTIVA).select_related("ciudadano")}
+        objetivo_ids = list(tomas)
+    else:
+        objetivo_ids = list(obtener_ciudadanos_objetivo(concepto).values_list("pk", flat=True))
     existentes_ids = set(
         concepto.obligaciones.filter(ciudadano_id__in=objetivo_ids).values_list("ciudadano_id", flat=True)
     )
@@ -34,6 +43,12 @@ def generar_obligaciones_faltantes(concepto, *, usuario=None):
         for ciudadano_id in objetivo_ids
         if ciudadano_id not in existentes_ids
     ]
+    for obligacion in nuevas:
+        if obligacion.ciudadano_id in tomas:
+            toma = tomas[obligacion.ciudadano_id]
+            obligacion.toma = toma
+            obligacion.numero_toma_registrado = toma.numero_toma
+            obligacion.numero_contrato_registrado = toma.ciudadano.numero_contrato or ""
     ObligacionCiudadano.objects.bulk_create(
         nuevas,
         batch_size=500,

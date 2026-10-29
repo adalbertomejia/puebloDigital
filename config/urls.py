@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from apps.core.views import (
+    crear_cuota_mensual_agua,
     actividad_financiera,
     control_asistencias,
     control_agua,
@@ -57,6 +58,7 @@ urlpatterns = [
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
     path('agua/', control_agua, name='control_agua'),
+    path('agua/cuota-mensual/', crear_cuota_mensual_agua, name='crear_cuota_mensual_agua'),
     path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
     path('tesoreria/actividad/', actividad_financiera, name='actividad_financiera'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),

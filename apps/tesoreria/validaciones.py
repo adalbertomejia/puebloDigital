@@ -6,6 +6,8 @@ def validar_cambios_con_obligaciones(instancia):
     if not original or not original.obligaciones.exists():
         return {}
     campos = {
+        "origen": ("origen", "el origen"),
+        "periodo_agua": ("periodo_agua", "el periodo mensual"),
         "comite": ("comite_id", "el comité"),
         "naturaleza": ("naturaleza", "la naturaleza"),
         "alcance": ("alcance", "el alcance"),

@@ -13,6 +13,6 @@ def registrar_movimiento(usuario, objeto, accion, *, detalle=None, origen="PANEL
         concepto_id_registrado=concepto.pk, concepto_nombre=concepto.concepto,
         monto=getattr(objeto, "monto", getattr(objeto, "monto_asignado", None)),
         referencia=getattr(objeto, "referencia", ""),
-        detalle={"naturaleza": concepto.naturaleza, "monto_base": str(concepto.monto_individual),
+        detalle={"periodo_agua": concepto.periodo_agua.isoformat() if concepto.periodo_agua else None, "naturaleza": concepto.naturaleza, "monto_base": str(concepto.monto_individual),
                  "alcance": concepto.alcance, **(detalle or {})}, origen=origen,
     )

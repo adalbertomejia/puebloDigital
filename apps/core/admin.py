@@ -100,7 +100,7 @@ class RegistroFaenaInline(admin.TabularInline):
         return False
 
 
-class TomaInline(admin.StackedInline):
+class TomaInline(AdministracionGlobal, admin.StackedInline):
     model = Toma
     extra = 0
     max_num = 1

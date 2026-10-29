@@ -29,7 +29,9 @@
           <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' or request.resolver_match.url_name == 'buscar_aportaciones' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
           <a class="pd-navigation__link" href="{% url 'actividad_financiera' %}" {% if request.resolver_match.url_name == 'actividad_financiera' %}aria-current="page"{% endif %}>Actividad financiera</a>
           {% endif %}
+          {% if puede_operar_agua %}
           <a class="pd-navigation__link" href="{% url 'control_agua' %}" {% if request.resolver_match.url_name == 'control_agua' %}aria-current="page"{% endif %}>Agua</a>
+          {% endif %}
         </nav>
       </div>
     </aside>
