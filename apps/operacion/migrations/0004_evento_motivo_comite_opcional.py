@@ -6,7 +6,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("comites", "0001_initial"),
         ("core", "0001_initial"),
-        ("operacion", "0001_initial"),
+        ("operacion", "0003_junta_alcance_junta_manzana_and_more"),
     ]
 
     operations = [
