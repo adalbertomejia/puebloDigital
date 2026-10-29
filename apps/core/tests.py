@@ -449,7 +449,8 @@ class CiudadanoOperativoManzanaFormTests(TestCase):
     def _datos(self, **cambios):
         datos = {
             "nombre": "Nueva", "apellido_paterno": "Persona", "apellido_materno": "",
-            "edad": 22, "fecha_nacimiento": "", "numero_contrato": "", "manzana": "",
+            "edad": 22, "fecha_nacimiento": "", "sexo": Ciudadano.Sexos.NO_ESPECIFICADO,
+            "numero_contrato": "", "manzana": "",
             "labor_social": "", "motivo_alta": "", "direccion": "", "activo": "on",
             "observaciones": "",
         }
@@ -671,9 +672,11 @@ class SecureDeletionFlowTests(TestCase):
     def test_concepto_deletes_obligaciones_and_abonos_with_exact_total(self):
         concepto = ConceptoTesoreria.objects.create(naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION, comite=self.comite, concepto="Cooperación", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 22))
         o1 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.ana, monto_asignado=Decimal("100.00"))
-        o2 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.beto, monto_asignado=Decimal("100.00"), estado=ObligacionCiudadano.Estados.PAGADO)
+        o2 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.beto, monto_asignado=Decimal("10.00"))
         Abono.objects.create(obligacion=o1, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
-        Abono.objects.create(obligacion=o2, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
+        o2.acreditar(Decimal("10.00"), fecha=date(2026, 7, 22))
+        o2.refresh_from_db()
+        self.assertEqual(o2.estado, ObligacionCiudadano.Estados.PAGADO)
         url = reverse("eliminar_concepto_tesoreria", args=[concepto.pk])
         response = self.client.get(url)
         self.assertContains(response, "Cantidad de obligaciones")
