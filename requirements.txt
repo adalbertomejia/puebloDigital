@@ -1,2 +1,7 @@
 Django>=4.2,<5.0
 django-unfold
+
+# UI compatible con Django 4.2
+django-filter==24.3
+django-tables2==2.7.5
+django-autocomplete-light==3.12.1

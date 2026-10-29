@@ -2,7 +2,10 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
+from apps.tesoreria.selectores import CiudadanoFinancieroAutocomplete, ObligacionFinancieraAutocomplete
+
 from apps.core.views import (
+    seleccionar_obligacion,
     crear_cuota_mensual_agua,
     actividad_financiera,
     control_asistencias,
@@ -60,6 +63,9 @@ urlpatterns = [
     path('agua/', control_agua, name='control_agua'),
     path('agua/cuota-mensual/', crear_cuota_mensual_agua, name='crear_cuota_mensual_agua'),
     path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
+    path('tesoreria/seleccionar-obligacion/', seleccionar_obligacion, name='seleccionar_obligacion'),
+    path('selectores/ciudadanos-finanzas/', CiudadanoFinancieroAutocomplete.as_view(), name='ciudadano_financiero_autocomplete'),
+    path('selectores/obligaciones-finanzas/', ObligacionFinancieraAutocomplete.as_view(), name='obligacion_financiera_autocomplete'),
     path('tesoreria/actividad/', actividad_financiera, name='actividad_financiera'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),
     path('tesoreria/aportaciones/buscar/', buscar_aportaciones, name='buscar_aportaciones'),

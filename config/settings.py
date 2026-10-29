@@ -8,6 +8,10 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'unfold',
+    'dal',
+    'dal_select2',
+    'django_filters',
+    'django_tables2',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -46,6 +50,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'apps.tesoreria.context_processors.acceso_financiero',
+                'apps.core.context_processors.interfaz',
             ],
         },
     },

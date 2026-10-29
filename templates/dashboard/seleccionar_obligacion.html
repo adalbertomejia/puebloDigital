@@ -1,0 +1,10 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
+{% block title %}Buscar ciudadano para registrar abono{% endblock %}
+{% block content %}
+<section class="pd-panel max-w-3xl"><h1 class="text-2xl font-bold">Registrar abono</h1><p class="my-4">Busca al ciudadano y selecciona una obligación pendiente de tus comités. En el siguiente paso podrás revisar el saldo y capturar el importe.</p>
+<form method="post" class="space-y-4">{% csrf_token %}{{ form.as_p }}<div class="pd-actions"><button class="pd-button pd-button--primary" type="submit">Revisar saldo y continuar</button><a class="pd-button pd-button--secondary" href="{% url 'tesoreria_operativa' %}">Volver a Tesorería</a></div></form>
+<details class="mt-6" {% if buscar %}open{% endif %}><summary>Búsqueda alternativa por nombre, contrato o toma</summary><form method="get" class="mt-3"><label for="buscar-alternativo">Buscar ciudadano</label><input id="buscar-alternativo" class="pd-input" name="buscar" value="{{ buscar }}" minlength="2"><button class="pd-button pd-button--secondary mt-2" type="submit">Buscar</button></form><ul class="mt-3 space-y-2">{% for o in opciones %}<li><a class="text-teal-700 underline" href="{% url 'acreditar_obligacion' o.pk %}">{{ o.ciudadano.nombre_completo }} · {{ o.concepto.concepto }} · {{ o.concepto.comite.nombre }}</a></li>{% empty %}{% if buscar %}<li>Sin obligaciones pendientes para esta búsqueda.</li>{% endif %}{% endfor %}</ul>{% if opciones %}<p class="text-sm mt-2">Se muestran hasta 20 coincidencias. Agrega más datos para precisar la búsqueda.</p>{% endif %}</details>
+</section>{% endblock %}
+
+{% block extra_js %}<script src="{% static 'js/seleccionar-obligacion.js' %}" defer></script>{% endblock %}

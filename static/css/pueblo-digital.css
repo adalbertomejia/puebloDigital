@@ -407,3 +407,20 @@ a.concept-pagination__item:hover { border-color: #c7d2fe; background: #fff; colo
 .pd-obligaciones-table td.pd-obligaciones-table__importe { white-space: nowrap; overflow-wrap: normal; }
 .pd-obligaciones-table__historial { margin-top: .35rem; }
 .pd-obligaciones-table__historial li { margin-top: .5rem; }
+
+.pd-table.pd-table--compact { min-width: 42rem; font-size: .875rem; }
+.pd-table--compact td, .pd-table--compact th { padding: .65rem; }
+.pd-table--compact td:first-child { min-width: 12rem; overflow-wrap: anywhere; }
+.select2-container { max-width: 100%; }
+.select2-container .select2-selection--single { min-height: 2.65rem; padding: .3rem; border-color: var(--pd-color-border); }
+.pd-main[aria-busy="true"] { cursor: progress; }
+
+.pd-table__secondary { display: block; margin-top: .25rem; font-size: .8rem; color: var(--pd-color-muted); }
+.pd-table th[aria-sort="ascending"] a::after { content: " ↑"; }
+.pd-table th[aria-sort="descending"] a::after { content: " ↓"; }
+.pd-padron-metrics { gap: .65rem; margin-bottom: 1rem; }
+.pd-padron-metrics .pd-metric { padding: .65rem; }
+.pd-padron-metrics .pd-metric::before { display: none; }
+.pd-padron-filtros { padding: 1rem; }
+.pd-padron-filtros .pd-section-title { font-size: 1.1rem; margin-bottom: .5rem; }
+.pd-padron-filtros .pd-form-grid { row-gap: .75rem; }

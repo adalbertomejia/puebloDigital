@@ -53,28 +53,9 @@ def anotar_conceptos(queryset=None):
 
 
 def aplicar_filtros_conceptos(queryset, params):
-    q = params.get("q", "").strip()
-    if q:
-        queryset = queryset.filter(Q(concepto__icontains=q) | Q(descripcion__icontains=q) | Q(comite__nombre__icontains=q))
-    for campo, opciones in (
-        ("naturaleza", dict(ConceptoTesoreria.Naturalezas.choices)),
-        ("alcance", dict(ConceptoTesoreria.Alcances.choices)),
-    ):
-        if params.get(campo) in opciones:
-            queryset = queryset.filter(**{campo: params[campo]})
-    if params.get("manzana", "todas").isdigit():
-        queryset = queryset.filter(manzana_id=int(params["manzana"]))
-    if params.get("mes", "todos").isdigit():
-        queryset = queryset.filter(fecha__month=int(params["mes"]))
-    if params.get("anio", "todos").isdigit():
-        queryset = queryset.filter(fecha__year=int(params["anio"]))
-    if params.get("comite", "todos").isdigit():
-        queryset = queryset.filter(comite_id=int(params["comite"]))
-    if params.get("estado") in {"SIN_GENERAR", "CON_PENDIENTES", "COMPLETADO"}:
-        queryset = queryset.filter(estado_general=params["estado"])
-    # El identificador evita que conceptos con la misma fecha de creación cambien
-    # de página entre solicitudes.
-    return queryset.order_by("-fecha", "-created_at", "-pk")
+    from .filtros import ConceptosFilter
+    filtro = ConceptosFilter(params, queryset=queryset)
+    return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("-fecha", "-created_at", "-pk")
 
 
 def conceptos_filtrados(params, *, queryset=None):

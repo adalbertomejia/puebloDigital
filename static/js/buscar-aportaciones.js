@@ -1,4 +1,5 @@
 (() => {
+  if (document.querySelector('.pd-main[data-live-page]')) return;
   const form = document.querySelector('[data-dynamic-search]');
   const results = document.getElementById('search-results');
   if (!form || !results || !window.fetch || !window.AbortController) return;
@@ -16,6 +17,7 @@
     form.classList.add('is-loading');
     try {
       const response = await fetch(url, {headers: {'HX-Request': 'true'}, signal: activeController.signal});
+      if (response.redirected) { window.location.assign(response.url); return; }
       if (!response.ok) throw new Error('No fue posible actualizar la búsqueda');
       const html = await response.text();
       if (requestId !== requestSequence) return;

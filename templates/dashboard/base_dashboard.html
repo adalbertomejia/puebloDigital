@@ -7,6 +7,7 @@
   <title>{% block title %}Panel de Gestión{% endblock %} | Pueblo Digital</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{% static 'css/pueblo-digital.css' %}">
+  {{ form.media.css }}
 </head>
 <body class="app-shell">
   <a class="pd-skip-link" href="#contenido-principal">Saltar al contenido principal</a>
@@ -46,7 +47,7 @@
           </nav>
         </div>
       </header>
-      <main id="contenido-principal" class="pd-main" tabindex="-1">
+      <main id="contenido-principal" class="pd-main" {% if ui_vista_dinamica %}data-live-page{% endif %} tabindex="-1">
         {% if messages %}
           <div aria-live="polite">
             {% for message in messages %}
@@ -58,6 +59,8 @@
       </main>
     </div>
   </div>
+  {% if form %}<script src="{% static 'admin/js/vendor/jquery/jquery.min.js' %}"></script><script src="{% static 'js/iniciar-selectores.js' %}"></script>{{ form.media.js }}{% endif %}
+  <script src="{% static 'js/consultas-dinamicas.js' %}" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

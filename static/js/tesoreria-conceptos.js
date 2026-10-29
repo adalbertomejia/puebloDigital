@@ -1,4 +1,5 @@
 (() => {
+  if (document.querySelector('.pd-main[data-live-page]')) return;
   const container = document.querySelector('#conceptos-paginados');
   if (!container || !window.fetch || !window.history?.pushState) return;
 

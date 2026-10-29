@@ -72,7 +72,7 @@ class ObligacionCiudadanoAdmin(AutorFinancieroAdmin, AdministracionGlobal, admin
     list_display = ("ciudadano", "concepto", "monto_asignado", "estado")
     list_filter = ("estado", "concepto__naturaleza", "concepto__comite")
     search_fields = ("ciudadano__nombre", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "concepto__concepto")
-    autocomplete_fields = ("concepto", "ciudadano")
+    autocomplete_fields = ("concepto", "ciudadano", "toma")
     inlines = [AbonoInline]
 
 

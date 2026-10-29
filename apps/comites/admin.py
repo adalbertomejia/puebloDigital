@@ -33,6 +33,7 @@ class PerfilAccesoAdmin(AdministracionGlobal, admin.ModelAdmin):
 
 @admin.register(UsuarioApp)
 class UsuarioAppAdmin(AdministracionGlobal, admin.ModelAdmin):
+    autocomplete_fields = ("user", "ciudadano", "comite")
     fieldsets = (
         ("Asignación del cargo", {
             "fields": ("user", "comite", "rol", "activo"),

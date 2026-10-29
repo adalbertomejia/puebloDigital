@@ -108,3 +108,19 @@ class AbonoForm(DashboardFormMixin, forms.ModelForm):
         if self.obligacion and monto > self.obligacion.saldo_pendiente:
             raise ValidationError(f"El abono no puede superar el saldo pendiente de ${self.obligacion.saldo_pendiente:.2f}.")
         return monto
+
+
+class SeleccionarObligacionForm(DashboardFormMixin, forms.Form):
+    from dal import autocomplete
+    ciudadano = forms.ModelChoiceField(queryset=None, label="Ciudadano", widget=autocomplete.ModelSelect2(url="ciudadano_financiero_autocomplete", attrs={"data-placeholder": "Busca por nombre, contrato o toma", "data-minimum-input-length": 2, "data-width": "100%"}))
+    obligacion = forms.ModelChoiceField(queryset=None, label="Obligación pendiente", widget=autocomplete.ModelSelect2(url="obligacion_financiera_autocomplete", forward=["ciudadano"], attrs={"data-placeholder": "Selecciona primero el ciudadano", "data-width": "100%"}))
+
+    def __init__(self, *args, usuario, **kwargs):
+        from .selectores import ciudadanos_con_obligaciones, obligaciones_pendientes, identificador_valido
+        super().__init__(*args, **kwargs)
+        self.fields["ciudadano"].queryset = ciudadanos_con_obligaciones(usuario)
+        ciudadano = identificador_valido(self.data.get("ciudadano", "")) if self.is_bound else None
+        self.fields["obligacion"].queryset = obligaciones_pendientes(usuario).filter(ciudadano_id=ciudadano) if ciudadano is not None else ObligacionCiudadano.objects.none()
+        # Preserve remote widgets and their dependent-field forwarding.
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "pd-input"

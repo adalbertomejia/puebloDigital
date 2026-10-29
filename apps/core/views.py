@@ -99,101 +99,12 @@ def _puede_modificar_padron(usuario, accion):
     )
 
 
-def _anios_antes(fecha, anios):
-    """Return a birthday cutoff, including Feb 29 safely."""
-    year = fecha.year - anios
-    return fecha.replace(year=year, day=min(fecha.day, calendar.monthrange(year, fecha.month)[1]))
-
-
-def _filtro_edad_efectiva(rango, hoy=None):
-    """Build an ORM-only filter, preferring birth date over manual age."""
-    hoy = hoy or timezone.localdate()
-    sin_fecha = Q(fecha_nacimiento__isnull=True)
-    rangos = {
-        "menores_18": (0, 17),
-        "18_29": (18, 29),
-        "30_49": (30, 49),
-        "50_64": (50, 64),
-        "65_mas": (65, None),
-    }
-    if rango == "sin_informacion":
-        return sin_fecha & Q(edad__isnull=True)
-    if rango == "sin_fecha":
-        return sin_fecha
-    if rango not in rangos:
-        return None
-
-    minimo, maximo = rangos[rango]
-    fecha_q = Q(fecha_nacimiento__lte=_anios_antes(hoy, minimo))
-    manual_q = Q(edad__gte=minimo)
-    if maximo is not None:
-        # Someone older than maximo+1 has a birth date on or before this cutoff.
-        fecha_q &= Q(fecha_nacimiento__gt=_anios_antes(hoy, maximo + 1))
-        manual_q &= Q(edad__lte=maximo)
-    return fecha_q | (sin_fecha & manual_q)
+from .query_helpers import _anios_antes, filtro_edad_efectiva as _filtro_edad_efectiva
 
 
 def _filtrar_ciudadanos_operativos(queryset, params):
-    q = params.get("q", "").strip()
-    estado = params.get("estado", "todos")
-    toma = params.get("toma", "todos")
-    adeudo = params.get("adeudo", "todos")
-    manzana = params.get("manzana", "todas")
-    motivo_alta = params.get("motivo_alta", "todos")
-    sexo = params.get("sexo", "todos")
-    rango_edad = params.get("rango_edad", "todas")
-    fecha_nacimiento = params.get("fecha_nacimiento", "todas")
-
-    if q:
-        queryset = queryset.filter(filtro_busqueda_ciudadano(q))
-
-    if estado == "activos":
-        queryset = queryset.filter(activo=True)
-    elif estado == "inactivos":
-        queryset = queryset.filter(activo=False)
-
-    if toma == "con_toma":
-        queryset = queryset.filter(toma__isnull=False)
-    elif toma == "sin_toma":
-        queryset = queryset.filter(toma__isnull=True)
-
-    if adeudo == "con_adeudo":
-        queryset = queryset.filter(adeudos_faena__gt=0)
-    elif adeudo == "sin_adeudo":
-        queryset = queryset.filter(adeudos_faena=0)
-
-    if manzana == "sin_asignar":
-        queryset = queryset.filter(manzana__isnull=True)
-    elif manzana.isdigit():
-        queryset = queryset.filter(manzana_id=int(manzana))
-
-    motivos_validos = {value for value, _label in Ciudadano.MotivosAlta.choices}
-    if motivo_alta == "sin_motivo":
-        queryset = queryset.filter(Q(motivo_alta="") | Q(motivo_alta__isnull=True))
-    elif motivo_alta in motivos_validos:
-        queryset = queryset.filter(motivo_alta=motivo_alta)
-
-    sexos_validos = {value for value, _label in Ciudadano.Sexos.choices}
-    if sexo in sexos_validos:
-        queryset = queryset.filter(sexo=sexo)
-
-    filtro_edad = _filtro_edad_efectiva(rango_edad)
-    if filtro_edad is not None:
-        queryset = queryset.filter(filtro_edad)
-
-    if fecha_nacimiento == "con_fecha":
-        queryset = queryset.filter(fecha_nacimiento__isnull=False)
-    elif fecha_nacimiento == "sin_fecha":
-        queryset = queryset.filter(fecha_nacimiento__isnull=True)
-
-    ordering = params.get("orden", "nombre")
-    orderings = {
-        "nombre": ["apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "estado": ["-activo", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "adeudos_faena": ["-adeudos_faena", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "registro": ["-created_at", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-    }
-    return queryset.order_by(*orderings.get(ordering, orderings["nombre"]))
+    from .filtros import filtrar_padron
+    return filtrar_padron(queryset, params)
 
 
 @login_required
@@ -202,7 +113,11 @@ def padron_ciudadanos(request):
         raise Http404
     base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
     ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
-    paginator = Paginator(ciudadanos_qs, 20)
+    from django_tables2 import RequestConfig
+    from .tablas import CiudadanoTable
+    orden = CiudadanoTable(ciudadanos_qs)
+    RequestConfig(request, paginate=False).configure(orden)
+    paginator = Paginator(orden.data.data, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
@@ -245,6 +160,11 @@ def padron_ciudadanos(request):
             {key: value for key, value in request.GET.items() if key != "page" and value}
         ),
     }
+    from .tablas import CiudadanoTable
+    context["tabla_ciudadanos"] = CiudadanoTable(list(ciudadanos_page.object_list), order_by=orden.order_by, retorno=request.get_full_path(), puede_editar=_puede_modificar_padron(request.user, "change"))
+    context["puede_crear_ciudadano"] = _puede_modificar_padron(request.user, "add")
+    context["mas_filtros"] = any(request.GET.get(k) not in (None, "", "todos", "todas", "nombre") for k in ("motivo_alta", "sexo", "rango_edad", "fecha_nacimiento", "toma", "adeudo", "orden", "contrato", "datos"))
+    context["filtros"].update({k: request.GET.get(k, "todos") for k in ("contrato", "datos")})
     if request.headers.get("HX-Request") == "true":
         return render(request, "dashboard/partials/padron_ciudadanos_resultados.html", context)
     return render(request, "dashboard/padron_ciudadanos.html", context)
@@ -341,56 +261,34 @@ def editar_ciudadano_operativo(request, pk):
     if not _puede_modificar_padron(request.user, "change"):
         raise Http404
     ciudadano = get_object_or_404(Ciudadano, pk=pk)
+    retorno = request.POST.get("return_to") or request.GET.get("return_to", "")
+    if not retorno.startswith("/") or not url_has_allowed_host_and_scheme(retorno, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        retorno = ""
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
         if form.is_valid():
             ciudadano = form.save()
             messages.success(request, f"Se actualizó correctamente a {ciudadano.nombre_completo}.")
-            return redirect("perfil_ciudadano", ciudadano.pk)
+            destino = reverse("perfil_ciudadano", args=[ciudadano.pk])
+            return redirect(destino + ("?" + urlencode({"return_to": retorno}) if retorno else ""))
         messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
     else:
         form = CiudadanoOperativoForm(instance=ciudadano)
 
     return render(request, "dashboard/ciudadano_form.html", {
         "form": form,
+        "return_to": retorno,
         "title": "Editar ciudadano",
         "description": "Actualiza la información y la manzana asignada al ciudadano.",
         "submit_label": "Guardar cambios",
-        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]),
+        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]) + ("?" + urlencode({"return_to": retorno}) if retorno else ""),
     })
 
 
 def _filtrar_tomas_operativas(queryset, params):
-    q = params.get("q", "").strip()
-    estado = params.get("estado", "todas")
-    asociacion = params.get("asociacion", "todas")
-
-    if q:
-        queryset = queryset.filter(
-            Q(ciudadano__numero_contrato__icontains=q)
-            | Q(numero_toma__icontains=q)
-            | Q(ciudadano__nombre__icontains=q)
-            | Q(ciudadano__apellido_paterno__icontains=q)
-            | Q(ciudadano__apellido_materno__icontains=q)
-        )
-
-    if estado == "activas":
-        queryset = queryset.filter(estado=Toma.Estados.ACTIVA)
-    elif estado == "suspendidas":
-        queryset = queryset.filter(estado=Toma.Estados.SUSPENDIDA)
-    elif estado == "canceladas":
-        queryset = queryset.filter(estado=Toma.Estados.CANCELADA)
-
-    if asociacion == "con_ciudadano":
-        queryset = queryset.filter(ciudadano__isnull=False)
-    elif asociacion == "sin_ciudadano":
-        queryset = queryset.filter(ciudadano__isnull=True)
-    elif asociacion == "sin_contrato":
-        queryset = queryset.filter(Q(ciudadano__numero_contrato__isnull=True) | Q(ciudadano__numero_contrato=""))
-    elif asociacion == "con_contrato":
-        queryset = queryset.exclude(ciudadano__numero_contrato__isnull=True).exclude(ciudadano__numero_contrato="")
-
-    return queryset.order_by("estado", "numero_toma")
+    from apps.agua.filtros import TomasFilter
+    filtro = TomasFilter(params, queryset=queryset)
+    return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("estado", "numero_toma")
 
 
 @login_required
@@ -2274,9 +2172,15 @@ def actividad_financiera(request):
     concepto = request.GET.get("concepto", "")
     if concepto.isdigit():
         registros = registros.filter(concepto_id_registrado=int(concepto))
-    pagina = _pagina_aportaciones(request, registros, "pagina", 50)
+    from django_tables2 import RequestConfig
+    from apps.tesoreria.tablas import ActividadFinancieraTable
+    tabla = ActividadFinancieraTable(registros)
+    RequestConfig(request, paginate={"per_page": 50}).configure(tabla)
+    pagina = tabla.page
+    pagina.previous_querystring = _page_querystring(request, "pagina", pagina.previous_page_number()) if pagina.has_previous() else ""
+    pagina.next_querystring = _page_querystring(request, "pagina", pagina.next_page_number()) if pagina.has_next() else ""
     return render(request, "dashboard/actividad_financiera.html", {
-        "pagina": pagina, "comites": comites_financieros(request.user), "comite_actual": comite,
+        "pagina": pagina, "tabla_actividad": tabla, "comites": comites_financieros(request.user), "comite_actual": comite,
     })
 
 
@@ -2305,3 +2209,16 @@ def crear_cuota_mensual_agua(request):
             messages.success(request, f"Cuota mensual creada con {resultado.creados} obligaciones para tomas activas.")
             return redirect("tesoreria_concepto_detalle", concepto.pk)
     return render(request, "dashboard/cuota_mensual_agua.html", {"form": form})
+
+
+@login_required
+@acceso_financiero_requerido
+def seleccionar_obligacion(request):
+    from apps.tesoreria.forms import SeleccionarObligacionForm
+    from apps.tesoreria.selectores import obligaciones_pendientes
+    form = SeleccionarObligacionForm(request.POST if request.method == "POST" else None, usuario=request.user)
+    if request.method == "POST" and form.is_valid():
+        return redirect("acreditar_obligacion", form.cleaned_data["obligacion"].pk)
+    buscar = request.GET.get("buscar", "").strip()
+    opciones = obligaciones_pendientes(request.user).filter(filtro_busqueda_ciudadano(buscar, prefijo="ciudadano__", extra_fields=("ciudadano__toma__numero_toma",)))[:20] if len(buscar) >= 2 else []
+    return render(request, "dashboard/seleccionar_obligacion.html", {"form": form, "buscar": buscar, "opciones": opciones})
