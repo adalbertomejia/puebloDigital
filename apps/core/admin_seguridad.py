@@ -22,5 +22,3 @@ class AdministracionGlobal:
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
         return queryset if self._es_administrador(request) else queryset.none()
-
-
