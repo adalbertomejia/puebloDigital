@@ -13,8 +13,9 @@ class MigracionTrazabilidadTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
         try:
-            executor.migrate([("tesoreria", "0001_initial")])
-            anteriores = executor.loader.project_state([("tesoreria", "0001_initial")]).apps
+            previos = [("tesoreria", "0001_initial"), ("core", "0002_ciudadano_sexo_alter_ciudadano_edad_and_more"), ("comites", "0003_perfilacceso")]
+            executor.migrate(previos)
+            anteriores = executor.loader.project_state(previos).apps
             comite = anteriores.get_model("comites", "Comite").objects.create(nombre="Comité anterior")
             ciudadano = anteriores.get_model("core", "Ciudadano").objects.create(nombre="Ana", apellido_paterno="Anterior")
             concepto = anteriores.get_model("tesoreria", "ConceptoTesoreria").objects.create(comite_id=comite.pk, concepto="Cuota anterior", naturaleza="PAGO", monto_individual=100, fecha=date(2026, 10, 1))
@@ -42,7 +43,7 @@ class MigracionVinculosAsistenciaTests(TransactionTestCase):
 
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
-        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0002_evento_motivo_comite_opcional')]
+        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0004_evento_motivo_comite_opcional')]
         legacy_pk = None
         modelo = None
         campo_original = None
@@ -99,7 +100,7 @@ class MigracionFaenaHistoricaTests(TransactionTestCase):
 
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
-        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0002_evento_motivo_comite_opcional')]
+        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0004_evento_motivo_comite_opcional')]
         legacy_model = None
         modelo = None
         pk = None

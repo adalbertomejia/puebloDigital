@@ -1,5 +1,7 @@
 # Secretaría y solicitudes de Dahiedhi
 
+Para la integración sobre la rama remota real de Dahiedhi, consultar primero [integracion_dahiedhi_secretaria.md](integracion_dahiedhi_secretaria.md). Los datos de base y configuración de la entrega original que siguen documentan su verificación original.
+
 ## Diagnóstico y decisiones
 
 Base revisada: rama `codex/permisos-presidente`, a partir de `a246325`. No se encontraron archivos AGENTS.md en el espacio de trabajo. Se inspeccionaron modelos, autorizaciones, formularios, servicios, expediente, selectores, plantillas y migraciones actuales.
