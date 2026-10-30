@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import path
+from django.urls import path, include
 
 from apps.tesoreria.selectores import CiudadanoFinancieroAutocomplete, ObligacionFinancieraAutocomplete
 
@@ -50,9 +50,10 @@ from apps.core.views import (
 )
 
 urlpatterns = [
+    path('secretaria/', include('apps.secretaria.urls')),
     path('', home, name='home'),
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
-    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('logout/', auth_views.LogoutView.as_view(http_method_names=['post', 'options']), name='logout'),
     path('dashboard/', dashboard_operativo, name='dashboard_operativo'),
     path('mi-acceso/', mis_responsabilidades, name='mis_responsabilidades'),
     path('ciudadanos/', padron_ciudadanos, name='padron_ciudadanos'),

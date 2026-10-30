@@ -424,3 +424,7 @@ a.concept-pagination__item:hover { border-color: #c7d2fe; background: #fff; colo
 .pd-padron-filtros { padding: 1rem; }
 .pd-padron-filtros .pd-section-title { font-size: 1.1rem; margin-bottom: .5rem; }
 .pd-padron-filtros .pd-form-grid { row-gap: .75rem; }
+
+/* Cierre de sesión por POST conserva la presentación de la cuenta. */
+.pd-account form { margin: 0; }
+.pd-account form button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }

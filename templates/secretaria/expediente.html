@@ -1,0 +1,4 @@
+{% if acceso_secretaria %}<section class="pd-panel" aria-labelledby="solicitudes-title"><h2 id="solicitudes-title">Solicitudes del ciudadano</h2>
+{% if puede_crear_solicitud %}<p><a class="pd-button pd-button--primary" href="{% url 'secretaria:nueva' %}?ciudadano={{ ciudadano.pk }}&return_to={{ request.get_full_path|urlencode }}">Registrar solicitud para este ciudadano</a></p>{% endif %}
+<ul>{% for s in solicitudes_page %}<li><a href="{% url 'secretaria:detalle' s.pk %}?return_to={{ request.get_full_path|urlencode }}">{{ s.folio }} · {{ s.tipo }} · {{ s.get_estado_display }}</a> · {{ s.comite }}</li>{% empty %}<li>No hay solicitudes de este ciudadano dentro de tu ámbito autorizado.</li>{% endfor %}</ul>
+{% include 'dashboard/components/expediente_pagination.html' with page=solicitudes_page %}</section>{% endif %}

@@ -34,9 +34,13 @@ class ResponsabilidadActiva:
                 "Capturar y exportar participantes de mi manzana en eventos generales",
             )
         if self.tipo == "COMITE" and self.rol == "PRESIDENTE":
-            return ("Crear y gestionar eventos generales de este comité",) + finanzas
+            return ("Crear y gestionar eventos generales de este comité", "Supervisar y asignar solicitudes de este comité para ciudadanos autorizados") + finanzas
         if self.tipo == "COMITE" and self.rol == "TESORERO":
-            return finanzas
+            return finanzas + ("Atender solicitudes asignadas de este comité para ciudadanos autorizados",)
+        if self.tipo == "COMITE" and self.rol == "SECRETARIO":
+            return ("Registrar, asignar y dar seguimiento a solicitudes de este comité para ciudadanos autorizados",)
+        if self.tipo == "COMITE" and self.rol == "CAPTURISTA":
+            return ("Atender solicitudes asignadas de este comité para ciudadanos autorizados",)
         return ()
 
 

@@ -1,0 +1,6 @@
+{% extends 'secretaria/base.html' %}{% load static %}
+{% block title %}{{ titulo }}{% endblock %}
+{% block content %}<section class="pd-panel sol-form"><h1>{{ titulo }}</h1><p>Busca al ciudadano; no es necesario volver a capturar sus datos personales. Puedes recibir la solicitud sin asignar responsable.</p>
+{% if sin_tipos %}<p role="alert">Primero un administrador debe registrar un tipo de solicitud activo.{% if user.is_superuser %} <a href="{% url 'admin:secretaria_tiposolicitud_changelist' %}">Administrar tipos</a>{% endif %}</p>{% endif %}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="return_to" value="{{ return_to }}">{{ form.as_p }}<button class="pd-button pd-button--primary" type="submit">Registrar solicitud</button> <a href="{{ return_to }}">Cancelar</a></form></section>{% endblock %}
+{% block extra_js %}<script src="{% static 'js/secretaria.js' %}" defer></script>{% endblock %}

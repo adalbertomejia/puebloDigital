@@ -1415,7 +1415,9 @@ def perfil_ciudadano(request, pk):
     obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano, usuario=request.user), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
     abonos_page = paginar(obtener_abonos_ciudadano(ciudadano, usuario=request.user), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
     asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
-    for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
+    from apps.secretaria.autorizacion import visibles as solicitudes_visibles, comites_gestionables
+    solicitudes_page = paginar(solicitudes_visibles(request.user).filter(ciudadano=ciudadano), request, "solicitudes_page")
+    for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page"), (solicitudes_page, "solicitudes_page")):
         params = request.GET.copy()
         params["return_to"] = return_to
         page.previous_querystring = ""
@@ -1435,6 +1437,8 @@ def perfil_ciudadano(request, pk):
             "obligaciones_page": obligaciones_page,
             "abonos_page": abonos_page,
             "asistencias_page": asistencias_page,
+            "solicitudes_page": solicitudes_page,
+            "puede_crear_solicitud": comites_gestionables(request.user).exists(),
             "return_to": return_to,
             "origen": origen,
             "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),

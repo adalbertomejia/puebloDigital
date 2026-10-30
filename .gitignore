@@ -43,4 +43,7 @@ dist/
 
 # Archivos temporales
 *.swp
-*.swopadron_importacion.xlsx
+*.swo
+padron_importacion.xlsx
+# Documentos privados de solicitudes (nunca servir como estáticos)
+var/solicitudes_privadas/
