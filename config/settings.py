@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'apps.agua',
     'apps.tesoreria',
     'apps.operacion',
+    'apps.secretaria',
 ]
 
 MIDDLEWARE = [
@@ -51,6 +52,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'apps.tesoreria.context_processors.acceso_financiero',
                 'apps.core.context_processors.interfaz',
+                'apps.secretaria.context_processors.acceso',
             ],
         },
     },

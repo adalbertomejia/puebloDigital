@@ -30,3 +30,5 @@ python manage.py test \
 Esta comprobación usa la base temporal del ejecutor de pruebas de Django; no valida por sí sola el aspecto visual, la concurrencia real en otro motor ni los datos particulares de producción.
 
 Resultado de la revisión del 29 de octubre de 2026: **254 pruebas ejecutadas, todas correctas**, sin pruebas omitidas. La reproducción inicial de los siete casos confirmó las cinco fallas y dos errores documentados; la ejecución completa posterior quedó en verde.
+
+La entrega posterior de [Secretaría y solicitudes](secretaria_solicitudes.md) amplía la suite a **276 pruebas correctas**. Añadir `apps.secretaria.tests` al comando anterior incluye sus 22 pruebas de flujo, permisos, documentos, migración y concurrencia.

@@ -1,0 +1,21 @@
+{% extends 'secretaria/base.html' %}
+{% block title %}Secretaría · Solicitudes{% endblock %}
+{% block content %}
+<header class="sol-header"><div><h1>Secretaría · Solicitudes</h1><p>Recepción, responsables y seguimiento de tu ámbito autorizado.</p></div>{% if puede_crear %}<a class="pd-button pd-button--primary" href="{% url 'secretaria:nueva' %}?return_to={{ contexto|urlencode }}">Registrar solicitud</a>{% endif %}</header>
+<nav class="sol-tareas" aria-label="Pendientes por tarea">
+<a href="?tarea=mis_pendientes">Mis pendientes <strong>{{ contadores.mis_pendientes }}</strong></a><a href="?tarea=sin_asignar">Sin asignar <strong>{{ contadores.sin_asignar }}</strong></a><a href="?tarea=vencidas">Vencidas <strong>{{ contadores.vencidas }}</strong></a><a href="?tarea=proximas">Próximas a vencer (7 días) <strong>{{ contadores.proximas }}</strong></a>
+</nav>
+<section class="pd-panel"><form method="get" class="sol-filtros">
+<label>Buscar<input type="search" name="q" value="{{ request.GET.q }}" maxlength="200" placeholder="Folio o nombre del ciudadano"></label>
+<label>Estado<select name="estado"><option value="">Todos</option>{% for v,n in estados %}<option value="{{ v }}" {% if request.GET.estado == v %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+<label>Tipo<select name="tipo"><option value="">Todos</option>{% for t in tipos %}<option value="{{ t.pk }}" {% if request.GET.tipo == t.pk|stringformat:'s' %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+<label>Comité<select name="comite"><option value="">Todos</option>{% for c in comites %}<option value="{{ c.pk }}" {% if request.GET.comite == c.pk|stringformat:'s' %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+<label>Responsable<select name="responsable"><option value="">Todos</option>{% for r in responsables %}<option value="{{ r.pk }}" {% if request.GET.responsable == r.pk|stringformat:'s' %}selected{% endif %}>{{ r.get_username }}</option>{% endfor %}</select></label>
+{% if request.GET.tarea %}<input type="hidden" name="tarea" value="{{ request.GET.tarea }}">{% endif %}
+<button class="pd-button pd-button--primary" type="submit">Buscar</button><a href="{% url 'secretaria:bandeja' %}">Limpiar filtros</a>
+</form>{% if filtro.form.errors %}<div role="alert">{{ filtro.form.errors }}</div>{% endif %}</section>
+<p role="status">{{ pagina.paginator.count }} solicitud{{ pagina.paginator.count|pluralize:'es' }} encontrada{{ pagina.paginator.count|pluralize:'s' }}.</p>
+<div class="pd-table-container"><table class="pd-table pd-table--compact"><thead><tr><th>Folio / ciudadano</th><th>Tipo / comité</th><th>Responsable</th><th>Estado</th><th>Compromiso</th><th>Acción</th></tr></thead><tbody>
+{% for s in pagina %}<tr><td><a href="{% url 'secretaria:detalle' s.pk %}?return_to={{ contexto|urlencode }}">{{ s.folio }}</a><span class="pd-table__secondary">{{ s.ciudadano.nombre_completo }}</span></td><td>{{ s.tipo }}<span class="pd-table__secondary">{{ s.comite }}</span></td><td>{{ s.responsable|default:'Sin asignar' }}</td><td>{{ s.get_estado_display }}</td><td>{{ s.fecha_compromiso|date:'d/m/Y'|default:'Sin fecha' }}{% if s.vencida %}<strong class="sol-vencida">Vencida</strong>{% endif %}</td><td><a class="pd-button pd-button--secondary" href="{% url 'secretaria:detalle' s.pk %}?return_to={{ contexto|urlencode }}">Ver solicitud</a></td></tr>{% empty %}<tr><td colspan="6">No hay solicitudes con estos filtros dentro de tu ámbito.</td></tr>{% endfor %}</tbody></table></div>
+<nav class="sol-paginacion" aria-label="Páginas de solicitudes">{% if pagina.has_previous %}<a href="?{{ consulta }}&page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}<span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>{% if pagina.has_next %}<a href="?{{ consulta }}&page={{ pagina.next_page_number }}">Siguiente</a>{% endif %}</nav>
+{% endblock %}

@@ -44,3 +44,5 @@ dist/
 # Archivos temporales
 *.swp
 *.swo
+# Documentos privados de solicitudes (nunca servir como estáticos)
+var/solicitudes_privadas/

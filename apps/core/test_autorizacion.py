@@ -217,12 +217,12 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertContains(response, "Comité Agua")
         self.assertContains(response, "Comité Feria")
 
-    def test_cargo_sin_capacidades_no_promete_funciones_financieras(self):
+    def test_secretario_describe_solicitudes_sin_prometer_funciones_financieras(self):
         usuario = get_user_model().objects.create_user(username="solo-secretario")
         comite = Comite.objects.create(nombre="Comité local")
         UsuarioApp.objects.create(user=usuario, comite=comite, rol="SECRETARIO")
         self.client.force_login(usuario)
         response = self.client.get(reverse("mis_responsabilidades"))
         self.assertContains(response, "Secretario")
-        self.assertContains(response, "Este cargo no tiene funciones operativas asignadas.")
+        self.assertContains(response, "Registrar, asignar y dar seguimiento a solicitudes de este comité para ciudadanos autorizados")
         self.assertNotContains(response, "Generar obligaciones y registrar abonos de este comité")
