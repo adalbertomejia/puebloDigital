@@ -7,7 +7,7 @@ class Toma(TimeStampedModel):
         SUSPENDIDA = 'SUSPENDIDA', 'Suspendida'
         CANCELADA = 'CANCELADA', 'Cancelada'
 
-    ciudadano = models.OneToOneField(Ciudadano, on_delete=models.PROTECT, related_name='toma')
+    ciudadano = models.OneToOneField(Ciudadano, on_delete=models.CASCADE, related_name='toma')
     numero_toma = models.CharField(max_length=30, unique=True)
     ubicacion = models.TextField(blank=True)
     costo_anual = models.DecimalField(max_digits=10, decimal_places=2, default=800)

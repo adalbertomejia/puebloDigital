@@ -13,14 +13,14 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django import forms
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, DateField, DecimalField, Max, Prefetch, Q, Sum, Subquery, Value
+from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum, Subquery, Value
 from django.db.models.functions import Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
-from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.http import require_POST
 
 from apps.agua.models import Toma
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
@@ -42,9 +42,7 @@ from apps.tesoreria.queries import (
 from apps.tesoreria.forms import BuscarAportacionesForm
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
-from .models import Ciudadano, Manzana, CambioEstadoCiudadano
-from .ciudadanos import (consumir_token, token_operacion, retorno_ciudadano, url_expediente, relaciones_ciudadano, puede_eliminar_ciudadano)
-from .forms import EstadoCiudadanoForm, HistorialCiudadanoForm
+from .models import Ciudadano, Manzana
 from .autorizacion import responsabilidades_activas
 from .query_helpers import filtro_busqueda_ciudadano
 
@@ -58,14 +56,10 @@ class EstadoEventoForm(DashboardFormMixin, forms.Form):
         self._apply_dashboard_widgets()
 
 
-def _ciudadanos_operativos_queryset(usuario=None):
-    filtro_adeudos = Q(registros_faena__genera_adeudo=True) & ~Q(registros_faena__faena__estado="CANCELADA")
-    if usuario is not None and not usuario.has_perm("core.view_ciudadano"):
-        filtro_adeudos &= Q(registros_faena__pk__in=RegistroFaena.objects.visibles_para(usuario).values("pk"))
-    ultimo_pago = Max("pagos__fecha") if usuario is None or (usuario.has_perm("core.view_ciudadano") and usuario.has_perm("tesoreria.view_pago")) else Value(None, output_field=DateField())
+def _ciudadanos_operativos_queryset():
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
-        ultimo_pago_fecha=ultimo_pago,
-        adeudos_faena=Count("registros_faena", filter=filtro_adeudos, distinct=True),
+        ultimo_pago_fecha=Max("pagos__fecha"),
+        adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
     )
 
 
@@ -190,7 +184,7 @@ def _filtrar_ciudadanos_operativos(queryset, params):
 def padron_ciudadanos(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
     ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     paginator = Paginator(ciudadanos_qs, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
@@ -225,12 +219,11 @@ def padron_ciudadanos(request):
             "sin_toma": base_ciudadanos.filter(toma__isnull=True).count(),
             "sin_manzana": base_ciudadanos.filter(manzana__isnull=True).count(),
             "activos_sin_manzana": base_ciudadanos.filter(activo=True, manzana__isnull=True).count(),
-            "con_adeudo": base_ciudadanos.filter(adeudos_faena__gt=0).count(),
+            "con_adeudo": RegistroFaena.objects.filter(
+                genera_adeudo=True, ciudadano__in=base_ciudadanos
+            ).values("ciudadano").distinct().count(),
         },
         "crear_ciudadano_url": reverse("crear_ciudadano_operativo"),
-        "puede_editar": _puede_modificar_padron(request.user, "change"),
-        "puede_crear": _puede_modificar_padron(request.user, "add"),
-        "return_to": request.get_full_path(),
         "exportar_ciudadanos_url": reverse("exportar_ciudadanos_csv"),
         "exportar_ciudadanos_querystring": urlencode(
             {key: value for key, value in request.GET.items() if key != "page" and value}
@@ -245,7 +238,7 @@ def padron_ciudadanos(request):
 def exportar_ciudadanos_csv(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
     ciudadanos = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     manzana = request.GET.get("manzana", "todas")
     if manzana == "sin_asignar":
@@ -300,103 +293,54 @@ def exportar_ciudadanos_csv(request):
     return response
 
 
-def _guardar_ciudadano(request, pk=None):
-    accion = "change" if pk else "add"
-    if not _puede_modificar_padron(request.user, accion) or not request.user.has_perm("core.view_ciudadano"):
-        raise Http404
-    ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user), pk=pk) if pk else None
-    form = CiudadanoOperativoForm(request.POST if request.method == "POST" else None, instance=ciudadano)
-    return_to = retorno_ciudadano(request)
-    key = f"guardar:{pk}"
-    if request.method == "POST" and form.is_valid():
-        if consumir_token(request, key):
-            ciudadano = form.save()
-            messages.success(request, f"Se guardó correctamente a {ciudadano.nombre_completo}.")
-            return redirect(url_expediente(ciudadano.pk, return_to))
-        return redirect(url_expediente(pk, return_to) if pk else return_to)
-    return render(request, "dashboard/ciudadano_form.html", {
-        "form": form, "title": "Editar ciudadano" if pk else "Agregar ciudadano",
-        "description": "Datos del padrón y manzana actual. El cambio territorial conserva los eventos y obligaciones históricos.",
-        "submit_label": "Guardar cambios" if pk else "Guardar ciudadano",
-        "cancel_url": url_expediente(pk, return_to) if pk else return_to,
-        "return_to": return_to, "operation_token": token_operacion(request, key),
-        "duplicados": getattr(form, "duplicados", []),
-    })
-
-
 @login_required
-@require_http_methods(["GET", "POST"])
 def crear_ciudadano_operativo(request):
-    return _guardar_ciudadano(request)
+    if not _puede_modificar_padron(request.user, "add"):
+        raise Http404
+    if request.method == "POST":
+        form = CiudadanoOperativoForm(request.POST)
+        if form.is_valid():
+            ciudadano = form.save()
+            messages.success(request, f"Se registró correctamente a {ciudadano.nombre_completo}.")
+            return redirect("perfil_ciudadano", ciudadano.pk)
+        messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
+    else:
+        form = CiudadanoOperativoForm()
+
+    return render(
+        request,
+        "dashboard/ciudadano_form.html",
+        {
+            "form": form,
+            "title": "Agregar ciudadano",
+            "description": "Registra a una persona en el padrón para dar seguimiento a su expediente, faenas, juntas y servicios comunitarios.",
+            "submit_label": "Guardar ciudadano",
+            "cancel_url": reverse("padron_ciudadanos"),
+        },
+    )
 
 
 @login_required
-@require_http_methods(["GET", "POST"])
 def editar_ciudadano_operativo(request, pk):
-    return _guardar_ciudadano(request, pk)
-
-
-@login_required
-@require_http_methods(["GET", "POST"])
-def estado_ciudadano(request, pk):
-    if not _puede_modificar_padron(request.user, "change") or not request.user.has_perm("core.view_ciudadano"):
+    if not _puede_modificar_padron(request.user, "change"):
         raise Http404
-    ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user), pk=pk)
-    key = f"estado:{pk}:{ciudadano.activo}"
-    form = EstadoCiudadanoForm(request.POST if request.method == "POST" else None, initial={"fecha": timezone.localdate()})
-    return_to = retorno_ciudadano(request)
-    if request.method == "POST" and form.is_valid():
-        if consumir_token(request, key):
-            with transaction.atomic():
-                ciudadano = Ciudadano.objects.select_for_update().get(pk=pk)
-                if request.POST.get("activo_anterior") != str(ciudadano.activo):
-                    messages.warning(request, "El estado cambió. Revisa el expediente antes de operar.")
-                else:
-                    ciudadano.activo = not ciudadano.activo
-                    ciudadano.fecha_baja = None if ciudadano.activo else form.cleaned_data["fecha"]
-                    ciudadano.motivo_baja = "" if ciudadano.activo else form.cleaned_data["motivo"]
-                    ciudadano.save(update_fields=["activo", "fecha_baja", "motivo_baja", "updated_at"])
-                    CambioEstadoCiudadano.objects.create(ciudadano=ciudadano, usuario=request.user, activo=ciudadano.activo, **form.cleaned_data)
-                    messages.success(request, "Ciudadano reactivado." if ciudadano.activo else "Baja registrada. Se conservan todos los antecedentes.")
-        return redirect(url_expediente(pk, return_to))
+    ciudadano = get_object_or_404(Ciudadano, pk=pk)
+    if request.method == "POST":
+        form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
+        if form.is_valid():
+            ciudadano = form.save()
+            messages.success(request, f"Se actualizó correctamente a {ciudadano.nombre_completo}.")
+            return redirect("perfil_ciudadano", ciudadano.pk)
+        messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
+    else:
+        form = CiudadanoOperativoForm(instance=ciudadano)
+
     return render(request, "dashboard/ciudadano_form.html", {
-        "form": form, "title": "Dar de baja" if ciudadano.activo else "Reactivar ciudadano",
-        "description": ciudadano.nombre_completo, "submit_label": "Confirmar cambio de estado",
-        "cancel_url": url_expediente(pk, return_to), "return_to": return_to,
-        "operation_token": token_operacion(request, key), "activo_anterior": str(ciudadano.activo),
-    })
-
-
-@login_required
-@require_http_methods(["GET", "POST"])
-def eliminar_ciudadano(request, pk):
-    if not puede_eliminar_ciudadano(request.user):
-        raise Http404
-    ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user), pk=pk)
-    key = f"eliminar:{pk}"
-    return_to = retorno_ciudadano(request)
-    def relaciones(obj):
-        bloqueos = [(label, n) for label, n in relaciones_ciudadano(obj) if n]
-        for rel in obj._meta.related_objects:
-            if rel.one_to_one and hasattr(obj, rel.get_accessor_name()):
-                bloqueos.append((rel.related_model._meta.verbose_name, 1))
-        return bloqueos
-    bloqueos = relaciones(ciudadano)
-    if request.method == "POST" and consumir_token(request, key):
-        try:
-            with transaction.atomic():
-                ciudadano = Ciudadano.objects.select_for_update().get(pk=pk)
-                if relaciones(ciudadano):
-                    raise ProtectedError("Existen antecedentes o relaciones.", {ciudadano})
-                ciudadano.delete()
-            messages.success(request, "Se eliminó el registro sin antecedentes.")
-            return redirect(return_to)
-        except ProtectedError:
-            messages.error(request, "No se puede eliminar: existen antecedentes o relaciones. Usa la baja. Los duplicados con historial requieren revisión manual, sin fusión automática.")
-            return redirect(url_expediente(pk, return_to))
-    return render(request, "dashboard/eliminar_ciudadano.html", {
-        "ciudadano": ciudadano, "relaciones": bloqueos, "return_to": return_to,
-        "operation_token": token_operacion(request, key),
+        "form": form,
+        "title": "Editar ciudadano",
+        "description": "Actualiza la información y la manzana asignada al ciudadano.",
+        "submit_label": "Guardar cambios",
+        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]),
     })
 
 
@@ -485,7 +429,7 @@ def dashboard_operativo(request):
         .annotate(
             total_pagos=Count("pagos", distinct=True),
             ultimo_pago_fecha=Max("pagos__fecha"),
-            adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True) & ~Q(registros_faena__faena__estado="CANCELADA"), distinct=True),
+            adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
             ultima_faena_fecha=Max("registros_faena__faena__fecha"),
         )
         .order_by("apellido_paterno", "apellido_materno", "nombre")
@@ -502,7 +446,7 @@ def dashboard_operativo(request):
     metricas = {
         "total_ciudadanos": Ciudadano.objects.count(),
         "ciudadanos_activos": Ciudadano.objects.filter(activo=True).count(),
-        "morosos_faena": RegistroFaena.objects.filter(genera_adeudo=True).exclude(faena__estado="CANCELADA").values("ciudadano").distinct().count(),
+        "morosos_faena": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
         "tomas_suspendidas": Toma.objects.filter(estado=Toma.Estados.SUSPENDIDA).count(),
         "pagos_mes": Pago.objects.filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
     }
@@ -543,8 +487,8 @@ def dashboard_operativo(request):
 
     tarjeta_faena = {
         "proximas_faenas": Faena.objects.filter(estado=Faena.Estados.PROGRAMADA).order_by("fecha")[:5],
-        "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).exclude(faena__estado="CANCELADA").values("ciudadano").distinct().count(),
-        "monto_total_adeudos": RegistroFaena.objects.filter(genera_adeudo=True).exclude(faena__estado="CANCELADA").aggregate(total=Sum("monto_adeudo"))["total"] or 0,
+        "con_adeudo": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
+        "monto_total_adeudos": RegistroFaena.objects.filter(genera_adeudo=True).aggregate(total=Sum("monto_adeudo"))["total"] or 0,
     }
 
     context = {
@@ -1485,91 +1429,64 @@ def editar_estado_evento(request, event_kind, event_id):
 def perfil_ciudadano(request, pk):
     from .expediente import (
         obtener_abonos_ciudadano, obtener_asistencias_ciudadano,
-        obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar, puede_ver_finanzas,
+        obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
     )
-    ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user).select_related("toma", "manzana", "manzana__responsable"), pk=pk)
-    ver_finanzas = puede_ver_finanzas(request.user)
-    return_to = retorno_ciudadano(request)
-    origen = "Ciudadanos"
-    for nombre, etiqueta in (("resumen_aportaciones", "Resumen de aportaciones"), ("tesoreria_operativa", "Tesorería"), ("control_asistencias", "Control de Asistencias")):
-        if return_to.startswith(reverse(nombre)):
-            origen = etiqueta
-            break
-    filtros = HistorialCiudadanoForm(request.GET)
-    valido = filtros.is_valid()
-    desde = filtros.cleaned_data.get("desde")
-    hasta = filtros.cleaned_data.get("hasta")
-    tipo = request.GET.get("tipo", "")
-    estado = request.GET.get("estado", "")
-    asistencias = obtener_asistencias_ciudadano(ciudadano, request.user)
-    obligaciones = obtener_obligaciones_ciudadano(ciudadano) if ver_finanzas else ObligacionCiudadano.objects.none()
-    abonos = obtener_abonos_ciudadano(ciudadano) if ver_finanzas else Abono.objects.none()
-    hay_asistencias = bool(asistencias)
-    hay_obligaciones = obligaciones.exists()
-    hay_abonos = abonos.exists()
-    asistencias = [a for a in asistencias if valido and (not tipo or a["tipo"] == tipo) and (not estado or a["codigo_estado"] == estado) and (not desde or a["fecha"] >= desde) and (not hasta or a["fecha"] <= hasta)]
-    def filtrar(qs, fecha, tipo_fila, estado_campo):
-        if not valido or (tipo and tipo != tipo_fila):
-            return qs.none()
-        if desde:
-            qs = qs.filter(**{fecha + "__gte": desde})
-        if hasta:
-            qs = qs.filter(**{fecha + "__lte": hasta})
-        if estado:
-            qs = qs.filter(**{estado_campo: estado})
-        return qs
-    obligaciones = filtrar(obligaciones, "concepto__fecha", "Obligación", "estado")
-    abonos = filtrar(abonos, "fecha", "Abono", "obligacion__estado")
-    movimientos = []
-    hay_movimientos = False
-    if ver_finanzas:
-        for manager, etiqueta, permiso in ((ciudadano.pagos, "Pago", "pago"), (ciudadano.cooperaciones, "Cooperación", "cooperacion")):
-            if request.user.has_perm("tesoreria.view_" + permiso):
-                hay_movimientos = hay_movimientos or manager.exists()
-                for mov in manager.all():
-                    if valido and (not tipo or tipo == etiqueta) and (not estado or estado == "REGISTRADO") and (not desde or mov.fecha >= desde) and (not hasta or mov.fecha <= hasta):
-                        movimientos.append({"tipo": etiqueta, "concepto": mov.concepto, "fecha": mov.fecha, "registro": mov.created_at, "monto": mov.monto})
-    movimientos.sort(key=lambda x: (x["fecha"], x["registro"]), reverse=True)
-    cambios = ciudadano.cambios_estado.all()
-    hay_cambios = cambios.exists()
-    cambios = filtrar(cambios, "fecha", "Estado", "activo") if not estado else cambios
-    if estado in {"ACTIVO", "INACTIVO"}:
-        if valido and (not tipo or tipo == "Estado"):
-            cambios = cambios.filter(activo=estado == "ACTIVO")
-            if desde:
-                cambios = cambios.filter(fecha__gte=desde)
-            if hasta:
-                cambios = cambios.filter(fecha__lte=hasta)
-        else:
-            cambios = cambios.none()
-    elif estado:
-        cambios = cambios.none()
-    paginas = {
-        "obligaciones_page": paginar(obligaciones, request, "obligaciones_page"),
-        "abonos_page": paginar(abonos, request, "abonos_page"),
-        "asistencias_page": paginar(asistencias, request, "asistencias_page"),
-        "movimientos_page": paginar(movimientos, request, "movimientos_page"),
-        "cambios_page": paginar(cambios, request, "cambios_page"),
-    }
-    for parametro, pagina in paginas.items():
+
+    puede_ver_finanzas = bool(
+        request.user.is_superuser or request.user.has_perm("core.view_ciudadano")
+    )
+    ciudadanos_visibles = Ciudadano.objects.visibles_para(request.user)
+    ciudadano = get_object_or_404(
+        ciudadanos_visibles.select_related("toma", "manzana", "manzana__responsable"),
+        pk=pk,
+    )
+    retorno_solicitado = request.GET.get("return_to", "")
+    retorno_valido = bool(retorno_solicitado and url_has_allowed_host_and_scheme(
+        retorno_solicitado, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ) and retorno_solicitado.startswith("/"))
+    return_to = retorno_solicitado if retorno_valido else reverse("padron_ciudadanos")
+    if return_to.startswith(reverse("resumen_aportaciones")):
+        origen = "Resumen de aportaciones"
+    elif return_to.startswith(reverse("tesoreria_operativa")):
+        origen = "Tesorería"
+    elif return_to.startswith(reverse("control_asistencias")):
+        origen = "Control de Asistencias"
+    else:
+        origen = "Ciudadanos"
+
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
+    asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
+    for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
         params = request.GET.copy()
         params["return_to"] = return_to
-        pagina.previous_querystring = ""
-        pagina.next_querystring = ""
-        if pagina.has_previous():
-            params[parametro] = pagina.previous_page_number()
-            pagina.previous_querystring = params.urlencode()
-        if pagina.has_next():
-            params[parametro] = pagina.next_page_number()
-            pagina.next_querystring = params.urlencode()
-    return render(request, "dashboard/perfil_ciudadano.html", {
-        **paginas, "ciudadano": ciudadano, "return_to": return_to, "origen": origen,
-        "resumen": obtener_resumen_ciudadano(ciudadano, request.user), "puede_ver_finanzas": ver_finanzas,
-        "puede_editar": _puede_modificar_padron(request.user, "change") and request.user.has_perm("core.view_ciudadano"),
-        "puede_eliminar": puede_eliminar_ciudadano(request.user), "filtros_historial": filtros,
-        "hay_asistencias": hay_asistencias, "hay_obligaciones": hay_obligaciones, "hay_abonos": hay_abonos, "hay_cambios": hay_cambios,
-        "hay_filtros": bool(desde or hasta or tipo or estado) or not valido, "hay_movimientos": hay_movimientos,
-    })
+        page.previous_querystring = ""
+        page.next_querystring = ""
+        if page.has_previous():
+            params[parametro] = page.previous_page_number(); page.previous_querystring = params.urlencode()
+        if page.has_next():
+            params[parametro] = page.next_page_number(); page.next_querystring = params.urlencode()
+
+    return render(
+        request,
+        "dashboard/perfil_ciudadano.html",
+        {
+            "ciudadano": ciudadano,
+            "resumen": obtener_resumen_ciudadano(ciudadano),
+            "puede_ver_finanzas": puede_ver_finanzas,
+            "obligaciones_page": obligaciones_page,
+            "abonos_page": abonos_page,
+            "asistencias_page": asistencias_page,
+            "return_to": return_to,
+            "origen": origen,
+            "admin_change_url": reverse("admin:core_ciudadano_change", args=[ciudadano.pk]),
+            "faenas_programadas": Faena.objects.annotate(total_registros=Count("registros", distinct=True)).filter(estado=Faena.Estados.PROGRAMADA, total_registros=0).order_by("fecha")[:10],
+            "quick_links": {
+                "pago_add": f"{reverse('admin:tesoreria_pago_add')}?ciudadano={ciudadano.pk}",
+                "cooperacion_add": f"{reverse('admin:tesoreria_cooperacion_add')}?ciudadano={ciudadano.pk}",
+            },
+        },
+    )
 
 from apps.comites.models import Comite
 from apps.tesoreria.forms import AbonoForm, ConceptoTesoreriaForm

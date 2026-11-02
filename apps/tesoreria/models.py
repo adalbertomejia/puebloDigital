@@ -23,7 +23,7 @@ class Pago(TimeStampedModel):
         CUOTA_COMITE = 'CUOTA_COMITE', 'Cuota de comité'
         OTRO = 'OTRO', 'Otro'
 
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='pagos')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='pagos')
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='pagos')
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.CUOTA_COMITE)
     monto = models.DecimalField(max_digits=10, decimal_places=2)
@@ -51,7 +51,7 @@ class Cooperacion(TimeStampedModel):
         DONACION = 'DONACION', 'Donación'
         APOYO_EVENTO = 'APOYO_EVENTO', 'Apoyo a evento'
 
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='cooperaciones')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='cooperaciones')
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='cooperaciones')
     tipo = models.CharField(max_length=20, choices=Tipos.choices, default=Tipos.ORDINARIA)
     monto = models.DecimalField(max_digits=10, decimal_places=2)

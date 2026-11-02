@@ -5,7 +5,7 @@
 <nav class="pd-breadcrumbs" aria-label="Ruta de navegación"><a href="{% url 'dashboard_operativo' %}">Inicio</a> <span aria-hidden="true">›</span> <span aria-current="page">Ciudadanos</span></nav>
 <header class="pd-page-heading">
   <div><h1>Ciudadanos</h1><p>Consulta y administra la información del padrón comunitario.</p></div>
-  <div class="pd-actions">{% if puede_crear %}<a class="pd-button pd-button--success" href="{{ crear_ciudadano_url }}?return_to={{ return_to|urlencode }}">Agregar ciudadano</a>{% endif %}<a class="pd-button pd-button--secondary" href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}">Exportar CSV</a></div>
+  <div class="pd-actions"><a class="pd-button pd-button--success" href="{{ crear_ciudadano_url }}">Agregar ciudadano</a><a class="pd-button pd-button--secondary" href="{{ exportar_ciudadanos_url }}{% if exportar_ciudadanos_querystring %}?{{ exportar_ciudadanos_querystring }}{% endif %}">Exportar CSV</a></div>
 </header>
 
 <section class="pd-metrics" aria-label="Resumen del padrón">

@@ -61,7 +61,7 @@ class UsuarioApp(TimeStampedModel):
         LECTURA = 'LECTURA', 'Solo lectura'
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='perfiles_app')
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, null=True, blank=True, related_name='accesos')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.SET_NULL, null=True, blank=True, related_name='accesos')
     comite = models.ForeignKey(Comite, on_delete=models.CASCADE, related_name='usuarios')
     rol = models.CharField(max_length=20, choices=Roles.choices)
     activo = models.BooleanField(default=True)
