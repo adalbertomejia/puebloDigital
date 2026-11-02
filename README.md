@@ -21,15 +21,13 @@ source .venv/bin/activate
 # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
-python manage.py makemigrations
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-## Nota
-No se incluyen migraciones generadas a propósito.
-Genera las migraciones en tu entorno local para evitar inconsistencias.
+## Migraciones
+Las migraciones están versionadas. Revisa el plan y el historial de la instalación antes de aplicar `migrate`; no las borres ni regeneres y no uses `--fake` para resolver discrepancias.
 
 ## Próximo paso recomendado
 Implementar en v4:
@@ -37,3 +35,6 @@ Implementar en v4:
 - dashboards / vistas de consulta (no CRUD)
 - perfil ciudadano consolidado
 # puebloDigital
+
+## Ciclo ciudadano de Dahiedhi
+La atención diaria se realiza desde `/ciudadanos/`. Consulta [recorridos, permisos, pruebas y límites](docs/ciclo-ciudadano-dahiedhi.md).

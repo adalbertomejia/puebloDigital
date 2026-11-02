@@ -122,6 +122,7 @@ class PerfilAccesoInline(AdministracionGlobal, admin.StackedInline):
 
 @admin.register(Ciudadano)
 class CiudadanoAdmin(admin.ModelAdmin):
+    readonly_fields = ("activo", "fecha_baja", "motivo_baja")
     list_display = (
         "nombre_completo",
         "edad_actual",

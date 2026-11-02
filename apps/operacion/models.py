@@ -150,7 +150,7 @@ class AsistenciaJunta(TimeStampedModel):
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     junta = models.ForeignKey(Junta, on_delete=models.CASCADE, related_name='asistencias')
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='asistencias_junta')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='asistencias_junta')
     estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -230,7 +230,7 @@ class RegistroFaena(TimeStampedModel):
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     faena = models.ForeignKey(Faena, on_delete=models.CASCADE, related_name='registros')
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='registros_faena')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='registros_faena')
     estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)

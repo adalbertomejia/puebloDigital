@@ -124,12 +124,12 @@ class InterfazOperativaTests(TestCase):
         retorno=reverse("padron_ciudadanos")+"?q=Ana&page=2"
         response=self.client.get(url,{"return_to":retorno})
         self.assertEqual(response.context["return_to"],retorno)
-        datos={"nombre":"Ana","apellido_paterno":"Propia","apellido_materno":"","edad":"30","fecha_nacimiento":"","sexo":"NO_ESPECIFICADO","numero_contrato":"C-UI-001","manzana":"","labor_social":"","motivo_alta":"","direccion":"","activo":"on","observaciones":"","return_to":retorno}
+        datos={"nombre":"Ana","apellido_paterno":"Propia","apellido_materno":"","edad":"30","fecha_nacimiento":"","sexo":"NO_ESPECIFICADO","numero_contrato":"C-UI-001","manzana":"","labor_social":"","motivo_alta":"","direccion":"","activo":"on","observaciones":"","return_to":retorno,"operation_token":response.context["operation_token"]}
         response=self.client.post(url,datos)
         self.assertEqual(response.status_code,302)
         self.assertIn("return_to=",response.url)
         response=self.client.get(url,{"return_to":"https://example.com/externo"})
-        self.assertEqual(response.context["return_to"],"")
+        self.assertEqual(response.context["return_to"],reverse("padron_ciudadanos"))
 
     def test_identificador_malformado_no_produce_error_ni_amplia_busqueda(self):
         response=self.client.get(reverse("obligacion_financiera_autocomplete"),{"forward":json.dumps({"ciudadano":"9"*5000})})

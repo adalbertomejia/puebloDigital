@@ -449,7 +449,7 @@ class CiudadanoOperativoManzanaFormTests(TestCase):
     def _datos(self, **cambios):
         datos = {
             "nombre": "Nueva", "apellido_paterno": "Persona", "apellido_materno": "",
-            "edad": 22, "fecha_nacimiento": "", "numero_contrato": "", "manzana": "",
+            "edad": 22, "sexo": "NO_ESPECIFICADO", "fecha_nacimiento": "", "numero_contrato": "", "manzana": "",
             "labor_social": "", "motivo_alta": "", "direccion": "", "activo": "on",
             "observaciones": "",
         }
@@ -462,16 +462,17 @@ class CiudadanoOperativoManzanaFormTests(TestCase):
         self.assertContains(response, self.activa.nombre)
         self.assertNotContains(response, self.inactiva.nombre)
 
-        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(manzana=self.activa.pk))
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(manzana=self.activa.pk, operation_token=response.context["operation_token"]))
         self.assertEqual(Ciudadano.objects.get(nombre="Nueva").manzana, self.activa)
-        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(nombre="Otra"))
+        response = self.client.get(reverse("crear_ciudadano_operativo"))
+        self.client.post(reverse("crear_ciudadano_operativo"), self._datos(nombre="Otra", operation_token=response.context["operation_token"]))
         self.assertIsNone(Ciudadano.objects.get(nombre="Otra").manzana)
 
     def test_edicion_conserva_manzana_inactiva_y_puede_modificarla(self):
         url = reverse("editar_ciudadano_operativo", args=[self.ciudadano.pk])
         response = self.client.get(url)
         self.assertContains(response, self.inactiva.nombre)
-        response = self.client.post(url, self._datos(nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.activa.pk))
+        response = self.client.post(url, self._datos(nombre="Elena", apellido_paterno="Ruiz", edad=35, manzana=self.activa.pk, operation_token=response.context["operation_token"]))
         self.assertRedirects(response, reverse("perfil_ciudadano", args=[self.ciudadano.pk]))
         self.ciudadano.refresh_from_db()
         self.assertEqual(self.ciudadano.manzana, self.activa)
@@ -671,7 +672,7 @@ class SecureDeletionFlowTests(TestCase):
     def test_concepto_deletes_obligaciones_and_abonos_with_exact_total(self):
         concepto = ConceptoTesoreria.objects.create(naturaleza=ConceptoTesoreria.Naturalezas.COOPERACION, comite=self.comite, concepto="Cooperación", monto_individual=Decimal("100.00"), fecha=date(2026, 7, 22))
         o1 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.ana, monto_asignado=Decimal("100.00"))
-        o2 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.beto, monto_asignado=Decimal("100.00"), estado=ObligacionCiudadano.Estados.PAGADO)
+        o2 = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=self.beto, monto_asignado=Decimal("100.00"), estado=ObligacionCiudadano.Estados.PENDIENTE)
         Abono.objects.create(obligacion=o1, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
         Abono.objects.create(obligacion=o2, monto=Decimal("10.00"), fecha=date(2026, 7, 22))
         url = reverse("eliminar_concepto_tesoreria", args=[concepto.pk])
