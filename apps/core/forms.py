@@ -9,6 +9,7 @@ class DashboardFormMixin:
     """Apply consistent dashboard styling to operational forms."""
 
     field_classes = {
+        forms.CheckboxInput: "h-4 w-4 rounded border-slate-300 text-indigo-600",
         forms.DateInput: "rounded-lg border px-3 py-2 w-full bg-white",
         forms.Select: "rounded-lg border px-3 py-2 w-full bg-white",
         forms.Textarea: "rounded-lg border px-3 py-2 w-full bg-white min-h-28",
@@ -103,6 +104,19 @@ class JuntaOperativaForm(DashboardFormMixin, forms.ModelForm):
 
 
 class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
+    confirmar_duplicado = forms.BooleanField(required=False, label="Revisé las coincidencias: es una persona distinta")
+
+    def clean(self):
+        from .ciudadanos import posibles_duplicados
+        data = super().clean()
+        for name in ("nombre", "apellido_paterno", "apellido_materno"):
+            if data.get(name):
+                data[name] = " ".join(data[name].split())
+        self.duplicados = posibles_duplicados(data, self.instance.pk) if data.get("nombre") and data.get("apellido_paterno") else []
+        if self.duplicados and not data.get("confirmar_duplicado"):
+            self.add_error("confirmar_duplicado", "Revisa las coincidencias antes de confirmar que es otra persona.")
+        return data
+
     class Meta:
         model = Ciudadano
         fields = [
@@ -117,7 +131,6 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
             "labor_social",
             "motivo_alta",
             "direccion",
-            "activo",
             "observaciones",
         ]
         widgets = {
@@ -153,4 +166,37 @@ class CiudadanoOperativoForm(DashboardFormMixin, forms.ModelForm):
         self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
         self.fields["manzana"].empty_label = "Sin asignar"
         self._apply_dashboard_widgets()
-        self.fields["activo"].widget.attrs["class"] = "h-4 w-4 rounded border-slate-300 text-indigo-600"
+
+
+
+class EstadoCiudadanoForm(DashboardFormMixin, forms.Form):
+    fecha = forms.DateField(label="Fecha efectiva", widget=forms.DateInput(attrs={"type": "date"}))
+    motivo = forms.CharField(label="Motivo", widget=forms.Textarea(attrs={"rows": 3}))
+
+    def clean_fecha(self):
+        from django.utils import timezone
+        fecha = self.cleaned_data['fecha']
+        if fecha > timezone.localdate():
+            raise forms.ValidationError("La fecha no puede estar en el futuro.")
+        return fecha
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_dashboard_widgets()
+
+
+class HistorialCiudadanoForm(DashboardFormMixin, forms.Form):
+    desde = forms.DateField(required=False, widget=forms.DateInput(attrs={'type':'date'}))
+    hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={'type':'date'}))
+    tipo = forms.ChoiceField(required=False, choices=[('', 'Todos los tipos')] + [(value, value) for value in ['Faena', 'Junta', 'Obligación', 'Abono', 'Pago', 'Cooperación', 'Estado']])
+    estado = forms.ChoiceField(required=False, choices=[('', 'Todos los estados'), ('PENDIENTE', 'Pendiente'), ('ASISTIO', 'Asistió'), ('FALTO', 'Faltó'), ('JUSTIFICADO', 'Justificado'), ('PAGADO', 'Pagado'), ('CANCELADO', 'Cancelado'), ('REGISTRADO', 'Registrado'), ('ACTIVO', 'Activo'), ('INACTIVO', 'Inactivo')])
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_dashboard_widgets()
+
+    def clean(self):
+        data = super().clean()
+        if data.get('desde') and data.get('hasta') and data['desde'] > data['hasta']:
+            self.add_error('hasta', 'La fecha final debe ser igual o posterior a la inicial.')
+        return data

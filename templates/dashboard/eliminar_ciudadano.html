@@ -1,0 +1,8 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Eliminar registro{% endblock %}
+{% block content %}
+<section class="max-w-2xl mx-auto bg-white border rounded-2xl p-5 space-y-4"><h1 class="text-xl font-bold">Eliminar {{ ciudadano.nombre_completo }}</h1><p>Registro #{{ ciudadano.pk }} · {{ ciudadano.edad }} años · {{ ciudadano.manzana|default:'Sin manzana' }}</p>
+{% if relaciones %}<p class="text-rose-800">Eliminación bloqueada. Este ciudadano tiene relaciones que deben conservarse:</p><ul>{% for label, cantidad in relaciones %}<li>{{ label }}: {{ cantidad }}</li>{% endfor %}</ul><p>Usa la baja para retirarlo del padrón activo. Si es un duplicado con historial, solicita revisión manual; no se fusionará ni borrará automáticamente.</p>
+{% else %}<p>Se eliminará permanentemente este registro sin antecedentes. Usa esta acción solo para altas equivocadas o pruebas. Para conservar el expediente, usa la baja.</p><form method="post" onsubmit="this.querySelector('button').disabled=true">{% csrf_token %}<input type="hidden" name="return_to" value="{{ return_to }}"><input type="hidden" name="operation_token" value="{{ operation_token }}"><button class="bg-rose-700 text-white rounded-lg p-3">Confirmar eliminación permanente</button></form>{% endif %}
+<a class="text-indigo-700" href="{% url 'perfil_ciudadano' ciudadano.pk %}?return_to={{ return_to|urlencode }}">Cancelar y return_to al expediente</a></section>
+{% endblock %}

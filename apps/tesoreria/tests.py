@@ -18,7 +18,7 @@ class TesoreriaOperativaTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("tesorero", password="pw")
         self.reader = User.objects.create_user("lector", password="pw")
-        perms = Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria", "add_abono"])
+        perms = Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria", "add_abono", "view_ciudadano", "view_obligacionciudadano"])
         self.user.user_permissions.set(perms)
         self.comite = Comite.objects.create(nombre="Comité de Delegación", tipo=Comite.Tipos.DELEGACION)
         self.agua = Comite.objects.create(nombre="Comité de Agua", tipo=Comite.Tipos.AGUA)
@@ -475,6 +475,7 @@ class TesoreriaFiltrosCsvTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user("tesorero_csv", password="pw")
+        self.user.user_permissions.add(*Permission.objects.filter(codename__in=["view_ciudadano", "view_obligacionciudadano"]))
         self.comite = Comite.objects.create(nombre="Comité Principal", tipo=Comite.Tipos.DELEGACION)
         self.activo1 = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="A", edad=30, activo=True)
         self.activo2 = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", apellido_materno="B", edad=31, activo=True)
@@ -534,6 +535,7 @@ class TesoreriaFiltrosCsvTests(TestCase):
 class ResumenAportacionesTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("consulta", password="pw")
+        self.user.user_permissions.add(*Permission.objects.filter(codename__in=["view_ciudadano", "view_obligacionciudadano"]))
         self.comite = Comite.objects.create(nombre="Comité comunitario", tipo=Comite.Tipos.DELEGACION)
         self.otro_comite = Comite.objects.create(nombre="Comité feria", tipo=Comite.Tipos.FERIA)
         self.manzana_historica = Manzana.objects.create(nombre="Manzana 4")

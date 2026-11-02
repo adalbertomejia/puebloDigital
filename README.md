@@ -1,39 +1,21 @@
-# Pueblo Digital MVP v3 (Admin-first)
+# Pueblo Digital · Dahiedhi
 
-## Enfoque correcto del MVP
-Esta versión corrige el error de la v2:
-- **No hay CRUD público de ciudadanos**
-- La operación principal ocurre en **Django Admin**
-- El acceso se controla con **auth de Django**
-- La arquitectura está preparada para **roles por comité**
+Aplicación Django para padrón ciudadano, asistencias, agua y tesorería. El ciclo del ciudadano se atiende desde `/ciudadanos/`, con autenticación y permisos por función. Los comités y responsables conservan sus alcances autorizados.
 
-## Apps incluidas
-- `core` → Ciudadano y base común
-- `comites` → Comite, UsuarioApp (roles)
-- `agua` → Toma
-- `tesoreria` → Pago, Cooperacion
-- `operacion` → Junta, AsistenciaJunta, Faena, RegistroFaena, Actividad, ActividadArchivo
+## Desarrollo
 
-## Instalación
+Instala `requirements.txt` en un entorno virtual propio. No versiones entornos, archivos `.env`, bases locales ni respaldos.
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-# Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
-python manage.py makemigrations
+python manage.py showmigrations --plan
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-## Nota
-No se incluyen migraciones generadas a propósito.
-Genera las migraciones en tu entorno local para evitar inconsistencias.
+Las migraciones forman parte del repositorio. Revisa el historial real de la instalación antes de aplicar `migrate`; no las borres ni regeneres y no uses `--fake` para resolver discrepancias.
 
-## Próximo paso recomendado
-Implementar en v4:
-- restricciones reales por comité en admin (`get_queryset`, `save_model`, `formfield_for_foreignkey`)
-- dashboards / vistas de consulta (no CRUD)
-- perfil ciudadano consolidado
-# puebloDigital
+La configuración recibida es de desarrollo. Antes de desplegar, verifica clave, DEBUG, hosts y conexión a la base de Dahiedhi. Dahiedhi y Santa Mónica deben mantener configuración y bases independientes.
+
+Consulta [recorridos, permisos, pruebas y límites del ciclo ciudadano](docs/ciclo-ciudadano-dahiedhi.md).
