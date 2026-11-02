@@ -3,6 +3,7 @@ from datetime import date
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
+from django.conf import settings
 
 
 class TimeStampedModel(models.Model):
@@ -133,6 +134,8 @@ class Ciudadano(TimeStampedModel):
     )
     direccion = models.TextField(blank=True)
     activo = models.BooleanField(default=True)
+    fecha_baja = models.DateField(null=True, blank=True)
+    motivo_baja = models.TextField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
 
     class Meta:
@@ -170,3 +173,16 @@ class Ciudadano(TimeStampedModel):
     def __str__(self):
         edad = self.edad_actual
         return f"{self.nombre_completo} ({edad} años)" if edad is not None else self.nombre_completo
+
+
+class CambioEstadoCiudadano(TimeStampedModel):
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name="cambios_estado")
+    activo = models.BooleanField()
+    fecha = models.DateField()
+    motivo = models.TextField()
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-fecha", "-pk"]
+        verbose_name = "Cambio de estado ciudadano"
+        verbose_name_plural = "Cambios de estado ciudadano"

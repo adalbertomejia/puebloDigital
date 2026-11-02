@@ -194,15 +194,18 @@ class AislamientoFinancieroTests(TestCase):
         self.assertEqual(respuesta.context["resumen"]["conceptos"], 1)
 
     def test_inicio_filtra_movimientos_heredados(self):
+        from django.utils import timezone
+        hoy = timezone.localdate()
         for comite, texto in ((self.agua, "Movimiento propio"), (self.feria, "Movimiento reservado")):
-            Pago.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=17, fecha=date(2026, 10, 29))
-            Cooperacion.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=19, fecha=date(2026, 10, 29))
+            Pago.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=17, fecha=hoy)
+            Cooperacion.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=19, fecha=hoy)
         self.client.force_login(self.tesorero)
         respuesta = self.client.get(reverse("dashboard_operativo"))
         financieros = [fila for fila in respuesta.context["actividad_reciente"] if fila["tipo"] in ("Pago", "Cooperación")]
         self.assertEqual(len(financieros), 2)
         self.assertEqual(respuesta.context["metricas"]["pagos_mes"], 1)
-        self.assertEqual(list(respuesta.context["ciudadanos"])[0].total_pagos, 1)
+        # Un cargo financiero no abre el padrón general del tablero.
+        self.assertEqual(list(respuesta.context["ciudadanos"]), [])
 
     def test_admin_financiero_y_asignaciones_reservados_al_superusuario(self):
         self.presidente.is_staff = True
