@@ -1,0 +1,5 @@
+{% load django_tables2 %}
+<div class="pd-table-container" tabindex="0" role="region" aria-label="Resultados de la consulta; desplázate horizontalmente en pantallas pequeñas">
+<table {% render_attrs table.attrs %}><thead><tr>{% for column in table.columns %}<th scope="col" {% if column.is_ordered %}aria-sort="{% if column.order_by_alias.is_descending %}descending{% else %}ascending{% endif %}"{% endif %}>{% if column.orderable %}<a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next page="" pagina="" %}">{{ column.header }}</a>{% else %}{{ column.header }}{% endif %}</th>{% endfor %}</tr></thead><tbody>
+{% for row in table.paginated_rows %}<tr>{% for column, cell in row.items %}<td>{{ cell }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="{{ table.columns|length }}">{{ table.empty_text }}</td></tr>{% endfor %}
+</tbody></table></div>

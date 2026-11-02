@@ -150,3 +150,79 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertContains(response, "Tesorero")
         self.assertContains(response, "Comité del Agua")
         self.assertIn("ámbito asociado", response.content.decode().casefold())
+
+    def test_muestra_ciudadano_vinculado_a_la_cuenta_actual_sin_cargos(self):
+        usuario = get_user_model().objects.create_user(username="cuenta-actual")
+        otro_usuario = get_user_model().objects.create_user(username="otra-cuenta")
+        ciudadano = Ciudadano.objects.create(nombre="Elena", apellido_paterno="Vinculada", apellido_materno="Actual")
+        otro = Ciudadano.objects.create(nombre="Persona", apellido_paterno="Ajena")
+        PerfilAcceso.objects.create(user=usuario, ciudadano=ciudadano)
+        PerfilAcceso.objects.create(user=otro_usuario, ciudadano=otro)
+        self.client.force_login(usuario)
+
+        response = self.client.get(reverse("mis_responsabilidades"), {"user_id": otro_usuario.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["ciudadano_vinculado"], ciudadano)
+        self.assertContains(response, "cuenta-actual")
+        self.assertContains(response, "Elena Vinculada Actual")
+        self.assertContains(response, "Sin manzana asignada")
+        self.assertNotContains(response, "Persona Ajena")
+        self.assertContains(response, "Tu cuenta no tiene responsabilidades activas registradas.")
+
+    def test_cuenta_sin_perfil_no_infiere_identidad_del_cargo_de_comite(self):
+        usuario = get_user_model().objects.create_user(username="sin-vinculo-general")
+        ciudadano = Ciudadano.objects.create(nombre="Identidad", apellido_paterno="Historica")
+        comite = Comite.objects.create(nombre="Comité del Agua")
+        UsuarioApp.objects.create(user=usuario, ciudadano=ciudadano, comite=comite, rol=UsuarioApp.Roles.TESORERO)
+        self.client.force_login(usuario)
+
+        response = self.client.get(reverse("mis_responsabilidades"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["ciudadano_vinculado"])
+        self.assertContains(response, "Tu cuenta no tiene un ciudadano vinculado.")
+        self.assertContains(response, "Tesorero")
+        self.assertNotContains(response, "Identidad Historica")
+
+    def test_ciudadano_inactivo_se_muestra_sin_habilitar_responsabilidad(self):
+        usuario = get_user_model().objects.create_user(username="vinculo-inactivo")
+        ciudadano = Ciudadano.objects.create(nombre="Rosa", apellido_paterno="Inactiva", activo=False)
+        manzana = Manzana.objects.create(nombre="Centro inactivo", responsable=ciudadano)
+        ciudadano.manzana = manzana
+        ciudadano.save(update_fields=["manzana"])
+        PerfilAcceso.objects.create(user=usuario, ciudadano=ciudadano)
+        self.client.force_login(usuario)
+
+        response = self.client.get(reverse("mis_responsabilidades"))
+
+        self.assertContains(response, "Rosa Inactiva")
+        self.assertContains(response, "Centro inactivo")
+        self.assertContains(response, "Inactivo")
+        self.assertEqual(response.context["responsabilidades"], [])
+
+    def test_mi_acceso_describe_funciones_por_cargo_sin_mezclar_comites(self):
+        usuario = get_user_model().objects.create_user(username="cargos-distintos")
+        agua = Comite.objects.create(nombre="Comité Agua")
+        feria = Comite.objects.create(nombre="Comité Feria")
+        UsuarioApp.objects.create(user=usuario, comite=agua, rol="PRESIDENTE")
+        UsuarioApp.objects.create(user=usuario, comite=feria, rol="TESORERO")
+        self.client.force_login(usuario)
+        response = self.client.get(reverse("mis_responsabilidades"))
+        responsabilidades = {r.comite.pk: r for r in response.context["responsabilidades"]}
+        self.assertIn("Crear y gestionar eventos generales de este comité", responsabilidades[agua.pk].funciones)
+        self.assertNotIn("Crear y gestionar eventos generales de este comité", responsabilidades[feria.pk].funciones)
+        self.assertIn("Generar obligaciones y registrar abonos de este comité", responsabilidades[feria.pk].funciones)
+        self.assertContains(response, "Funciones de este cargo", count=2)
+        self.assertContains(response, "Comité Agua")
+        self.assertContains(response, "Comité Feria")
+
+    def test_cargo_sin_capacidades_no_promete_funciones_financieras(self):
+        usuario = get_user_model().objects.create_user(username="solo-secretario")
+        comite = Comite.objects.create(nombre="Comité local")
+        UsuarioApp.objects.create(user=usuario, comite=comite, rol="SECRETARIO")
+        self.client.force_login(usuario)
+        response = self.client.get(reverse("mis_responsabilidades"))
+        self.assertContains(response, "Secretario")
+        self.assertContains(response, "Este cargo no tiene funciones operativas asignadas.")
+        self.assertNotContains(response, "Generar obligaciones y registrar abonos de este comité")

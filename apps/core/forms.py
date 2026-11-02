@@ -1,4 +1,5 @@
 from django import forms
+from dal import autocomplete
 from apps.operacion.models import Faena, Junta
 from apps.operacion.alcance import manzanas_disponibles_para_instancia
 
@@ -17,6 +18,9 @@ class DashboardFormMixin:
 
     def _apply_dashboard_widgets(self):
         for field in self.fields.values():
+            if isinstance(field, forms.ModelChoiceField) and isinstance(field.widget, forms.Select):
+                field.widget = autocomplete.ModelSelect2(attrs={"data-width": "100%"})
+                field.widget.choices = field.choices
             widget = field.widget
             css_class = self.default_class
             for widget_type, widget_class in self.field_classes.items():

@@ -2,7 +2,13 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
+from apps.tesoreria.selectores import CiudadanoFinancieroAutocomplete, ObligacionFinancieraAutocomplete
+
 from apps.core.views import (
+    seleccionar_obligacion,
+    recibo_abono,
+    crear_cuota_mensual_agua,
+    actividad_financiera,
     control_asistencias,
     control_agua,
     control_asistencias_faena_detalle,
@@ -56,7 +62,14 @@ urlpatterns = [
     path('dashboard/ciudadano/<int:pk>/', perfil_ciudadano, name='perfil_ciudadano'),
     path('control-asistencias/', control_asistencias, name='control_asistencias'),
     path('agua/', control_agua, name='control_agua'),
+    path('agua/cuota-mensual/', crear_cuota_mensual_agua, name='crear_cuota_mensual_agua'),
     path('tesoreria/', tesoreria_operativa, name='tesoreria_operativa'),
+    path('tesoreria/seleccionar-obligacion/', seleccionar_obligacion, name='seleccionar_obligacion'),
+    path('selectores/ciudadanos-finanzas/', CiudadanoFinancieroAutocomplete.as_view(), name='ciudadano_financiero_autocomplete'),
+    path('selectores/obligaciones-finanzas/', ObligacionFinancieraAutocomplete.as_view(), name='obligacion_financiera_autocomplete'),
+    path('tesoreria/recibos/', recibo_abono, name='buscar_recibo'),
+    path('tesoreria/recibos/<str:folio>/', recibo_abono, name='recibo_abono'),
+    path('tesoreria/actividad/', actividad_financiera, name='actividad_financiera'),
     path('tesoreria/aportaciones/', resumen_aportaciones, name='resumen_aportaciones'),
     path('tesoreria/aportaciones/buscar/', buscar_aportaciones, name='buscar_aportaciones'),
     path('tesoreria/aportaciones/exportar-csv/', exportar_aportaciones_csv, name='exportar_aportaciones_csv'),

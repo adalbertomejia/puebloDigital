@@ -1,32 +1,34 @@
 {% extends 'dashboard/base_dashboard.html' %}
 {% block title %}Agua{% endblock %}
 {% block content %}
-{% include 'dashboard/components/module_header.html' with title='Agua' subtitle='Consulta y administración de tomas y cuotas de agua.' icon='💧' color='blue' action_url='/admin/agua/toma/' action_label='Administrar tomas' %}
+{% url 'crear_cuota_mensual_agua' as cuota_url %}
+{% include 'dashboard/components/module_header.html' with title='Agua' subtitle='Consulta de tomas y cuotas mensuales de agua.' icon='💧' color='blue' action_url=cuota_url action_label='Crear cuota mensual' %}
 
 <section class="grid md:grid-cols-5 gap-4 mb-6">
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Total de tomas</p><p class="text-2xl font-bold">{{ metricas.total_tomas }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Tomas activas</p><p class="text-2xl font-bold text-emerald-700">{{ metricas.tomas_activas }}</p></article>
   <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Tomas suspendidas</p><p class="text-2xl font-bold text-rose-700">{{ metricas.tomas_suspendidas }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Sin ciudadano asociado</p><p class="text-2xl font-bold text-amber-700">{{ metricas.tomas_sin_ciudadano }}</p></article>
-  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Costo anual actual</p><p class="text-2xl font-bold">${{ metricas.costo_anual_total }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Sin contrato registrado</p><p class="text-2xl font-bold text-amber-700">{{ metricas.tomas_sin_contrato }}</p></article>
+  <article class="bg-white p-4 rounded-xl border"><p class="text-xs text-slate-500">Última cuota mensual registrada</p>{% if ultima_cuota %}<p class="text-2xl font-bold">${{ ultima_cuota.monto_individual|floatformat:2 }}</p><a class="text-teal-700 underline" href="{% url 'tesoreria_concepto_detalle' ultima_cuota.pk %}">{{ ultima_cuota.periodo_agua|date:'m/Y' }} · Ver obligaciones</a>{% else %}<p>Sin cuota registrada</p>{% endif %}</article>
 </section>
 
 <section class="grid lg:grid-cols-3 gap-6">
   <div class="lg:col-span-2 space-y-4">
     <article class="bg-white rounded-2xl border p-4 md:p-5">
       <h2 class="font-semibold text-lg">Filtros de consulta</h2>
-      <p class="text-sm text-slate-500 mb-3">Busca por ciudadano o número de toma y enfoca la revisión por estado o asociación.</p>
+      <p class="text-sm text-slate-500 mb-3">Busca por ciudadano, contrato o número de toma y enfoca la revisión por estado o asociación.</p>
       <form method="get" class="grid md:grid-cols-4 gap-3">
-        <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre o número de toma" class="md:col-span-2 rounded-lg border px-3 py-2">
+        <input type="text" name="q" value="{{ filtros.q }}" placeholder="Nombre, contrato o toma" class="md:col-span-2 rounded-lg border px-3 py-2">
         <select name="estado" class="rounded-lg border px-3 py-2">
           <option value="todas" {% if filtros.estado == 'todas' %}selected{% endif %}>Todas</option>
           <option value="activas" {% if filtros.estado == 'activas' %}selected{% endif %}>Activas</option>
+          <option value="canceladas" {% if filtros.estado == 'canceladas' %}selected{% endif %}>Canceladas</option>
           <option value="suspendidas" {% if filtros.estado == 'suspendidas' %}selected{% endif %}>Suspendidas</option>
         </select>
         <select name="asociacion" class="rounded-lg border px-3 py-2">
-          <option value="todas" {% if filtros.asociacion == 'todas' %}selected{% endif %}>Todas las asociaciones</option>
-          <option value="con_ciudadano" {% if filtros.asociacion == 'con_ciudadano' %}selected{% endif %}>Con ciudadano</option>
-          <option value="sin_ciudadano" {% if filtros.asociacion == 'sin_ciudadano' %}selected{% endif %}>Sin ciudadano</option>
+          <option value="todas" {% if filtros.asociacion == 'todas' %}selected{% endif %}>Todos los contratos</option>
+          <option value="con_contrato" {% if filtros.asociacion == 'con_contrato' %}selected{% endif %}>Con contrato</option>
+          <option value="sin_contrato" {% if filtros.asociacion == 'sin_contrato' %}selected{% endif %}>Sin contrato</option>
         </select>
         <div class="md:col-span-4 flex gap-2">
           <button class="pd-button pd-button--primary">Aplicar filtros</button>
@@ -43,19 +45,19 @@
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-slate-600 text-left">
-            <tr><th class="px-4 py-3">Toma</th><th class="px-4 py-3">Ciudadano</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3">Costo anual</th><th class="px-4 py-3">Acciones</th></tr>
+            <tr><th class="px-4 py-3">Toma</th><th class="px-4 py-3">Contrato</th><th class="px-4 py-3">Ciudadano</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3">Tarifa anual histórica</th><th class="px-4 py-3">Acciones</th></tr>
           </thead>
           <tbody class="divide-y">
             {% for toma in tomas %}
               <tr class="align-top">
-                <td class="px-4 py-3 font-semibold">{{ toma.numero_toma }}</td>
-                <td class="px-4 py-3">{% if toma.ciudadano %}{{ toma.ciudadano.nombre_completo }}{% else %}<span class="text-amber-700 font-medium">Sin ciudadano asociado</span>{% endif %}</td>
+                <td class="px-4 py-3 font-semibold">{{ toma.numero_toma }}</td><td class="px-4 py-3">{{ toma.ciudadano.numero_contrato|default:"Sin contrato" }}</td>
+                <td class="px-4 py-3">{% if toma.ciudadano %}{% if toma.puede_ver_expediente %}<a class="text-teal-700 underline" href="{% url 'perfil_ciudadano' toma.ciudadano_id %}">{{ toma.ciudadano.nombre_completo }}</a>{% else %}{{ toma.ciudadano.nombre_completo }}{% endif %}{% else %}<span class="text-amber-700 font-medium">Sin ciudadano asociado</span>{% endif %}</td>
                 <td class="px-4 py-3"><span class="inline-flex rounded-full px-2 py-1 text-xs font-medium {% if toma.estado == 'ACTIVA' %}bg-emerald-100 text-emerald-700{% elif toma.estado == 'SUSPENDIDA' %}bg-rose-100 text-rose-700{% else %}bg-amber-100 text-amber-700{% endif %}">{{ toma.get_estado_display }}</span></td>
                 <td class="px-4 py-3">${{ toma.costo_anual }}</td>
-                <td class="px-4 py-3"><div class="flex flex-wrap gap-2">{% if toma.ciudadano %}<a class="pd-button pd-button--primary pd-button--sm" href="{% url 'perfil_ciudadano' toma.ciudadano.pk %}">Expediente</a>{% endif %}<a class="pd-button pd-button--warning pd-button--sm" href="/admin/agua/toma/{{ toma.pk }}/change/">Editar</a></div></td>
+                <td class="px-4 py-3"><div class="flex flex-wrap gap-2">{% if toma.puede_ver_expediente %}<a class="pd-button pd-button--primary pd-button--sm" href="{% url 'perfil_ciudadano' toma.ciudadano.pk %}">Expediente</a>{% endif %}{% if request.user.is_superuser %}<a class="pd-button pd-button--warning pd-button--sm" href="/admin/agua/toma/{{ toma.pk }}/change/">Editar</a>{% endif %}</div></td>
               </tr>
             {% empty %}
-              <tr><td colspan="5" class="px-4 py-6 text-slate-500">No se encontraron tomas con estos filtros.</td></tr>
+              <tr><td colspan="6" class="px-4 py-6 text-slate-500">No se encontraron tomas con estos filtros.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -78,7 +80,7 @@
       <div class="space-y-3 text-sm">
         <div><div class="flex justify-between"><span>Activas</span><strong>{{ distribucion.activas }}%</strong></div><div class="h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-emerald-500" style="width: {{ distribucion.activas }}%"></div></div></div>
         <div><div class="flex justify-between"><span>Suspendidas</span><strong>{{ distribucion.suspendidas }}%</strong></div><div class="h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-rose-500" style="width: {{ distribucion.suspendidas }}%"></div></div></div>
-        <div><div class="flex justify-between"><span>Sin asociación</span><strong>{{ distribucion.sin_ciudadano }}%</strong></div><div class="h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-amber-500" style="width: {{ distribucion.sin_ciudadano }}%"></div></div></div>
+        <div><div class="flex justify-between"><span>Sin contrato</span><strong>{{ distribucion.sin_contrato }}%</strong></div><div class="h-2 rounded-full bg-slate-100"><div class="h-2 rounded-full bg-amber-500" style="width: {{ distribucion.sin_contrato }}%"></div></div></div>
       </div>
     </article>
 

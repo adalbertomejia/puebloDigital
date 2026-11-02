@@ -609,6 +609,8 @@ class SecureDeletionFlowTests(TestCase):
         self.user.user_permissions.set(perms)
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
+        from apps.comites.models import UsuarioApp
+        UsuarioApp.objects.create(user=self.user, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", edad=30)
         self.beto = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", edad=31)
 
@@ -625,7 +627,7 @@ class SecureDeletionFlowTests(TestCase):
         limited.user_permissions.set(Permission.objects.filter(codename__in=["add_conceptotesoreria", "change_conceptotesoreria", "view_faena", "change_faena", "view_junta", "change_junta"]))
         self.client.force_login(limited)
         self.assertNotContains(self.client.get(reverse("editar_faena_operativa", args=[faena.pk])), "Eliminar faena")
-        self.assertNotContains(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])), "Eliminar concepto")
+        self.assertEqual(self.client.get(reverse("editar_concepto_tesoreria", args=[concepto.pk])).status_code, 404)
 
     def test_faena_get_confirms_post_deletes_records_and_redirects(self):
         faena = Faena.objects.create(comite=self.comite, fecha=date(2026, 7, 20), descripcion="Limpieza")

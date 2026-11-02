@@ -20,8 +20,8 @@ class PerfilAcceso(TimeStampedModel):
     )
 
     class Meta:
-        verbose_name = "Perfil de acceso"
-        verbose_name_plural = "Perfiles de acceso"
+        verbose_name = "Vínculo de cuenta y ciudadano"
+        verbose_name_plural = "Vínculos de cuenta y ciudadano"
         ordering = ["ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"]
 
     def __str__(self):
@@ -67,8 +67,8 @@ class UsuarioApp(TimeStampedModel):
     activo = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = 'Perfil de acceso'
-        verbose_name_plural = 'Perfiles de acceso'
+        verbose_name = 'Cargo de comité'
+        verbose_name_plural = 'Cargos de comité'
         unique_together = ('user', 'comite', 'rol')
         ordering = ['comite__nombre', 'rol']
 

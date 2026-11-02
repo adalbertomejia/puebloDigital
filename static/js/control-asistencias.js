@@ -1,7 +1,10 @@
 (() => {
+  const init = () => {
   'use strict';
 
   document.querySelectorAll('[data-attendance-carousel]').forEach(carousel => {
+    if (carousel.dataset.bound) return;
+    carousel.dataset.bound = "true";
     const slides = [...carousel.querySelectorAll('[data-attendance-slide]')];
     const previous = carousel.querySelector('[data-attendance-previous]');
     const next = carousel.querySelector('[data-attendance-next]');
@@ -22,4 +25,7 @@
     next.addEventListener('click', () => show(current + 1));
     show(current);
   });
+};
+  init();
+  document.addEventListener("pd:updated", init);
 })();

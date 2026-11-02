@@ -1,4 +1,5 @@
 import csv
+import re
 import calendar
 from datetime import date
 from decimal import Decimal
@@ -11,18 +12,21 @@ from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponse, JsonResponse
 from django import forms
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models.deletion import ProtectedError
 from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum, Subquery, Value
 from django.db.models.functions import Coalesce, ExtractYear
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.text import slugify
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.agua.models import Toma
+from apps.agua.autorizacion import acceso_agua_requerido, comite_agua, puede_operar_agua
+from apps.agua.forms import CuotaMensualAguaForm
 from apps.operacion.models import AsistenciaJunta, Faena, Junta, RegistroFaena
 from apps.operacion.services import (
     aplicar_filtros_eventos,
@@ -31,6 +35,8 @@ from apps.operacion.services import (
 )
 from apps.tesoreria.models import Cooperacion, Pago
 from apps.tesoreria.services import generar_obligaciones_faltantes
+from apps.tesoreria.auditoria import registrar_movimiento
+from apps.tesoreria.models import RegistroFinanciero
 from apps.tesoreria.queries import (
     abonos_filtrados,
     aplicar_filtros_obligaciones,
@@ -40,10 +46,21 @@ from apps.tesoreria.queries import (
     buscar_movimientos_aportaciones,
 )
 from apps.tesoreria.forms import BuscarAportacionesForm
+from apps.tesoreria.autorizacion import (
+    acceso_financiero_requerido, comites_financieros, limitar_finanzas, tiene_acceso_financiero,
+)
+
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
 from .models import Ciudadano, Manzana
 from .autorizacion import responsabilidades_activas
+from apps.operacion.autorizacion import (
+    manzanas_responsables as _manzanas_responsables,
+    comites_presididos as _comites_presididos,
+    puede_operar_evento as _puede_operar_evento,
+    puede_crear_evento as _puede_crear_evento,
+    puede_capturar_evento as _puede_capturar_evento,
+)
 from .query_helpers import filtro_busqueda_ciudadano
 
 
@@ -56,9 +73,10 @@ class EstadoEventoForm(DashboardFormMixin, forms.Form):
         self._apply_dashboard_widgets()
 
 
-def _ciudadanos_operativos_queryset():
+def _ciudadanos_operativos_queryset(usuario=None):
+    filtro_pago = Q() if usuario is None else Q(pagos__comite_id__in=comites_financieros(usuario).values("pk"))
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
-        ultimo_pago_fecha=Max("pagos__fecha"),
+        ultimo_pago_fecha=Max("pagos__fecha", filter=filtro_pago),
         adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
     )
 
@@ -83,110 +101,25 @@ def _puede_modificar_padron(usuario, accion):
     )
 
 
-def _anios_antes(fecha, anios):
-    """Return a birthday cutoff, including Feb 29 safely."""
-    year = fecha.year - anios
-    return fecha.replace(year=year, day=min(fecha.day, calendar.monthrange(year, fecha.month)[1]))
-
-
-def _filtro_edad_efectiva(rango, hoy=None):
-    """Build an ORM-only filter, preferring birth date over manual age."""
-    hoy = hoy or timezone.localdate()
-    sin_fecha = Q(fecha_nacimiento__isnull=True)
-    rangos = {
-        "menores_18": (0, 17),
-        "18_29": (18, 29),
-        "30_49": (30, 49),
-        "50_64": (50, 64),
-        "65_mas": (65, None),
-    }
-    if rango == "sin_informacion":
-        return sin_fecha & Q(edad__isnull=True)
-    if rango == "sin_fecha":
-        return sin_fecha
-    if rango not in rangos:
-        return None
-
-    minimo, maximo = rangos[rango]
-    fecha_q = Q(fecha_nacimiento__lte=_anios_antes(hoy, minimo))
-    manual_q = Q(edad__gte=minimo)
-    if maximo is not None:
-        # Someone older than maximo+1 has a birth date on or before this cutoff.
-        fecha_q &= Q(fecha_nacimiento__gt=_anios_antes(hoy, maximo + 1))
-        manual_q &= Q(edad__lte=maximo)
-    return fecha_q | (sin_fecha & manual_q)
+from .query_helpers import _anios_antes, filtro_edad_efectiva as _filtro_edad_efectiva
 
 
 def _filtrar_ciudadanos_operativos(queryset, params):
-    q = params.get("q", "").strip()
-    estado = params.get("estado", "todos")
-    toma = params.get("toma", "todos")
-    adeudo = params.get("adeudo", "todos")
-    manzana = params.get("manzana", "todas")
-    motivo_alta = params.get("motivo_alta", "todos")
-    sexo = params.get("sexo", "todos")
-    rango_edad = params.get("rango_edad", "todas")
-    fecha_nacimiento = params.get("fecha_nacimiento", "todas")
-
-    if q:
-        queryset = queryset.filter(filtro_busqueda_ciudadano(q))
-
-    if estado == "activos":
-        queryset = queryset.filter(activo=True)
-    elif estado == "inactivos":
-        queryset = queryset.filter(activo=False)
-
-    if toma == "con_toma":
-        queryset = queryset.filter(toma__isnull=False)
-    elif toma == "sin_toma":
-        queryset = queryset.filter(toma__isnull=True)
-
-    if adeudo == "con_adeudo":
-        queryset = queryset.filter(adeudos_faena__gt=0)
-    elif adeudo == "sin_adeudo":
-        queryset = queryset.filter(adeudos_faena=0)
-
-    if manzana == "sin_asignar":
-        queryset = queryset.filter(manzana__isnull=True)
-    elif manzana.isdigit():
-        queryset = queryset.filter(manzana_id=int(manzana))
-
-    motivos_validos = {value for value, _label in Ciudadano.MotivosAlta.choices}
-    if motivo_alta == "sin_motivo":
-        queryset = queryset.filter(Q(motivo_alta="") | Q(motivo_alta__isnull=True))
-    elif motivo_alta in motivos_validos:
-        queryset = queryset.filter(motivo_alta=motivo_alta)
-
-    sexos_validos = {value for value, _label in Ciudadano.Sexos.choices}
-    if sexo in sexos_validos:
-        queryset = queryset.filter(sexo=sexo)
-
-    filtro_edad = _filtro_edad_efectiva(rango_edad)
-    if filtro_edad is not None:
-        queryset = queryset.filter(filtro_edad)
-
-    if fecha_nacimiento == "con_fecha":
-        queryset = queryset.filter(fecha_nacimiento__isnull=False)
-    elif fecha_nacimiento == "sin_fecha":
-        queryset = queryset.filter(fecha_nacimiento__isnull=True)
-
-    ordering = params.get("orden", "nombre")
-    orderings = {
-        "nombre": ["apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "estado": ["-activo", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "adeudos_faena": ["-adeudos_faena", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-        "registro": ["-created_at", "apellido_paterno", "apellido_materno", "nombre", "pk"],
-    }
-    return queryset.order_by(*orderings.get(ordering, orderings["nombre"]))
+    from .filtros import filtrar_padron
+    return filtrar_padron(queryset, params)
 
 
 @login_required
 def padron_ciudadanos(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
     ciudadanos_qs = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
-    paginator = Paginator(ciudadanos_qs, 20)
+    from django_tables2 import RequestConfig
+    from .tablas import CiudadanoTable
+    orden = CiudadanoTable(ciudadanos_qs)
+    RequestConfig(request, paginate=False).configure(orden)
+    paginator = Paginator(orden.data.data, 20)
     ciudadanos_page = paginator.get_page(request.GET.get("page"))
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
@@ -229,6 +162,11 @@ def padron_ciudadanos(request):
             {key: value for key, value in request.GET.items() if key != "page" and value}
         ),
     }
+    from .tablas import CiudadanoTable
+    context["tabla_ciudadanos"] = CiudadanoTable(list(ciudadanos_page.object_list), order_by=orden.order_by, retorno=request.get_full_path(), puede_editar=_puede_modificar_padron(request.user, "change"))
+    context["puede_crear_ciudadano"] = _puede_modificar_padron(request.user, "add")
+    context["mas_filtros"] = any(request.GET.get(k) not in (None, "", "todos", "todas", "nombre") for k in ("motivo_alta", "sexo", "rango_edad", "fecha_nacimiento", "toma", "adeudo", "orden", "contrato", "datos"))
+    context["filtros"].update({k: request.GET.get(k, "todos") for k in ("contrato", "datos")})
     if request.headers.get("HX-Request") == "true":
         return render(request, "dashboard/partials/padron_ciudadanos_resultados.html", context)
     return render(request, "dashboard/padron_ciudadanos.html", context)
@@ -238,7 +176,7 @@ def padron_ciudadanos(request):
 def exportar_ciudadanos_csv(request):
     if not _puede_consultar_padron(request.user):
         raise Http404
-    base_ciudadanos = _ciudadanos_operativos_queryset().visibles_para(request.user)
+    base_ciudadanos = _ciudadanos_operativos_queryset(request.user).visibles_para(request.user)
     ciudadanos = _filtrar_ciudadanos_operativos(base_ciudadanos, request.GET)
     manzana = request.GET.get("manzana", "todas")
     if manzana == "sin_asignar":
@@ -325,57 +263,47 @@ def editar_ciudadano_operativo(request, pk):
     if not _puede_modificar_padron(request.user, "change"):
         raise Http404
     ciudadano = get_object_or_404(Ciudadano, pk=pk)
+    retorno = request.POST.get("return_to") or request.GET.get("return_to", "")
+    if not retorno.startswith("/") or not url_has_allowed_host_and_scheme(retorno, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        retorno = ""
     if request.method == "POST":
         form = CiudadanoOperativoForm(request.POST, instance=ciudadano)
         if form.is_valid():
             ciudadano = form.save()
             messages.success(request, f"Se actualizó correctamente a {ciudadano.nombre_completo}.")
-            return redirect("perfil_ciudadano", ciudadano.pk)
+            destino = reverse("perfil_ciudadano", args=[ciudadano.pk])
+            return redirect(destino + ("?" + urlencode({"return_to": retorno}) if retorno else ""))
         messages.error(request, "Revisa los campos marcados antes de guardar al ciudadano.")
     else:
         form = CiudadanoOperativoForm(instance=ciudadano)
 
     return render(request, "dashboard/ciudadano_form.html", {
         "form": form,
+        "return_to": retorno,
         "title": "Editar ciudadano",
         "description": "Actualiza la información y la manzana asignada al ciudadano.",
         "submit_label": "Guardar cambios",
-        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]),
+        "cancel_url": reverse("perfil_ciudadano", args=[ciudadano.pk]) + ("?" + urlencode({"return_to": retorno}) if retorno else ""),
     })
 
 
 def _filtrar_tomas_operativas(queryset, params):
-    q = params.get("q", "").strip()
-    estado = params.get("estado", "todas")
-    asociacion = params.get("asociacion", "todas")
-
-    if q:
-        queryset = queryset.filter(
-            Q(numero_toma__icontains=q)
-            | Q(ciudadano__nombre__icontains=q)
-            | Q(ciudadano__apellido_paterno__icontains=q)
-            | Q(ciudadano__apellido_materno__icontains=q)
-        )
-
-    if estado == "activas":
-        queryset = queryset.filter(estado=Toma.Estados.ACTIVA)
-    elif estado == "suspendidas":
-        queryset = queryset.filter(estado=Toma.Estados.SUSPENDIDA)
-
-    if asociacion == "con_ciudadano":
-        queryset = queryset.filter(ciudadano__isnull=False)
-    elif asociacion == "sin_ciudadano":
-        queryset = queryset.filter(ciudadano__isnull=True)
-
-    return queryset.order_by("estado", "numero_toma")
+    from apps.agua.filtros import TomasFilter
+    filtro = TomasFilter(params, queryset=queryset)
+    return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("estado", "numero_toma")
 
 
 @login_required
+@acceso_agua_requerido
 def control_agua(request):
     tomas_base = Toma.objects.select_related("ciudadano")
     tomas_qs = _filtrar_tomas_operativas(tomas_base, request.GET)
     paginator = Paginator(tomas_qs, 20)
     tomas_page = paginator.get_page(request.GET.get("page"))
+    tomas_page.object_list = list(tomas_page.object_list)
+    visibles = set(Ciudadano.objects.visibles_para(request.user).filter(pk__in=[t.ciudadano_id for t in tomas_page.object_list]).values_list("pk", flat=True))
+    for toma in tomas_page.object_list:
+        toma.puede_ver_expediente = toma.ciudadano_id in visibles
 
     total_tomas = Toma.objects.count()
     tomas_activas = Toma.objects.filter(estado=Toma.Estados.ACTIVA).count()
@@ -390,7 +318,14 @@ def control_agua(request):
         .order_by("estado", "numero_toma")[:8]
     )
 
+    try:
+        comite = comite_agua()
+        ultima_cuota = ConceptoTesoreria.objects.filter(comite=comite, origen="AGUA", periodo_agua__isnull=False).order_by("-periodo_agua").first()
+    except ValidationError:
+        ultima_cuota = None
+    sin_contrato = tomas_base.filter(Q(ciudadano__numero_contrato__isnull=True) | Q(ciudadano__numero_contrato="")).count()
     context = {
+        "ultima_cuota": ultima_cuota,
         "tomas": tomas_page,
         "filtros": {
             "q": request.GET.get("q", "").strip(),
@@ -402,13 +337,14 @@ def control_agua(request):
             "tomas_activas": tomas_activas,
             "tomas_suspendidas": tomas_suspendidas,
             "tomas_canceladas": tomas_canceladas,
-            "tomas_sin_ciudadano": tomas_sin_ciudadano,
+            "tomas_sin_ciudadano": tomas_sin_ciudadano, "tomas_sin_contrato": sin_contrato,
             "costo_anual_total": costo_anual_total,
         },
         "distribucion": {
             "activas": round((tomas_activas / total_tomas) * 100) if total_tomas else 0,
             "suspendidas": round((tomas_suspendidas / total_tomas) * 100) if total_tomas else 0,
             "sin_ciudadano": round((tomas_sin_ciudadano / total_tomas) * 100) if total_tomas else 0,
+            "sin_contrato": round((sin_contrato / total_tomas) * 100) if total_tomas else 0,
             "canceladas": round((tomas_canceladas / total_tomas) * 100) if total_tomas else 0,
         },
         "tomas_revision": revision_qs,
@@ -423,12 +359,13 @@ def home(request):
 @login_required
 def dashboard_operativo(request):
     q = request.GET.get("q", "").strip()
+    tomas_visibles = Toma.objects.all() if puede_operar_agua(request.user) else Toma.objects.none()
 
     ciudadanos_qs = (
         Ciudadano.objects.select_related("toma", "manzana")
         .annotate(
-            total_pagos=Count("pagos", distinct=True),
-            ultimo_pago_fecha=Max("pagos__fecha"),
+            total_pagos=Count("pagos", filter=Q(pagos__comite_id__in=comites_financieros(request.user).values("pk")), distinct=True),
+            ultimo_pago_fecha=Max("pagos__fecha", filter=Q(pagos__comite_id__in=comites_financieros(request.user).values("pk"))),
             adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True), distinct=True),
             ultima_faena_fecha=Max("registros_faena__faena__fecha"),
         )
@@ -447,13 +384,13 @@ def dashboard_operativo(request):
         "total_ciudadanos": Ciudadano.objects.count(),
         "ciudadanos_activos": Ciudadano.objects.filter(activo=True).count(),
         "morosos_faena": RegistroFaena.objects.filter(genera_adeudo=True).values("ciudadano").distinct().count(),
-        "tomas_suspendidas": Toma.objects.filter(estado=Toma.Estados.SUSPENDIDA).count(),
-        "pagos_mes": Pago.objects.filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
+        "tomas_suspendidas": tomas_visibles.filter(estado=Toma.Estados.SUSPENDIDA).count(),
+        "pagos_mes": limitar_finanzas(Pago.objects.all(), request.user).filter(fecha__month=timezone.localdate().month, fecha__year=timezone.localdate().year).count(),
     }
 
-    pagos_recientes = list(Pago.objects.select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5])
+    pagos_recientes = list(limitar_finanzas(Pago.objects.all(), request.user).select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5])
     cooperaciones_recientes = list(
-        Cooperacion.objects.select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5]
+        limitar_finanzas(Cooperacion.objects.all(), request.user).select_related("ciudadano", "comite").order_by("-fecha", "-created_at")[:5]
     )
     faenas_recientes = list(Faena.objects.select_related("comite").order_by("-fecha", "-created_at")[:5])
     juntas_programadas = (
@@ -481,8 +418,8 @@ def dashboard_operativo(request):
     )[:10]
 
     tarjeta_agua = {
-        "tomas_pendientes": Toma.objects.filter(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]).count(),
-        "morosos_agua": Pago.objects.filter(tipo=Pago.Tipos.SERVICIO).values("ciudadano").distinct().count(),
+        "tomas_pendientes": tomas_visibles.filter(estado__in=[Toma.Estados.SUSPENDIDA, Toma.Estados.CANCELADA]).count(),
+        "morosos_agua": limitar_finanzas(Pago.objects.all(), request.user).filter(tipo=Pago.Tipos.SERVICIO).values("ciudadano").distinct().count(),
     }
 
     tarjeta_faena = {
@@ -515,44 +452,21 @@ def dashboard_operativo(request):
 
 @login_required
 def mis_responsabilidades(request):
+    from apps.comites.models import PerfilAcceso
+
+    perfil = PerfilAcceso.objects.select_related("ciudadano__manzana").filter(user=request.user).first()
     return render(
         request,
         "dashboard/mis_responsabilidades.html",
-        {"responsabilidades": responsabilidades_activas(request.user)},
+        {
+            "responsabilidades": responsabilidades_activas(request.user),
+            "ciudadano_vinculado": perfil.ciudadano if perfil else None,
+        },
     )
 
 
 def _can_delete_operacion_event(user, permission_codename):
     return user.is_superuser or user.has_perm(permission_codename)
-
-
-def _manzanas_responsables(usuario):
-    return [r.manzana.pk for r in responsabilidades_activas(usuario) if r.tipo == "MANZANA" and r.manzana]
-
-
-def _comites_presididos(usuario):
-    return [
-        r.comite.pk
-        for r in responsabilidades_activas(usuario)
-        if r.tipo == "COMITE" and r.rol == "PRESIDENTE" and r.comite
-    ]
-
-
-def _puede_operar_evento(usuario, evento):
-    if usuario.is_superuser or usuario.has_perm(f"operacion.change_{evento._meta.model_name}"):
-        return True
-    if evento.alcance == evento.Alcances.MANZANA:
-        return evento.manzana_id in _manzanas_responsables(usuario)
-    return evento.comite_id in _comites_presididos(usuario)
-
-
-def _puede_crear_evento(usuario, model):
-    return bool(
-        usuario.is_superuser
-        or usuario.has_perm(f"operacion.add_{model._meta.model_name}")
-        or _manzanas_responsables(usuario)
-        or _comites_presididos(usuario)
-    )
 
 
 def _money(value):
@@ -569,6 +483,7 @@ def _evento_operativo_form_view(
     instance=None,
     manzana_restringida_id=None,
     comites_restringidos_ids=None,
+    manzanas_restringidas_ids=None,
     delete_url_name="",
     delete_permission="",
 ):
@@ -578,7 +493,11 @@ def _evento_operativo_form_view(
     else:
         form = form_class(instance=instance)
 
-    if manzana_restringida_id:
+    if manzanas_restringidas_ids is not None:
+        # A president who also represents a block retains both responsibilities.
+        form.fields["manzana"].queryset = Manzana.objects.filter(pk__in=manzanas_restringidas_ids, activa=True)
+        form.fields["comite"].queryset = Comite.objects.filter(pk__in=comites_restringidos_ids, activo=True)
+    elif manzana_restringida_id:
         form.fields["alcance"].choices = [(form.instance.Alcances.MANZANA, "Por manzana")]
         form.fields["manzana"].queryset = Manzana.objects.filter(pk=manzana_restringida_id, activa=True)
         form.fields["manzana"].initial = manzana_restringida_id
@@ -601,6 +520,8 @@ def _evento_operativo_form_view(
 
     if request.method == "POST":
         if form.is_valid():
+            if manzanas_restringidas_ids is not None and not _puede_operar_evento(request.user, form.instance):
+                raise Http404
             event = form.save()
             action = "actualizó" if is_edit else "creó"
             messages.success(request, f"Se {action} correctamente la {event_label.lower()}.")
@@ -634,7 +555,13 @@ def _crear_evento_operativo(request, form_class, event_label, description, detai
     manzanas = _manzanas_responsables(request.user)
     if not request.user.is_superuser and not request.user.has_perm(f"operacion.add_{model._meta.model_name}"):
         comites_presididos = _comites_presididos(request.user)
-        if comites_presididos and not manzanas:
+        if comites_presididos and manzanas:
+            return _evento_operativo_form_view(
+                request, form_class, event_label, description, detail_url_name,
+                comites_restringidos_ids=comites_presididos,
+                manzanas_restringidas_ids=manzanas,
+            )
+        if comites_presididos:
             return _evento_operativo_form_view(
                 request, form_class, event_label, description, detail_url_name,
                 comites_restringidos_ids=comites_presididos,
@@ -758,7 +685,7 @@ def generar_registros_faena(request, faena_id):
         return redirect("dashboard_operativo")
 
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("manzana"), pk=faena_id)
-    if faena.alcance != Faena.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_faena"):
+    if not _puede_operar_evento(request.user, faena):
         raise Http404
     if faena.estado != Faena.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para faenas programadas.")
@@ -781,7 +708,7 @@ def generar_registros_junta(request, junta_id):
         return redirect("dashboard_operativo")
 
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("manzana"), pk=junta_id)
-    if junta.alcance != Junta.Alcances.MANZANA and not _can_delete_operacion_event(request.user, "operacion.change_junta"):
+    if not _puede_operar_evento(request.user, junta):
         raise Http404
     if junta.estado != Junta.Estados.PROGRAMADA:
         messages.error(request, "Solo se pueden generar registros para juntas programadas.")
@@ -975,6 +902,11 @@ def control_asistencias(request):
     for evento in chain(faenas, juntas):
         puede_operar = _puede_operar_evento(request.user, evento)
         evento.puede_operar = puede_operar
+        evento.can_generate = puede_operar and evento.estado == evento.Estados.PROGRAMADA
+        puede_capturar = _puede_capturar_evento(request.user, evento)
+        evento.can_capture = evento.can_capture and puede_capturar
+        if not puede_capturar:
+            evento.sequential_capture_url = ""
         if not puede_operar:
             evento.admin_change_url = ""
             evento.estado_edit_url = ""
@@ -1089,6 +1021,7 @@ def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=faena_id)
     context = _event_detail_context(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
     context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk]) if _puede_operar_evento(request.user, faena) else ""
+    context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, faena)
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_faena", args=[faena.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["faena", faena.pk]) if _puede_operar_evento(request.user, faena) else ""
@@ -1101,6 +1034,7 @@ def control_asistencias_junta_detalle(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
     context = _event_detail_context(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
     context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk]) if _puede_operar_evento(request.user, junta) else ""
+    context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, junta)
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
     context["sequential_capture_url"] = reverse("captura_asistencia_secuencial_junta", args=[junta.pk])
     context["estado_edit_url"] = reverse("editar_estado_evento", args=["junta", junta.pk]) if _puede_operar_evento(request.user, junta) else ""
@@ -1149,9 +1083,13 @@ def _capture_config(event_kind):
 
 
 def _update_attendance_records(request, registros, config):
+    from apps.tesoreria.services import sincronizar_adeudo_asistencia
     updated = 0
+    fila = request.POST.get("registro_fila")
     valid_statuses = {value for value, _label in config["status_choices"]}
     for registro in registros:
+        if fila and str(registro.pk) != fila:
+            continue
         prefix = f"registro_{registro.pk}"
         estatus = request.POST.get(f"{prefix}_estatus")
         if estatus not in valid_statuses:
@@ -1168,14 +1106,18 @@ def _update_attendance_records(request, registros, config):
             changed = True
 
         if isinstance(registro, (RegistroFaena, AsistenciaJunta)):
-            genera_adeudo = request.POST.get(f"{prefix}_genera_adeudo") == "on"
-            monto_raw = request.POST.get(f"{prefix}_monto_adeudo") or "0"
-            if registro.genera_adeudo != genera_adeudo:
-                registro.genera_adeudo = genera_adeudo
-                changed = True
-            if str(registro.monto_adeudo) != monto_raw:
-                registro.monto_adeudo = monto_raw
-                changed = True
+            campo_monto = f"{prefix}_monto_adeudo"
+            if campo_monto in request.POST:
+                try:
+                    monto = forms.DecimalField(min_value=0, max_digits=10, decimal_places=2).clean(request.POST.get(campo_monto) or "0")
+                except ValidationError:
+                    raise ValidationError(f"{registro.ciudadano.nombre_completo}: escribe un adeudo válido, mayor o igual a cero, con máximo dos decimales.")
+                if request.POST.get(f"{prefix}_genera_adeudo") == "on" and monto <= 0:
+                    raise ValidationError(f"{registro.ciudadano.nombre_completo}: indica un importe mayor que cero para el adeudo.")
+                if registro.monto_adeudo != monto or registro.genera_adeudo != (monto > 0):
+                    registro.monto_adeudo = monto
+                    registro.genera_adeudo = monto > 0
+                    changed = True
         if isinstance(registro, AsistenciaJunta):
             asistio = estatus == AsistenciaJunta.Estatus.ASISTIO
             if registro.asistio != asistio:
@@ -1185,6 +1127,7 @@ def _update_attendance_records(request, registros, config):
         if changed:
             registro.save()
             updated += 1
+        sincronizar_adeudo_asistencia(registro, usuario=request.user)
     return updated
 
 
@@ -1205,7 +1148,7 @@ def _capture_metrics(registros):
         "actual": registradas + 1 if pendientes else total,
         "porcentaje": round((registradas / total) * 100) if total else 0,
         "cantidad_adeudos": cantidad_adeudos,
-        "monto_total_adeudos": str(monto_total_adeudos),
+        "monto_total_adeudos": f"{monto_total_adeudos:.2f}",
         "porcentaje_asistencia": round((asistieron / total) * 100) if total else 0,
     }
 
@@ -1213,7 +1156,7 @@ def _capture_metrics(registros):
 def _pending_records(event, relation, usuario=None):
     registros = getattr(event, relation).all()
     if usuario is not None:
-        registros = registros.visibles_para(usuario)
+        registros = registros.capturables_para(usuario)
     return registros.select_related("ciudadano").filter(estatus="PENDIENTE").order_by(
         "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk"
     )
@@ -1239,7 +1182,7 @@ def _normal_capture_url(event, config):
 def _capture_payload(event, config, usuario=None):
     registros = getattr(event, config["relation"]).all()
     if usuario is not None:
-        registros = registros.visibles_para(usuario)
+        registros = registros.capturables_para(usuario)
     metrics = _capture_metrics(registros)
     siguiente = None
     if metrics["pendientes"] > 1:
@@ -1263,7 +1206,7 @@ def _json_capture_action(request, event, config):
         return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
 
     with transaction.atomic():
-        registros_locked = getattr(event, config["relation"]).all().visibles_para(request.user).select_for_update()
+        registros_locked = getattr(event, config["relation"]).all().capturables_para(request.user).select_for_update()
         registro = get_object_or_404(registros_locked, pk=record_id)
         expected = request.POST.get("expected_status")
         if action in {"asistio", "falto"}:
@@ -1295,23 +1238,37 @@ def _captura_asistencia(request, event_kind, event_id):
     event = get_object_or_404(
         config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
+    if not _puede_capturar_evento(request.user, event):
+        raise Http404
     if event.estado != event.Estados.PROGRAMADA:
         messages.error(request, "Solo se puede capturar asistencia en eventos programados.")
         return redirect(config["detail_url"], event.pk)
-    registros_qs = getattr(event, config["relation"]).all().visibles_para(request.user).select_related("ciudadano").order_by(
+    registros_qs = getattr(event, config["relation"]).all().capturables_para(request.user).select_related("ciudadano").order_by(
         "estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"
     )
 
+    error_captura = ""
     if request.method == "POST":
-        with transaction.atomic():
-            registros = list(registros_qs.select_for_update())
-            updated = _update_attendance_records(request, registros, config)
-        messages.success(request, f"Se guardaron {updated} cambios de asistencia para {config['event_type'].lower()}.")
-        return redirect(config["capture_url"], event.pk)
+        try:
+            with transaction.atomic():
+                # Serialize capture for the event, then lock only submitted rows.
+                type(event).objects.select_for_update().get(pk=event.pk)
+                ids = [int(m[1]) for key in request.POST if (m := re.fullmatch(r"registro_([0-9]{1,18})_estatus", key))]
+                registros = list(registros_qs.filter(pk__in=ids).select_for_update())
+                updated = _update_attendance_records(request, registros, config)
+        except ValidationError as exc:
+            error_captura = " ".join(exc.messages)
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"ok": False, "error": error_captura}, status=400)
+        else:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"ok": True, "updated": updated, "metrics": _capture_metrics(registros_qs)})
+            messages.success(request, f"Se guardaron {updated} cambios de asistencia y se sincronizaron los adeudos con Tesorería.")
+            return redirect(config["capture_url"], event.pk)
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all().visibles_para(request.user),
+        getattr(event, config["relation"]).all().capturables_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
@@ -1326,7 +1283,8 @@ def _captura_asistencia(request, event_kind, event_id):
             "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]) if _puede_operar_evento(request.user, event) else "",
         }
     )
-    return render(request, "dashboard/captura_asistencia.html", context)
+    context["error_captura"] = error_captura
+    return render(request, "dashboard/captura_asistencia.html", context, status=400 if error_captura else 200)
 
 
 def _captura_asistencia_secuencial(request, event_kind, event_id):
@@ -1334,6 +1292,8 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
     event = get_object_or_404(
         config["event_model"].objects.visibles_para(request.user).select_related("comite", "manzana"), pk=event_id
     )
+    if not _puede_capturar_evento(request.user, event):
+        raise Http404
     if event.estado != event.Estados.PROGRAMADA:
         if request.method == "POST":
             return JsonResponse({"ok": False, "error": "Solo se puede capturar asistencia en eventos programados."}, status=403)
@@ -1345,7 +1305,7 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
 
     context = _event_detail_context(
         event,
-        getattr(event, config["relation"]).all().visibles_para(request.user),
+        getattr(event, config["relation"]).all().capturables_para(request.user),
         config["event_type"],
         getattr(event, config["description_attr"]),
     )
@@ -1358,10 +1318,10 @@ def _captura_asistencia_secuencial(request, event_kind, event_id):
             "normal_capture_url": payload["normal_capture_url"],
             "last_pending_message": payload["last_pending_message"],
             "detail_url": reverse(config["detail_url"], args=[event.pk]),
-            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]),
+            "admin_change_url": reverse(config["admin_change_url"], args=[event.pk]) if _puede_operar_evento(request.user, event) else "",
             "capture_url": reverse(config["sequential_capture_url"], args=[event.pk]),
             "bulk_capture_url": reverse(config["capture_url"], args=[event.pk]),
-            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]),
+            "estado_edit_url": reverse("editar_estado_evento", args=[event_kind, event.pk]) if _puede_operar_evento(request.user, event) else "",
         }
     )
     return render(request, "dashboard/captura_asistencia_secuencial.html", context)
@@ -1432,9 +1392,7 @@ def perfil_ciudadano(request, pk):
         obtener_obligaciones_ciudadano, obtener_resumen_ciudadano, paginar,
     )
 
-    puede_ver_finanzas = bool(
-        request.user.is_superuser or request.user.has_perm("core.view_ciudadano")
-    )
+    puede_ver_finanzas = tiene_acceso_financiero(request.user)
     ciudadanos_visibles = Ciudadano.objects.visibles_para(request.user)
     ciudadano = get_object_or_404(
         ciudadanos_visibles.select_related("toma", "manzana", "manzana__responsable"),
@@ -1454,8 +1412,8 @@ def perfil_ciudadano(request, pk):
     else:
         origen = "Ciudadanos"
 
-    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
-    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
+    obligaciones_page = paginar(obtener_obligaciones_ciudadano(ciudadano, usuario=request.user), request, "obligaciones_page") if puede_ver_finanzas else paginar([], request, "obligaciones_page")
+    abonos_page = paginar(obtener_abonos_ciudadano(ciudadano, usuario=request.user), request, "abonos_page") if puede_ver_finanzas else paginar([], request, "abonos_page")
     asistencias_page = paginar(obtener_asistencias_ciudadano(ciudadano), request, "asistencias_page")
     for page, parametro in ((obligaciones_page, "obligaciones_page"), (abonos_page, "abonos_page"), (asistencias_page, "asistencias_page")):
         params = request.GET.copy()
@@ -1472,7 +1430,7 @@ def perfil_ciudadano(request, pk):
         "dashboard/perfil_ciudadano.html",
         {
             "ciudadano": ciudadano,
-            "resumen": obtener_resumen_ciudadano(ciudadano),
+            "resumen": obtener_resumen_ciudadano(ciudadano, usuario=request.user),
             "puede_ver_finanzas": puede_ver_finanzas,
             "obligaciones_page": obligaciones_page,
             "abonos_page": abonos_page,
@@ -1494,11 +1452,11 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 
 def _can_modify_tesoreria(user):
-    return user.has_perm("tesoreria.add_conceptotesoreria") or user.has_perm("tesoreria.change_conceptotesoreria") or user.is_superuser
+    return tiene_acceso_financiero(user)
 
 
 def _can_delete_tesoreria(user):
-    return user.is_superuser or user.has_perm("tesoreria.delete_conceptotesoreria")
+    return tiene_acceso_financiero(user)
 
 
 def _filtros_tesoreria(params):
@@ -1544,8 +1502,9 @@ def _metricas_conceptos(conceptos):
 
 
 @login_required
+@acceso_financiero_requerido
 def tesoreria_operativa(request):
-    conceptos_qs = conceptos_filtrados(request.GET)
+    conceptos_qs = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
     metricas = _metricas_conceptos(conceptos_qs)
     pagos_page = Paginator(
         conceptos_qs.filter(naturaleza=ConceptoTesoreria.Naturalezas.PAGO), 3,
@@ -1576,10 +1535,10 @@ def tesoreria_operativa(request):
         "pagos_page": pagos_page, "cooperaciones_page": cooperaciones_page,
         "metricas": metricas, "filtros": filtros,
         "meses": MESES,
-        "anios": ConceptoTesoreria.objects.dates("fecha", "year", order="DESC"),
-        "comites": Comite.objects.filter(activo=True), "manzanas": Manzana.objects.order_by("nombre"),
+        "anios": limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).dates("fecha", "year", order="DESC"),
+        "comites": comites_financieros(request.user), "manzanas": Manzana.objects.order_by("nombre"),
         "can_modify": _can_modify_tesoreria(request.user),
-        "hay_conceptos": ConceptoTesoreria.objects.exists(),
+        "hay_conceptos": limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).exists(),
         "export_querystring": export_params.urlencode(),
         "manzana_activa": Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None,
     }
@@ -1588,8 +1547,9 @@ def tesoreria_operativa(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_tesoreria_csv(request):
-    conceptos = conceptos_filtrados(request.GET)
+    conceptos = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
     partes = ["tesoreria"]
     naturaleza = request.GET.get("naturaleza")
     if naturaleza in dict(ConceptoTesoreria.Naturalezas.choices):
@@ -1602,13 +1562,14 @@ def exportar_tesoreria_csv(request):
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response)
-    writer.writerow(["ID", "Naturaleza", "Concepto", "Descripción", "Comité", "Alcance", "Manzana", "Fecha", "Año del periodo", "Monto base", "Obligaciones totales", "Pagadas", "Pendientes", "Canceladas", "Total asignado", "Total abonado", "Saldo pendiente", "Estado general"])
+    writer.writerow(["ID", "Naturaleza", "Concepto", "Descripción", "Comité", "Alcance", "Manzana", "Fecha", "Año del periodo", "Monto base", "Obligaciones totales", "Pagadas", "Pendientes", "Canceladas", "Total asignado", "Total abonado", "Saldo pendiente", "Estado general", "Registrado por", "Fecha de registro"])
     for c in conceptos.iterator():
         writer.writerow([c.pk, c.get_naturaleza_display(), c.concepto, c.descripcion or "", c.comite.nombre,
             c.get_alcance_display(), str(c.manzana) if c.manzana_id else "Sin asignar", c.fecha.isoformat(),
             c.anio_periodo or c.fecha.year, c.monto_individual, c.cantidad_obligaciones, c.cantidad_pagada,
             c.cantidad_pendiente, c.cantidad_cancelada, c.total_asignado, c.total_abonado,
-            c.saldo_pendiente, _etiqueta_estado_general(c.estado_general)])
+            c.saldo_pendiente, _etiqueta_estado_general(c.estado_general),
+            c.creado_por.get_username() if c.creado_por else "Autor no registrado", c.created_at.isoformat()])
     return response
 
 
@@ -1730,11 +1691,12 @@ def _querystring_sin_pagina(params, **cambios):
 
 
 @login_required
+@acceso_financiero_requerido
 def buscar_aportaciones(request):
     """Coordina la búsqueda SSR y su respuesta parcial progresiva."""
     manzanas = list(Manzana.objects.order_by("nombre"))
-    comites = list(Comite.objects.filter(activo=True).order_by("nombre"))
-    anios = {fecha.year for fecha in Abono.objects.dates("fecha", "year", order="DESC")}
+    comites = list(comites_financieros(request.user).order_by("nombre"))
+    anios = {fecha.year for fecha in limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").dates("fecha", "year", order="DESC")}
     if request.GET.get("anio", "").isdigit():
         anios.add(int(request.GET["anio"]))
     datos = request.GET.copy()
@@ -1748,7 +1710,7 @@ def buscar_aportaciones(request):
         comites=comites, meses=MESES,
     )
     filtros = form.cleaned_data if form.is_valid() else {}
-    movimientos = buscar_movimientos_aportaciones(filtros) if form.is_valid() else Abono.objects.none()
+    movimientos = buscar_movimientos_aportaciones(filtros, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")) if form.is_valid() else Abono.objects.none()
     total = movimientos.count()
     por_pagina = int(filtros.get("por_pagina") or 25) if form.is_valid() else 25
     pagina = Paginator(movimientos, por_pagina).get_page(request.GET.get("pagina"))
@@ -1783,6 +1745,7 @@ def buscar_aportaciones(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def resumen_aportaciones(request):
     opciones_limite_ciudadanos = (5, 10, 20, 50, 100)
     opciones_limite_movimientos = (5, 10, 20, 25, 50, 100)
@@ -1814,7 +1777,7 @@ def resumen_aportaciones(request):
     incluir_inactivas = _opcion(
         request.GET.get("incluir_manzanas_inactivas"), permitidos={"0", "1"}, predeterminado="0",
     ) == "1"
-    base = abonos_filtrados(request.GET)
+    base = abonos_filtrados(request.GET, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id"))
     dinero = DecimalField(max_digits=14, decimal_places=2)
     cero = Value(Decimal("0.00"), output_field=dinero)
     metricas = base.aggregate(
@@ -1842,7 +1805,7 @@ def resumen_aportaciones(request):
         "reciente": ("-ultima_aportacion", "-total_abonado", "obligacion__ciudadano_id"),
     }
     mayores_qs = mayores_qs.order_by(*ordenes_ciudadanos[orden_ciudadanos])
-    movimientos_qs = base.select_related(
+    movimientos_qs = base.select_related("creado_por",
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
         "obligacion__concepto__manzana", "obligacion__concepto__comite",
     ).order_by("-fecha", "-created_at", "-pk")
@@ -1888,7 +1851,7 @@ def resumen_aportaciones(request):
         etiquetas_contexto.append("Pagos" if filtros["naturaleza"] == "PAGO" else "Cooperaciones")
     if filtros["alcance"] in dict(ConceptoTesoreria.Alcances.choices): etiquetas_contexto.append(dict(ConceptoTesoreria.Alcances.choices)[filtros["alcance"]])
     manzana_contexto = Manzana.objects.filter(pk=filtros["manzana"]).first() if filtros["manzana"].isdigit() else None
-    comite_contexto = Comite.objects.filter(pk=filtros["comite"]).first() if filtros["comite"].isdigit() else None
+    comite_contexto = comites_financieros(request.user).filter(pk=filtros["comite"]).first() if filtros["comite"].isdigit() else None
     if manzana_contexto: etiquetas_contexto.append(str(manzana_contexto))
     if comite_contexto: etiquetas_contexto.append(comite_contexto.nombre)
     if filtros["concepto"]: etiquetas_contexto.append(f"Concepto: {filtros['concepto']}")
@@ -1950,8 +1913,8 @@ def resumen_aportaciones(request):
         "movimientos_page": movimientos_page,
         "ciudadanos_page": ciudadanos_page,
         "mayores_aportaciones": mayores, "filtros": filtros, "meses": MESES,
-        "anios": Abono.objects.dates("fecha", "year", order="DESC"), "comites": Comite.objects.filter(activo=True),
-        "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": Abono.objects.exists(),
+        "anios": limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").dates("fecha", "year", order="DESC"), "comites": comites_financieros(request.user),
+        "manzanas": Manzana.objects.order_by("nombre"), "hay_abonos": limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id").exists(),
         "hay_filtros": any(v not in ("", "todos", "todas") for v in filtros.values()),
         "export_querystring": export_params.urlencode(),
         "buscar_querystring": urlencode(buscar_params),
@@ -1993,10 +1956,11 @@ def resumen_aportaciones(request):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_aportaciones_csv(request):
-    abonos = abonos_filtrados(request.GET).select_related(
+    abonos = abonos_filtrados(request.GET, queryset=limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")).select_related(
         "obligacion__ciudadano", "obligacion__ciudadano__manzana", "obligacion__concepto",
-        "obligacion__concepto__manzana", "obligacion__concepto__comite",
+        "obligacion__concepto__manzana", "obligacion__concepto__comite", "creado_por",
     ).order_by("-fecha", "-created_at", "-pk")
     partes = ["aportaciones"]
     naturaleza = request.GET.get("naturaleza")
@@ -2011,7 +1975,7 @@ def exportar_aportaciones_csv(request):
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response)
-    writer.writerow(["ID de abono", "Fecha", "Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Naturaleza", "Concepto", "Comité", "Alcance", "Manzana del concepto", "Monto abonado", "Estado de la obligación"])
+    writer.writerow(["ID de abono", "Fecha", "Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Naturaleza", "Concepto", "Comité", "Alcance", "Manzana del concepto", "Monto abonado", "Estado de la obligación", "Registrado por", "Fecha de registro", "Referencia del comprobante"])
     for abono in abonos.iterator(chunk_size=1000):
         obligacion, concepto, ciudadano = abono.obligacion, abono.obligacion.concepto, abono.obligacion.ciudadano
         writer.writerow([
@@ -2021,19 +1985,30 @@ def exportar_aportaciones_csv(request):
             concepto.get_naturaleza_display(), concepto.concepto, concepto.comite.nombre,
             concepto.get_alcance_display(), str(concepto.manzana) if concepto.manzana_id else "Sin asignar",
             abono.monto, obligacion.get_estado_display(),
+            abono.creado_por.get_username() if abono.creado_por else "Autor no registrado",
+            abono.created_at.isoformat(), abono.referencia,
         ])
     return response
 
 
 @login_required
+@acceso_financiero_requerido
+@transaction.atomic
 def crear_concepto_tesoreria(request, pk=None):
-    concepto = get_object_or_404(ConceptoTesoreria, pk=pk) if pk else None
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user), pk=pk) if pk else None
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para modificar tesorería.")
         return redirect("tesoreria_operativa")
-    form = ConceptoTesoreriaForm(request.POST or None, instance=concepto)
+    form = ConceptoTesoreriaForm(request.POST or None, instance=concepto, usuario=request.user)
     if request.method == "POST" and form.is_valid():
-        obj = form.save()
+        obj = form.save(commit=False)
+        if concepto is None:
+            obj.creado_por = request.user
+        obj.save()
+        if concepto is None or form.has_changed():
+            registrar_movimiento(request.user, obj,
+                RegistroFinanciero.Acciones.CREAR if concepto is None else RegistroFinanciero.Acciones.EDITAR,
+                detalle={"campos": form.changed_data})
         messages.success(request, "Se guardó correctamente el concepto de tesorería.")
         return redirect("tesoreria_concepto_detalle", obj.pk)
     can_delete = bool(concepto and _can_delete_tesoreria(request.user))
@@ -2042,8 +2017,9 @@ def crear_concepto_tesoreria(request, pk=None):
 
 
 @login_required
+@acceso_financiero_requerido
 def eliminar_concepto_tesoreria(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
     if not _can_delete_tesoreria(request.user):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
@@ -2057,6 +2033,8 @@ def eliminar_concepto_tesoreria(request, pk):
     if request.method == "POST":
         try:
             with transaction.atomic():
+                registrar_movimiento(request.user, concepto, RegistroFinanciero.Acciones.ELIMINAR,
+                    detalle={"obligaciones": cantidad_obligaciones, "abonos": cantidad_abonos, "total_abonado": str(total_abonado)})
                 concepto.delete()
         except ProtectedError:
             messages.error(request, "No se pudo eliminar porque existen registros protegidos relacionados.")
@@ -2068,13 +2046,14 @@ def eliminar_concepto_tesoreria(request, pk):
 
 @login_required
 @require_POST
+@acceso_financiero_requerido
 def generar_obligaciones_tesoreria(request, pk):
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para generar obligaciones.")
         return redirect("tesoreria_operativa")
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     try:
-        resultado = generar_obligaciones_faltantes(concepto)
+        resultado = generar_obligaciones_faltantes(concepto, usuario=request.user)
     except ValidationError as error:
         detalle = "; ".join(error.messages)
         messages.error(request, f"No se generaron obligaciones: {detalle}")
@@ -2130,8 +2109,9 @@ def _metricas_concepto(concepto):
 
 
 @login_required
+@acceso_financiero_requerido
 def tesoreria_concepto_detalle(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("comite", "manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
     metricas = _metricas_concepto(concepto)
     concepto.cantidad_obligaciones = metricas["total"]
     concepto.cantidad_pagada = metricas["pagadas"]
@@ -2139,7 +2119,7 @@ def tesoreria_concepto_detalle(request, pk):
     concepto.cantidad_cancelada = metricas["canceladas"]
     obligaciones = anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto))
     obligaciones = aplicar_filtros_obligaciones(obligaciones, request.GET).prefetch_related(
-        Prefetch("abonos", queryset=Abono.objects.order_by("-fecha", "-created_at"))
+        Prefetch("abonos", queryset=Abono.objects.select_related("creado_por").order_by("-fecha", "-created_at"))
     )
     page = Paginator(obligaciones, 25).get_page(request.GET.get("page"))
     page.previous_querystring = _page_querystring(request, "page", page.previous_page_number()) if page.has_previous() else ""
@@ -2155,8 +2135,9 @@ def tesoreria_concepto_detalle(request, pk):
 
 
 @login_required
+@acceso_financiero_requerido
 def exportar_obligaciones_tesoreria_csv(request, pk):
-    concepto = get_object_or_404(ConceptoTesoreria.objects.select_related("manzana"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     obligaciones = aplicar_filtros_obligaciones(
         anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto)), request.GET
     )
@@ -2166,7 +2147,7 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{nombre}_{timezone.localdate().isoformat()}.csv"'
     response.write("\ufeff"); writer = csv.writer(response)
-    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono"])
+    writer.writerow(["Ciudadano", "Nombre", "Apellido paterno", "Apellido materno", "No. de contrato", "Manzana actual", "Sexo", "Fecha de nacimiento", "Edad actual", "Motivo de alta", "Monto asignado", "Total abonado", "Saldo pendiente", "Estado", "Último abono", "Registrado por", "Fecha de registro", "Toma del cobro", "Contrato al generar", "Periodo mensual de agua"])
     for o in obligaciones.iterator():
         c = o.ciudadano
         writer.writerow([c.nombre_completo, c.nombre, c.apellido_paterno, c.apellido_materno or "Sin información",
@@ -2174,13 +2155,16 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
             c.get_sexo_display() or "No especificado", c.fecha_nacimiento.isoformat() if c.fecha_nacimiento else "Sin información",
             c.edad_actual if c.edad_actual is not None else "Sin información", c.get_motivo_alta_display() or "Sin información",
             o.monto_asignado, o.total_abonado_calc, o.saldo_pendiente_calc, o.get_estado_display(),
-            o.ultimo_abono.isoformat() if o.ultimo_abono else "Sin información"])
+            o.ultimo_abono.isoformat() if o.ultimo_abono else "Sin información",
+            o.creado_por.get_username() if o.creado_por else "Autor no registrado", o.created_at.isoformat(),
+            o.numero_toma_registrado, o.numero_contrato_registrado, concepto.periodo_agua.isoformat() if concepto.periodo_agua else ""])
     return response
 
 
 @login_required
+@acceso_financiero_requerido
 def acreditar_obligacion(request, pk):
-    obligacion = get_object_or_404(ObligacionCiudadano.objects.select_related("ciudadano", "concepto"), pk=pk)
+    obligacion = get_object_or_404(limitar_finanzas(ObligacionCiudadano.objects.all(), request.user, "concepto__comite_id").select_related("ciudadano", "concepto"), pk=pk)
     if not _can_modify_tesoreria(request.user):
         messages.error(request, "No tienes permisos para acreditar pagos.")
         return redirect("tesoreria_concepto_detalle", obligacion.concepto_id)
@@ -2188,8 +2172,8 @@ def acreditar_obligacion(request, pk):
         form = AbonoForm(request.POST, obligacion=obligacion)
         if form.is_valid():
             try:
-                obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"])
-                messages.success(request, "Se registró correctamente el abono.")
+                abono = obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"])
+                messages.success(request, format_html('Se registró correctamente el abono. <a href="{}" target="_blank" rel="noopener">Imprimir recibo {}</a>', reverse("recibo_abono", args=[abono.folio_recibo]), abono.folio_recibo))
                 siguiente = request.POST.get("next", "")
                 if siguiente.startswith(f"/tesoreria/conceptos/{obligacion.concepto_id}/"):
                     return redirect(siguiente)
@@ -2199,4 +2183,80 @@ def acreditar_obligacion(request, pk):
     else:
         form = AbonoForm(obligacion=obligacion)
     siguiente = request.GET.get("next", "")
-    return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.all(), "next": siguiente})
+    return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.select_related("creado_por"), "next": siguiente})
+
+
+@login_required
+@acceso_financiero_requerido
+def actividad_financiera(request):
+    registros = limitar_finanzas(RegistroFinanciero.objects.select_related("usuario", "comite"), request.user)
+    comite = request.GET.get("comite", "")
+    if comite.isdigit():
+        registros = registros.filter(comite_id=int(comite))
+    concepto = request.GET.get("concepto", "")
+    if concepto.isdigit():
+        registros = registros.filter(concepto_id_registrado=int(concepto))
+    from django_tables2 import RequestConfig
+    from apps.tesoreria.tablas import ActividadFinancieraTable
+    tabla = ActividadFinancieraTable(registros)
+    RequestConfig(request, paginate={"per_page": 50}).configure(tabla)
+    pagina = tabla.page
+    pagina.previous_querystring = _page_querystring(request, "pagina", pagina.previous_page_number()) if pagina.has_previous() else ""
+    pagina.next_querystring = _page_querystring(request, "pagina", pagina.next_page_number()) if pagina.has_next() else ""
+    return render(request, "dashboard/actividad_financiera.html", {
+        "pagina": pagina, "tabla_actividad": tabla, "comites": comites_financieros(request.user), "comite_actual": comite,
+    })
+
+
+@login_required
+@acceso_agua_requerido
+def crear_cuota_mensual_agua(request):
+    form = CuotaMensualAguaForm(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            with transaction.atomic():
+                comite = comite_agua()
+                periodo = form.cleaned_data["periodo"]
+                concepto = ConceptoTesoreria.objects.create(
+                    creado_por=request.user, origen="AGUA", naturaleza="PAGO", alcance="GENERAL",
+                    comite=comite, periodo_agua=periodo, anio_periodo=periodo.year, fecha=periodo,
+                    concepto=f"Agua · {periodo:%m/%Y}", descripcion=form.cleaned_data["descripcion"],
+                    monto_individual=form.cleaned_data["monto"],
+                )
+                registrar_movimiento(request.user, concepto, RegistroFinanciero.Acciones.CREAR)
+                resultado = generar_obligaciones_faltantes(concepto, usuario=request.user)
+        except ValidationError as error:
+            form.add_error(None, "; ".join(error.messages))
+        except IntegrityError:
+            form.add_error(None, "Ya existe una cuota de agua para ese mes. Revisa Tesorería antes de crear otra.")
+        else:
+            messages.success(request, f"Cuota mensual creada con {resultado.creados} obligaciones para tomas activas.")
+            return redirect("tesoreria_concepto_detalle", concepto.pk)
+    return render(request, "dashboard/cuota_mensual_agua.html", {"form": form})
+
+
+@login_required
+@acceso_financiero_requerido
+def seleccionar_obligacion(request):
+    from apps.tesoreria.forms import SeleccionarObligacionForm
+    from apps.tesoreria.selectores import obligaciones_pendientes
+    form = SeleccionarObligacionForm(request.POST if request.method == "POST" else None, usuario=request.user)
+    if request.method == "POST" and form.is_valid():
+        return redirect("acreditar_obligacion", form.cleaned_data["obligacion"].pk)
+    buscar = request.GET.get("buscar", "").strip()
+    opciones = obligaciones_pendientes(request.user).filter(filtro_busqueda_ciudadano(buscar, prefijo="ciudadano__", extra_fields=("ciudadano__toma__numero_toma",)))[:20] if len(buscar) >= 2 else []
+    return render(request, "dashboard/seleccionar_obligacion.html", {"form": form, "buscar": buscar, "opciones": opciones})
+
+
+@login_required
+@acceso_financiero_requerido
+def recibo_abono(request, folio=None):
+    folio = (folio or request.GET.get("folio", "")).strip().upper()
+    if not folio:
+        return render(request, "dashboard/buscar_recibo.html")
+    coincidencia = re.fullmatch(r"PD-A-([0-9]{8,19})", folio)
+    if not coincidencia or not 0 < int(coincidencia[1]) <= 2**63 - 1:
+        return render(request, "dashboard/buscar_recibo.html", {"folio": folio, "error": "No se encontró el recibo."}, status=404)
+    abonos = limitar_finanzas(Abono.objects.all(), request.user, "obligacion__concepto__comite_id")
+    abono = get_object_or_404(abonos.select_related("obligacion__ciudadano__manzana", "obligacion__concepto__comite", "creado_por"), pk=int(coincidencia[1]))
+    return render(request, "dashboard/recibo_abono.html", {"abono": abono, "obligacion": abono.obligacion})

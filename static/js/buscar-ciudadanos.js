@@ -1,4 +1,5 @@
 (() => {
+  if (document.querySelector('.pd-main[data-live-page]')) return;
   'use strict';
 
   const form = document.querySelector('[data-dynamic-citizen-search]');
@@ -29,6 +30,7 @@
         headers: {'HX-Request': 'true'},
         signal: controller.signal,
       });
+      if (response.redirected) { window.location.assign(response.url); return; }
       if (!response.ok) throw new Error('No fue posible actualizar la búsqueda');
       const html = await response.text();
       if (requestId !== requestSequence) return;

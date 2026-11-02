@@ -49,21 +49,7 @@ def generar_participantes_junta(junta):
 
 
 def aplicar_filtros_eventos(queryset, *, params, description_field, tipo_actividad):
-    """Apply the search, date and territorial filters shared by faenas and juntas."""
-    q = params.get("q", "").strip()
-    if q:
-        filtro = Q(**{f"{description_field}__icontains": q}) | Q(comite__nombre__icontains=q) | Q(estado__icontains=q)
-        if q.lower() in tipo_actividad.lower() or tipo_actividad.lower().startswith(q.lower()):
-            filtro |= Q(pk__isnull=False)
-        queryset = queryset.filter(filtro)
-    mes, anio = params.get("mes", "todos"), params.get("anio", "todos")
-    alcance, manzana = params.get("alcance", "todos"), params.get("manzana", "todas")
-    if mes != "todos" and mes.isdigit():
-        queryset = queryset.filter(fecha__month=int(mes))
-    if anio != "todos" and anio.isdigit():
-        queryset = queryset.filter(fecha__year=int(anio))
-    if alcance in Faena.Alcances.values:
-        queryset = queryset.filter(alcance=alcance)
-    if manzana != "todas" and manzana.isdigit():
-        queryset = queryset.filter(manzana_id=int(manzana))
-    return queryset.order_by("-fecha", "-created_at")
+    """Both event types share validated filters over their authorized scope."""
+    from .filtros import EventosFilter
+    filtro = EventosFilter(params, queryset=queryset, description_field=description_field, tipo_actividad=tipo_actividad)
+    return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("-fecha", "-created_at")

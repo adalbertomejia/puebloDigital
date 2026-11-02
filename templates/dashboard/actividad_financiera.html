@@ -1,0 +1,8 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% block title %}Actividad financiera{% endblock %}
+{% block content %}
+<header class="pd-page-heading"><div><h1>Actividad financiera</h1><p>Quién realizó cada operación, cuándo y para qué comité.</p></div></header>
+<form method="get" class="pd-panel mb-6"><label for="comite-actividad">Comité</label><select id="comite-actividad" name="comite" class="pd-input"><option value="">Mis comités</option>{% for comite in comites %}<option value="{{ comite.pk }}" {% if comite_actual == comite.pk|stringformat:'s' %}selected{% endif %}>{{ comite.nombre }}</option>{% endfor %}</select><button class="pd-button pd-button--primary mt-3" type="submit">Consultar</button></form>
+{% load django_tables2 %}{% render_table tabla_actividad %}
+{% if pagina.has_other_pages %}<nav class="pd-pagination" aria-label="Paginación de actividad financiera"><span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span><div class="pd-pagination__links">{% if pagina.has_previous %}<a class="pd-button pd-button--secondary" href="?{{ pagina.previous_querystring }}">Anterior</a>{% endif %}{% if pagina.has_next %}<a class="pd-button pd-button--secondary" href="?{{ pagina.next_querystring }}">Siguiente</a>{% endif %}</div></nav>{% endif %}
+{% endblock %}

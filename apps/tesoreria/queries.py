@@ -18,7 +18,8 @@ CERO = Value(Decimal("0.00"), output_field=DINERO)
 
 def anotar_conceptos(queryset=None):
     """Añade todas las métricas de tarjeta sin multiplicar montos por cada abono."""
-    queryset = queryset or ConceptoTesoreria.objects.all()
+    if queryset is None:
+        queryset = ConceptoTesoreria.objects.all()
     obligaciones = ObligacionCiudadano.objects.filter(concepto=OuterRef("pk"))
     abonos = Abono.objects.filter(
         obligacion__concepto=OuterRef("pk"),
@@ -33,7 +34,7 @@ def anotar_conceptos(queryset=None):
         total=Sum("monto_asignado")
     ).values("total")[:1]
     abonado = abonos.values("obligacion__concepto").annotate(total=Sum("monto")).values("total")[:1]
-    queryset = queryset.select_related("comite", "manzana").annotate(
+    queryset = queryset.select_related("comite", "manzana", "creado_por").annotate(
         cantidad_obligaciones=cuenta(),
         cantidad_pagada=cuenta(ObligacionCiudadano.Estados.PAGADO),
         cantidad_pendiente=cuenta(ObligacionCiudadano.Estados.PENDIENTE),
@@ -52,32 +53,13 @@ def anotar_conceptos(queryset=None):
 
 
 def aplicar_filtros_conceptos(queryset, params):
-    q = params.get("q", "").strip()
-    if q:
-        queryset = queryset.filter(Q(concepto__icontains=q) | Q(descripcion__icontains=q) | Q(comite__nombre__icontains=q))
-    for campo, opciones in (
-        ("naturaleza", dict(ConceptoTesoreria.Naturalezas.choices)),
-        ("alcance", dict(ConceptoTesoreria.Alcances.choices)),
-    ):
-        if params.get(campo) in opciones:
-            queryset = queryset.filter(**{campo: params[campo]})
-    if params.get("manzana", "todas").isdigit():
-        queryset = queryset.filter(manzana_id=int(params["manzana"]))
-    if params.get("mes", "todos").isdigit():
-        queryset = queryset.filter(fecha__month=int(params["mes"]))
-    if params.get("anio", "todos").isdigit():
-        queryset = queryset.filter(fecha__year=int(params["anio"]))
-    if params.get("comite", "todos").isdigit():
-        queryset = queryset.filter(comite_id=int(params["comite"]))
-    if params.get("estado") in {"SIN_GENERAR", "CON_PENDIENTES", "COMPLETADO"}:
-        queryset = queryset.filter(estado_general=params["estado"])
-    # El identificador evita que conceptos con la misma fecha de creación cambien
-    # de página entre solicitudes.
-    return queryset.order_by("-fecha", "-created_at", "-pk")
+    from .filtros import ConceptosFilter
+    filtro = ConceptosFilter(params, queryset=queryset)
+    return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("-fecha", "-created_at", "-pk")
 
 
-def conceptos_filtrados(params):
-    return aplicar_filtros_conceptos(anotar_conceptos(), params)
+def conceptos_filtrados(params, *, queryset=None):
+    return aplicar_filtros_conceptos(anotar_conceptos(queryset), params)
 
 
 def anotar_obligaciones(queryset):
@@ -87,7 +69,7 @@ def anotar_obligaciones(queryset):
     ultimo = Abono.objects.filter(obligacion=OuterRef("pk")).values("obligacion").annotate(
         fecha=Max("fecha")
     ).values("fecha")[:1]
-    return queryset.select_related("ciudadano", "ciudadano__manzana").annotate(
+    return queryset.select_related("ciudadano", "ciudadano__manzana", "creado_por").annotate(
         total_abonado_calc=Coalesce(Subquery(abonado, output_field=DINERO), CERO),
         ultimo_abono=Subquery(ultimo),
     ).annotate(
@@ -150,15 +132,19 @@ def aplicar_filtros_aportaciones(queryset, params):
     return queryset
 
 
-def abonos_filtrados(params):
+def abonos_filtrados(params, *, queryset=None):
     """QuerySet base reutilizado por la vista, sus agregados y el CSV."""
-    return aplicar_filtros_aportaciones(Abono.objects.all(), params)
+    if queryset is None:
+        queryset = Abono.objects.all()
+    return aplicar_filtros_aportaciones(queryset, params)
 
 
-def buscar_movimientos_aportaciones(filtros):
+def buscar_movimientos_aportaciones(filtros, *, queryset=None):
     """Devuelve abonos reales filtrados; no mezcla obligaciones con movimientos."""
-    queryset = Abono.objects.select_related(
-        "obligacion__ciudadano", "obligacion__ciudadano__manzana",
+    if queryset is None:
+        queryset = Abono.objects.all()
+    queryset = queryset.select_related(
+        "creado_por", "obligacion__ciudadano", "obligacion__ciudadano__manzana",
         "obligacion__concepto", "obligacion__concepto__manzana",
     )
     params = {
@@ -176,6 +162,7 @@ def buscar_movimientos_aportaciones(filtros):
             | Q(obligacion__ciudadano__numero_contrato__icontains=termino)
             | Q(obligacion__concepto__concepto__icontains=termino)
             | Q(obligacion__concepto__descripcion__icontains=termino)
+            | Q(referencia__icontains=termino)
         )
         if termino.isdigit():
             coincidencia |= Q(pk=int(termino))

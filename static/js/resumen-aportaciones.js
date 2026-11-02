@@ -1,9 +1,14 @@
 (() => {
+  document.addEventListener('pd:before-update', () => {
+    document.querySelectorAll('[data-contributions-chart]').forEach(canvas => window.Chart?.getChart(canvas)?.destroy());
+  });
+  const init = () => {
   'use strict';
 
   const root = document.querySelector('[data-contributions-workspace]');
   const dataElement = document.getElementById('contributions-chart-data');
-  if (!root || !dataElement) return;
+  if (!root || !dataElement || root.dataset.bound) return;
+  root.dataset.bound = "true";
 
   const data = JSON.parse(dataElement.textContent);
   const tabs = [...root.querySelectorAll('[data-summary-tab]')];
@@ -117,4 +122,7 @@
   }
   const active = tabs.find(tab => tab.getAttribute('aria-selected') === 'true') || tabs[0];
   selectSummary(active.dataset.summaryTab);
+};
+  init();
+  document.addEventListener("pd:updated", init);
 })();

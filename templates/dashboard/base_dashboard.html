@@ -7,6 +7,7 @@
   <title>{% block title %}Panel de Gestión{% endblock %} | Pueblo Digital</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{% static 'css/pueblo-digital.css' %}">
+  {{ form.media.css }}
 </head>
 <body class="app-shell">
   <a class="pd-skip-link" href="#contenido-principal">Saltar al contenido principal</a>
@@ -24,9 +25,14 @@
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}" {% if 'asistencia' in request.resolver_match.url_name %}aria-current="page"{% endif %}>Control de Asistencias</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#faenas">Faenas</a>
           <a class="pd-navigation__link" href="{% url 'control_asistencias' %}#juntas">Juntas</a>
+          {% if puede_operar_finanzas %}
           <a class="pd-navigation__link {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}bg-slate-800{% endif %}" href="{% url 'tesoreria_operativa' %}" {% if 'tesoreria' in request.resolver_match.url_name or request.resolver_match.url_name == 'acreditar_obligacion' %}aria-current="page"{% endif %}>Tesorería</a>
           <a class="pd-navigation__link" href="{% url 'resumen_aportaciones' %}" {% if request.resolver_match.url_name == 'resumen_aportaciones' or request.resolver_match.url_name == 'exportar_aportaciones_csv' or request.resolver_match.url_name == 'buscar_aportaciones' %}aria-current="page"{% endif %}>↗ Resumen de aportaciones</a>
+          <a class="pd-navigation__link" href="{% url 'actividad_financiera' %}" {% if request.resolver_match.url_name == 'actividad_financiera' %}aria-current="page"{% endif %}>Actividad financiera</a>
+          {% endif %}
+          {% if puede_operar_agua %}
           <a class="pd-navigation__link" href="{% url 'control_agua' %}" {% if request.resolver_match.url_name == 'control_agua' %}aria-current="page"{% endif %}>Agua</a>
+          {% endif %}
         </nav>
       </div>
     </aside>
@@ -36,12 +42,15 @@
           <p class="pd-header__title">Panel de Gestión Comunitaria</p>
           <nav class="pd-account" aria-label="Cuenta de usuario">
             <span class="pd-account__user">Sesión: <strong>{{ request.user.get_full_name|default:request.user.get_username }}</strong></span>
-            <a href="/admin/">Administración</a>
-            <a href="/logout/">Cerrar sesión</a>
+            {% if request.user.is_staff %}<a href="/admin/">Administración</a>{% endif %}
+            <form method="post" action="{% url 'logout' %}">
+              {% csrf_token %}
+              <button type="submit">Cerrar sesión</button>
+            </form>
           </nav>
         </div>
       </header>
-      <main id="contenido-principal" class="pd-main" tabindex="-1">
+      <main id="contenido-principal" class="pd-main" {% if ui_vista_dinamica %}data-live-page{% endif %} tabindex="-1">
         {% if messages %}
           <div aria-live="polite">
             {% for message in messages %}
@@ -53,6 +62,8 @@
       </main>
     </div>
   </div>
+  {% if form %}<script src="{% static 'admin/js/vendor/jquery/jquery.min.js' %}"></script><script src="{% static 'js/iniciar-selectores.js' %}"></script>{{ form.media.js }}{% endif %}
+  <script src="{% static 'js/consultas-dinamicas.js' %}" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

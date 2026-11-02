@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
@@ -71,6 +72,13 @@ class Cooperacion(TimeStampedModel):
 
 
 class ConceptoTesoreria(TimeStampedModel):
+    faena = models.OneToOneField("operacion.Faena", on_delete=models.PROTECT, null=True, blank=True, related_name="concepto_financiero", editable=False)
+    junta = models.OneToOneField("operacion.Junta", on_delete=models.PROTECT, null=True, blank=True, related_name="concepto_financiero", editable=False)
+    periodo_agua = models.DateField(null=True, blank=True, verbose_name="Periodo mensual de agua")
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="conceptotesoreria_creados", verbose_name="Registrado por", editable=False,
+    )
     class Naturalezas(models.TextChoices):
         PAGO = "PAGO", "Pago"
         COOPERACION = "COOPERACION", "Cooperación"
@@ -104,10 +112,19 @@ class ConceptoTesoreria(TimeStampedModel):
         verbose_name = "Concepto de tesorería"
         verbose_name_plural = "Conceptos de tesorería"
         ordering = ["-fecha", "-created_at"]
+        constraints = [models.UniqueConstraint(fields=["comite", "periodo_agua"], condition=models.Q(origen="AGUA", periodo_agua__isnull=False), name="agua_comite_periodo_unico", violation_error_message="Ya existe una cuota de agua para ese mes.")]
         indexes = [models.Index(fields=["naturaleza", "alcance", "manzana", "fecha"], name="tes_nat_alc_mz_fecha_idx")]
 
     def clean(self):
         super().clean()
+        if self.origen == self.Origenes.AGUA and (self.periodo_agua or self._state.adding):
+            from apps.agua.autorizacion import comite_agua
+            if not self.periodo_agua or self.periodo_agua.day != 1:
+                raise ValidationError({"periodo_agua": "Selecciona el mes de la cuota de agua."})
+            if self.comite_id != comite_agua().pk or self.alcance != self.Alcances.GENERAL or self.naturaleza != self.Naturalezas.PAGO:
+                raise ValidationError("La cuota mensual de agua debe ser un pago general del comité de Agua.")
+        elif self.periodo_agua:
+            raise ValidationError({"periodo_agua": "El periodo de agua solo aplica a cuotas de agua."})
         errors = validar_alcance_y_manzana(
             alcance=self.alcance, manzana_id=self.manzana_id,
             alcance_general=self.Alcances.GENERAL, alcance_manzana=self.Alcances.MANZANA,
@@ -138,6 +155,13 @@ class ConceptoTesoreria(TimeStampedModel):
 
 
 class ObligacionCiudadano(TimeStampedModel):
+    toma = models.ForeignKey(Toma, on_delete=models.PROTECT, null=True, blank=True, related_name="obligaciones", verbose_name="Toma de agua")
+    numero_toma_registrado = models.CharField(max_length=30, blank=True, editable=False)
+    numero_contrato_registrado = models.CharField(max_length=50, blank=True, editable=False)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="obligacionciudadano_creados", verbose_name="Registrado por", editable=False,
+    )
     class Estados(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente"
         PAGADO = "PAGADO", "Pagado"
@@ -154,6 +178,21 @@ class ObligacionCiudadano(TimeStampedModel):
         verbose_name_plural = "Obligaciones ciudadanas"
         ordering = ["ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre"]
         constraints = [models.UniqueConstraint(fields=["concepto", "ciudadano"], name="unique_obligacion_por_concepto_ciudadano")]
+
+    def clean(self):
+        super().clean()
+        original = type(self).objects.filter(pk=self.pk).values("toma_id", "ciudadano_id", "concepto_id").first() if self.pk else None
+        if original and all(original[campo] == getattr(self, campo) for campo in original):
+            return
+        if self.concepto_id and self.concepto.origen == "AGUA" and self.concepto.periodo_agua:
+            if not self.toma_id or self.toma.ciudadano_id != self.ciudadano_id:
+                raise ValidationError({"toma": "Selecciona la toma correspondiente al ciudadano de esta obligación."})
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.toma_id:
+            self.numero_toma_registrado = self.toma.numero_toma
+            self.numero_contrato_registrado = self.toma.ciudadano.numero_contrato or ""
+        return super().save(*args, **kwargs)
 
     @property
     def total_abonado(self):
@@ -172,7 +211,7 @@ class ObligacionCiudadano(TimeStampedModel):
             self.save(update_fields=["estado", "updated_at"])
         return self.estado
 
-    def acreditar(self, monto, fecha=None, notas=""):
+    def acreditar(self, monto, fecha=None, notas="", *, usuario=None, referencia=""):
         monto = Decimal(str(monto))
         with transaction.atomic():
             obligacion = ObligacionCiudadano.objects.select_for_update().get(pk=self.pk)
@@ -185,8 +224,11 @@ class ObligacionCiudadano(TimeStampedModel):
             saldo = obligacion.saldo_pendiente
             if monto > saldo:
                 raise ValidationError(f"El abono no puede superar el saldo pendiente de ${saldo:.2f}.")
-            abono = Abono.objects.create(obligacion=obligacion, monto=monto, fecha=fecha or timezone.localdate(), notas=notas)
+            abono = Abono.objects.create(obligacion=obligacion, monto=monto, fecha=fecha or timezone.localdate(), notas=notas, creado_por=usuario, referencia=referencia)
             obligacion.actualizar_estado_por_abonos(save=True)
+            if usuario is not None:
+                from .auditoria import registrar_movimiento
+                registrar_movimiento(usuario, abono, RegistroFinanciero.Acciones.ABONAR)
             self.refresh_from_db()
             return abono
 
@@ -195,15 +237,24 @@ class ObligacionCiudadano(TimeStampedModel):
 
 
 class Abono(TimeStampedModel):
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="abono_creados", verbose_name="Registrado por", editable=False,
+    )
     obligacion = models.ForeignKey(ObligacionCiudadano, on_delete=models.CASCADE, related_name="abonos")
     monto = models.DecimalField(max_digits=10, decimal_places=2)
     fecha = models.DateField(default=timezone.localdate)
+    referencia = models.CharField(max_length=100, blank=True, verbose_name="Referencia del comprobante")
     notas = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Abono"
         verbose_name_plural = "Abonos"
         ordering = ["-fecha", "-created_at"]
+
+    @property
+    def folio_recibo(self):
+        return f"PD-A-{self.pk:08d}" if self.pk is not None else ""
 
     def clean(self):
         if self.monto is not None and self.monto <= 0:
@@ -231,3 +282,40 @@ class Abono(TimeStampedModel):
 
     def __str__(self):
         return f"{self.obligacion} · ${self.monto}"
+
+
+class RegistroFinanciero(models.Model):
+    """Append-only operational evidence; IDs survive deletion of business rows."""
+
+    class Acciones(models.TextChoices):
+        CREAR = "CREAR", "Creación"
+        EDITAR = "EDITAR", "Edición"
+        GENERAR = "GENERAR", "Generación de obligaciones"
+        ABONAR = "ABONAR", "Registro de abono"
+        ELIMINAR = "ELIMINAR", "Eliminación"
+
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="registros_financieros")
+    usuario_nombre = models.CharField(max_length=150, verbose_name="Usuario al registrar")
+    comite = models.ForeignKey(Comite, on_delete=models.PROTECT, related_name="registros_financieros")
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    accion = models.CharField(max_length=15, choices=Acciones.choices)
+    tipo_objeto = models.CharField(max_length=30)
+    objeto_id = models.PositiveBigIntegerField()
+    concepto_id_registrado = models.PositiveBigIntegerField()
+    concepto_nombre = models.CharField(max_length=200)
+    monto = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    referencia = models.CharField(max_length=100, blank=True)
+    detalle = models.JSONField(default=dict, blank=True)
+    origen = models.CharField(max_length=10, choices=[("PANEL", "Panel"), ("ADMIN", "Administración")], default="PANEL")
+
+    class Meta:
+        verbose_name = "Registro de actividad financiera"
+        verbose_name_plural = "Actividad financiera"
+        ordering = ["-fecha_registro", "-pk"]
+        indexes = [
+            models.Index(fields=["comite", "-fecha_registro"], name="fin_comite_fecha_idx"),
+            models.Index(fields=["concepto_id_registrado", "-fecha_registro"], name="fin_concepto_fecha_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_accion_display()} — {self.concepto_nombre} — {self.usuario_nombre}"

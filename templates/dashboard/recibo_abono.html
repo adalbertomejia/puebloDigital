@@ -1,0 +1,34 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recibo {{ abono.folio_recibo }}</title>
+  <link rel="stylesheet" href="{% static 'css/recibo-80mm.css' %}">
+  <script src="{% static 'js/imprimir-recibo.js' %}" defer></script>
+</head>
+<body>
+  <nav class="controles" aria-label="Opciones del recibo">
+    <button type="button" id="imprimir-recibo">Imprimir recibo</button>
+    <a href="{% url 'buscar_recibo' %}">Buscar otro recibo</a>
+    <a href="{% url 'tesoreria_concepto_detalle' obligacion.concepto_id %}">Volver al concepto</a>
+    <p>Selecciona papel de 80 mm, escala 100 % y desactiva encabezados y pies del navegador.</p>
+  </nav>
+  <main class="recibo">
+    <header><h1>Pueblo Digital</h1><p>Recibo de abono · Tesorería</p><strong>{{ obligacion.concepto.comite.nombre }}</strong></header>
+    <p class="folio">Folio: {{ abono.folio_recibo }}</p>
+    <dl>
+      <dt>Fecha del abono</dt><dd>{{ abono.fecha|date:'d/m/Y' }}</dd>
+      <dt>Ciudadano</dt><dd>{{ obligacion.ciudadano.nombre_completo }}</dd>
+      <dt>ID ciudadano</dt><dd>{{ obligacion.ciudadano_id }}</dd>
+      <dt>Contrato</dt><dd>{{ obligacion.ciudadano.numero_contrato|default:'Sin registro' }}</dd>
+      <dt>Manzana</dt><dd>{{ obligacion.ciudadano.manzana|default:'Sin asignar' }}</dd>
+      <dt>Concepto</dt><dd>{{ obligacion.concepto.concepto }}</dd>
+      <dt>Tipo</dt><dd>{{ obligacion.concepto.get_naturaleza_display }}</dd>
+    </dl>
+    <p class="monto">Monto recibido<br><strong>${{ abono.monto|floatformat:2 }} MXN</strong></p>
+    {% if abono.referencia %}<p>Referencia: {{ abono.referencia }}</p>{% endif %}
+    <p>Registrado por: {% if abono.creado_por %}{{ abono.creado_por.get_username }}{% else %}Autor no registrado{% endif %}</p>
+    <footer><strong>Conserve este recibo</strong><p>Para cualquier aclaración, indique el folio.</p></footer>
+  </main>
+</body>
+</html>

@@ -10,7 +10,7 @@ from .models import Abono, ConceptoTesoreria, ObligacionCiudadano
 class BuscarAportacionesForm(DashboardFormMixin, forms.Form):
     """Valida la URL compartible de la búsqueda de movimientos."""
 
-    q = forms.CharField(required=False, label="Buscar ciudadano, contrato o concepto")
+    q = forms.CharField(required=False, label="Buscar ciudadano, contrato, concepto o referencia")
     mes = forms.ChoiceField(required=False, choices=[("todos", "Todos")], label="Mes")
     anio = forms.ChoiceField(required=False, choices=[("todos", "Todos")], label="Año")
     naturaleza = forms.ChoiceField(
@@ -45,7 +45,7 @@ class BuscarAportacionesForm(DashboardFormMixin, forms.Form):
         self.fields["anio"].choices += [(str(a), str(a)) for a in anios]
         self.fields["manzana"].choices += [(str(m.pk), str(m)) for m in manzanas]
         self.fields["comite"].choices += [(str(c.pk), c.nombre) for c in comites]
-        self.fields["q"].widget.attrs.update({"placeholder": "Nombre, apellidos, contrato o concepto", "autocomplete": "off"})
+        self.fields["q"].widget.attrs.update({"placeholder": "Nombre, contrato, concepto o referencia", "autocomplete": "off"})
         self.fields["concepto"].widget.attrs["placeholder"] = "Nombre o descripción"
         self._apply_dashboard_widgets()
 
@@ -75,8 +75,11 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
             "anio_periodo": "Año del periodo (opcional)",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, usuario=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if usuario is not None:
+            from .autorizacion import comites_financieros
+            self.fields["comite"].queryset = comites_financieros(usuario)
         self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
         self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()
@@ -85,7 +88,7 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
 class AbonoForm(DashboardFormMixin, forms.ModelForm):
     class Meta:
         model = Abono
-        fields = ["monto", "fecha", "notas"]
+        fields = ["monto", "fecha", "referencia", "notas"]
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "notas": forms.Textarea(attrs={"rows": 3})}
         labels = {"monto": "Monto a abonar", "fecha": "Fecha", "notas": "Notas"}
 
@@ -105,3 +108,19 @@ class AbonoForm(DashboardFormMixin, forms.ModelForm):
         if self.obligacion and monto > self.obligacion.saldo_pendiente:
             raise ValidationError(f"El abono no puede superar el saldo pendiente de ${self.obligacion.saldo_pendiente:.2f}.")
         return monto
+
+
+class SeleccionarObligacionForm(DashboardFormMixin, forms.Form):
+    from dal import autocomplete
+    ciudadano = forms.ModelChoiceField(queryset=None, label="Ciudadano", widget=autocomplete.ModelSelect2(url="ciudadano_financiero_autocomplete", attrs={"data-placeholder": "Busca por nombre, contrato o toma", "data-minimum-input-length": 2, "data-width": "100%"}))
+    obligacion = forms.ModelChoiceField(queryset=None, label="Obligación pendiente", widget=autocomplete.ModelSelect2(url="obligacion_financiera_autocomplete", forward=["ciudadano"], attrs={"data-placeholder": "Selecciona primero el ciudadano", "data-width": "100%"}))
+
+    def __init__(self, *args, usuario, **kwargs):
+        from .selectores import ciudadanos_con_obligaciones, obligaciones_pendientes, identificador_valido
+        super().__init__(*args, **kwargs)
+        self.fields["ciudadano"].queryset = ciudadanos_con_obligaciones(usuario)
+        ciudadano = identificador_valido(self.data.get("ciudadano", "")) if self.is_bound else None
+        self.fields["obligacion"].queryset = obligaciones_pendientes(usuario).filter(ciudadano_id=ciudadano) if ciudadano is not None else ObligacionCiudadano.objects.none()
+        # Preserve remote widgets and their dependent-field forwarding.
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "pd-input"

@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.comites.models import Comite
+from apps.comites.models import Comite, UsuarioApp
 from apps.core.models import Ciudadano, Manzana
 from apps.core.views import _resumen_territorial
 from apps.tesoreria.forms import ConceptoTesoreriaForm
@@ -22,6 +22,8 @@ class TesoreriaOperativaTests(TestCase):
         self.user.user_permissions.set(perms)
         self.comite = Comite.objects.create(nombre="Comité de Delegación", tipo=Comite.Tipos.DELEGACION)
         self.agua = Comite.objects.create(nombre="Comité de Agua", tipo=Comite.Tipos.AGUA)
+        for comite in (self.comite, self.agua):
+            UsuarioApp.objects.create(user=self.user, comite=comite, rol=UsuarioApp.Roles.TESORERO)
         self.activo1 = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="A", edad=30, activo=True)
         self.activo2 = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", apellido_materno="B", edad=31, activo=True)
         self.inactivo = Ciudadano.objects.create(nombre="Ciro", apellido_paterno="Ruiz", apellido_materno="C", edad=32, activo=False)
@@ -476,6 +478,7 @@ class TesoreriaFiltrosCsvTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("tesorero_csv", password="pw")
         self.comite = Comite.objects.create(nombre="Comité Principal", tipo=Comite.Tipos.DELEGACION)
+        UsuarioApp.objects.create(user=self.user, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
         self.activo1 = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="A", edad=30, activo=True)
         self.activo2 = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", apellido_materno="B", edad=31, activo=True)
 
@@ -536,6 +539,8 @@ class ResumenAportacionesTests(TestCase):
         self.user = User.objects.create_user("consulta", password="pw")
         self.comite = Comite.objects.create(nombre="Comité comunitario", tipo=Comite.Tipos.DELEGACION)
         self.otro_comite = Comite.objects.create(nombre="Comité feria", tipo=Comite.Tipos.FERIA)
+        for comite in (self.comite, self.otro_comite):
+            UsuarioApp.objects.create(user=self.user, comite=comite, rol=UsuarioApp.Roles.TESORERO)
         self.manzana_historica = Manzana.objects.create(nombre="Manzana 4")
         self.manzana_actual = Manzana.objects.create(nombre="Manzana 2")
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", apellido_materno="Ríos", numero_contrato="C-10", manzana=self.manzana_actual)
