@@ -2,7 +2,7 @@ from django.db import models
 from apps.core.models import TimeStampedModel, Ciudadano
 from apps.comites.models import Comite
 from .alcance import validar_territorio_evento
-from .autorizacion import comites_presididos, manzanas_responsables, usuario_activo
+from .autorizacion import comites_consultables, comites_operables, manzanas_responsables, usuario_activo, permiso_global_operativo
 
 
 def validar_comite_y_motivo(instancia, nombre_entidad):
@@ -25,10 +25,10 @@ class AlcanceEventoQuerySet(models.QuerySet):
     def visibles_para(self, usuario):
         if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
             return self.none()
-        if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
+        if permiso_global_operativo(usuario, f"operacion.view_{self.model._meta.model_name}"):
             return self
         manzana_ids = manzanas_responsables(usuario)
-        comite_ids = comites_presididos(usuario)
+        comite_ids = comites_consultables(usuario)
         if not manzana_ids and not comite_ids:
             return self.none()
         relation = "registros" if self.model.__name__ == "Faena" else "asistencias"
@@ -48,9 +48,9 @@ class AlcanceParticipanteQuerySet(models.QuerySet):
     def visibles_para(self, usuario):
         if not getattr(usuario, "is_authenticated", False) or not getattr(usuario, "is_active", False):
             return self.none()
-        if usuario.is_superuser or usuario.has_perm(f"operacion.view_{self.model._meta.model_name}"):
+        if permiso_global_operativo(usuario, f"operacion.view_{self.model._meta.model_name}"):
             return self
-        return self._por_responsabilidades(usuario)
+        return self._por_responsabilidades(usuario, lectura=True)
 
     def capturables_para(self, usuario):
         """Read grants never expand the set of records that can be changed."""
@@ -59,15 +59,15 @@ class AlcanceParticipanteQuerySet(models.QuerySet):
         event_name = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
         if (
             usuario.is_superuser
-            or usuario.has_perm(f"operacion.change_{self.model._meta.model_name}")
-            or usuario.has_perm(f"operacion.change_{event_name}")
+            or permiso_global_operativo(usuario, f"operacion.change_{self.model._meta.model_name}")
+            or permiso_global_operativo(usuario, f"operacion.change_{event_name}")
         ):
             return self
         return self._por_responsabilidades(usuario)
 
-    def _por_responsabilidades(self, usuario):
+    def _por_responsabilidades(self, usuario, *, lectura=False):
         manzana_ids = manzanas_responsables(usuario)
-        comite_ids = comites_presididos(usuario)
+        comite_ids = comites_consultables(usuario) if lectura else comites_operables(usuario)
         if not manzana_ids and not comite_ids:
             return self.none()
         event_relation = "faena" if self.model.__name__ == "RegistroFaena" else "junta"
@@ -150,7 +150,7 @@ class AsistenciaJunta(TimeStampedModel):
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     junta = models.ForeignKey(Junta, on_delete=models.CASCADE, related_name='asistencias')
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='asistencias_junta')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='asistencias_junta')
     estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -230,7 +230,7 @@ class RegistroFaena(TimeStampedModel):
         JUSTIFICADO = 'JUSTIFICADO', 'Justificado'
 
     faena = models.ForeignKey(Faena, on_delete=models.CASCADE, related_name='registros')
-    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.CASCADE, related_name='registros_faena')
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name='registros_faena')
     estatus = models.CharField(max_length=20, choices=Estatus.choices, default=Estatus.PENDIENTE)
     genera_adeudo = models.BooleanField(default=False)
     monto_adeudo = models.DecimalField(max_digits=10, decimal_places=2, default=0)

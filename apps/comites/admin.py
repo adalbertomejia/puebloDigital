@@ -33,15 +33,23 @@ class PerfilAccesoAdmin(AdministracionGlobal, admin.ModelAdmin):
 
 @admin.register(UsuarioApp)
 class UsuarioAppAdmin(AdministracionGlobal, admin.ModelAdmin):
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        vigentes = {'PRESIDENTE', 'TESORERO', 'LECTURA'}
+        if obj is not None:
+            vigentes.add(obj.rol)
+        form.base_fields['rol'].choices = [('', 'Selecciona un cargo')] + [(value, label) for value, label in UsuarioApp.Roles.choices if value in vigentes]
+        return form
+
     autocomplete_fields = ("user", "ciudadano", "comite")
     fieldsets = (
         ("Asignación del cargo", {
             "fields": ("user", "comite", "rol", "activo"),
-            "description": "Asigna un rol a una cuenta dentro de un comité. Una cuenta puede tener varios cargos.",
+            "description": "Asigna un rol a una cuenta dentro de un comité. Cada cuenta pertenece a un ciudadano y admite un solo cargo activo. Desactiva el anterior antes de cambiarlo.",
         }),
         ("Ciudadano registrado en el cargo", {
             "fields": ("ciudadano",),
-            "description": "Este dato pertenece al cargo y se conserva tal como fue registrado. Para establecer la identidad que aparece en Mi acceso, usa Vínculos de cuenta y ciudadano.",
+            "description": "Debe coincidir con Vínculos de cuenta y ciudadano; si se deja vacío se toma de ese vínculo. No sustituye la identidad general de la cuenta.",
         }),
     )
     list_display = ('user', 'comite', 'rol', 'activo', 'created_at')

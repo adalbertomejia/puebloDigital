@@ -5,7 +5,7 @@ from django.db.models import Subquery
 from django.http import Http404
 from apps.core.models import Ciudadano
 from apps.core.query_helpers import filtro_busqueda_ciudadano
-from .autorizacion import limitar_finanzas, tiene_acceso_financiero
+from .autorizacion import limitar_finanzas, puede_operar_finanzas
 from .models import ObligacionCiudadano
 
 
@@ -18,7 +18,7 @@ def identificador_valido(valor):
 
 
 def obligaciones_pendientes(usuario):
-    return limitar_finanzas(ObligacionCiudadano.objects.filter(estado="PENDIENTE"), usuario, "concepto__comite_id").select_related("ciudadano", "ciudadano__toma", "concepto", "concepto__comite")
+    return limitar_finanzas(ObligacionCiudadano.objects.filter(estado="PENDIENTE"), usuario, "concepto__comite_id", escritura=True).select_related("ciudadano", "ciudadano__toma", "concepto", "concepto__comite")
 
 
 def ciudadanos_con_obligaciones(usuario):
@@ -29,7 +29,7 @@ class BusquedaFinanciera(LoginRequiredMixin, autocomplete.Select2QuerySetView):
     paginate_by = 20
 
     def dispatch(self, request, *args, **kwargs):
-        if request.user.is_authenticated and not tiene_acceso_financiero(request.user):
+        if request.user.is_authenticated and not puede_operar_finanzas(request.user):
             raise Http404
         return super().dispatch(request, *args, **kwargs)
 

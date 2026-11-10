@@ -33,10 +33,15 @@ class ResponsabilidadActiva:
                 "Crear y gestionar eventos de mi manzana",
                 "Capturar y exportar participantes de mi manzana en eventos generales",
             )
-        if self.tipo == "COMITE" and self.rol == "PRESIDENTE":
-            return ("Crear y gestionar eventos generales de este comité",) + finanzas
-        if self.tipo == "COMITE" and self.rol == "TESORERO":
-            return finanzas
+        if self.tipo == "COMITE" and self.rol in ("PRESIDENTE", "TESORERO"):
+            return ("Crear y gestionar eventos generales de este comité", "Capturar asistencias de este comité") + finanzas
+        if self.tipo == "COMITE" and self.rol == "LECTURA":
+            return (
+                "Consultar asistencias y aportaciones de este comité",
+                "Imprimir consultas y recibos autorizados",
+                "Compartir enlaces de consulta que requieren una cuenta autorizada",
+                "Sin captura, edición, generación de obligaciones ni eliminación",
+            )
         return ()
 
 
@@ -64,6 +69,18 @@ def responsabilidades_activas(usuario):
                 etiqueta_rol="Administrador general",
             )
         )
+
+    # Invalid legacy combinations fail closed until an administrator reconciles them.
+    from apps.core.models import Manzana
+    vinculo = PerfilAcceso.objects.select_related('ciudadano').filter(user_id=usuario.pk).first()
+    if vinculo is None or not vinculo.ciudadano.activo:
+        return responsabilidades
+    cargos_vigentes = UsuarioApp.objects.filter(user_id=usuario.pk, activo=True)
+    if cargos_vigentes.count() > 1 or cargos_vigentes.exclude(ciudadano_id=vinculo.ciudadano_id).exists():
+        return responsabilidades
+    territorios = Manzana.objects.filter(activa=True, responsable_id=vinculo.ciudadano_id)
+    if territorios.count() > 1 or (territorios.exists() and cargos_vigentes.exists()):
+        return responsabilidades
 
     perfil = (
         PerfilAcceso.objects.select_related("ciudadano__manzana")
@@ -102,3 +119,12 @@ def responsabilidades_activas(usuario):
     )
 
     return responsabilidades
+
+
+def permiso_global_de_modelo(usuario, permiso):
+    """Committee accounts use contextual roles, never a global permission bypass."""
+    if not getattr(usuario, 'is_authenticated', False) or not getattr(usuario, 'is_active', False):
+        return False
+    return usuario.is_superuser or (
+        usuario.has_perm(permiso) and not usuario.perfiles_app.exists()
+    )

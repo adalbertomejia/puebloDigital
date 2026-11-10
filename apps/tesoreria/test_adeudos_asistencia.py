@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 from decimal import Decimal
 
@@ -17,7 +18,7 @@ class AdeudosAsistenciaTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username='presidente-adeudos')
         self.comite = Comite.objects.create(nombre='Faenas comunidad', tipo='OBRAS')
-        UsuarioApp.objects.create(user=self.user, comite=self.comite, rol='PRESIDENTE')
+        asignar_cargo(user=self.user, comite=self.comite, rol='PRESIDENTE')
         self.ciudadano = Ciudadano.objects.create(nombre='Ana', apellido_paterno='Captura')
         self.otro = Ciudadano.objects.create(nombre='Beto', apellido_paterno='Captura')
         self.faena = Faena.objects.create(comite=self.comite, descripcion='Limpieza', fecha=date(2026, 10, 29))

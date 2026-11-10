@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 from decimal import Decimal
 
@@ -22,7 +24,7 @@ class AislamientoFinancieroTests(TestCase):
         self.tesorero = get_user_model().objects.create_user(username="tesorero-agua")
         self.cargos = []
         for usuario, rol in ((self.presidente, "PRESIDENTE"), (self.tesorero, "TESORERO")):
-            self.cargos.append(UsuarioApp.objects.create(user=usuario, comite=self.agua, rol=rol))
+            self.cargos.append(asignar_cargo(user=usuario, comite=self.agua, rol=rol))
         self.ciudadano = Ciudadano.objects.create(nombre="Ana", apellido_paterno="Comunitaria")
         self.otro = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Comunitario")
         self.concepto = self.crear_concepto(self.agua, "Cuota propia")
@@ -105,7 +107,7 @@ class AislamientoFinancieroTests(TestCase):
                 url = reverse("generar_obligaciones_tesoreria", args=[concepto.pk])
                 self.assertEqual(self.client.post(url).status_code, 302)
                 self.assertEqual(self.client.post(url).status_code, 302)
-                self.assertEqual(concepto.obligaciones.count(), 2)
+                self.assertEqual(concepto.obligaciones.count(), Ciudadano.objects.filter(activo=True).count())
                 obligacion = concepto.obligaciones.get(ciudadano=self.ciudadano)
                 self.assertEqual(self.client.post(reverse("acreditar_obligacion", args=[obligacion.pk]), {
                     "monto": "25", "fecha": "2026-10-29", "notas": "Recibo comunitario",
@@ -131,19 +133,19 @@ class AislamientoFinancieroTests(TestCase):
         self.assertEqual(list(respuesta.context["form"].fields["comite"].queryset), [self.agua])
         self.assertEqual(self.client.post(reverse("crear_concepto_tesoreria"), self.datos_concepto(self.feria)).status_code, 200)
         self.assertFalse(ConceptoTesoreria.objects.filter(concepto="Concepto desde formulario").exists())
-        UsuarioApp.objects.create(user=self.presidente, comite=self.feria, rol="TESORERO")
+        self.cargos[0].activo=False; self.cargos[0].save()
+        asignar_cargo(user=self.presidente, comite=self.feria, rol="TESORERO")
         respuesta = self.client.post(reverse("editar_concepto_tesoreria", args=[self.concepto.pk]), self.datos_concepto(self.feria))
-        self.assertEqual(respuesta.status_code, 200)
-        self.assertIn("comite", respuesta.context["form"].errors)
+        self.assertEqual(respuesta.status_code, 404)
         self.concepto.refresh_from_db()
         self.assertEqual(self.concepto.comite_id, self.agua.pk)
 
     def test_cargos_no_financieros_y_permisos_django_sin_cargo_no_conceden_acceso(self):
-        for rol in (None, "LECTURA", "SECRETARIO", "CAPTURISTA", "DELEGADO"):
+        for rol in (None, "SECRETARIO", "CAPTURISTA", "DELEGADO"):
             usuario = get_user_model().objects.create_user(username=f"sin-finanzas-{rol}")
             usuario.user_permissions.set(Permission.objects.all())
             if rol:
-                UsuarioApp.objects.create(user=usuario, comite=self.agua, rol=rol)
+                asignar_cargo(user=usuario, comite=self.agua, rol=rol)
             self.client.force_login(usuario)
             for url in self.urls_lectura() + [reverse("crear_concepto_tesoreria"), reverse("tesoreria_concepto_detalle", args=[self.concepto.pk])]:
                 with self.subTest(rol=rol, url=url):
@@ -162,12 +164,13 @@ class AislamientoFinancieroTests(TestCase):
         self.presidente.is_active = False
         self.assertFalse(limitar_finanzas(ConceptoTesoreria.objects.all(), self.presidente).exists())
 
-    def test_presidente_agua_tesorero_feria_no_se_convierte_en_presidente_feria(self):
-        UsuarioApp.objects.create(user=self.presidente, comite=self.feria, rol="TESORERO")
-        evento = Faena.objects.create(comite=self.feria, descripcion="Evento ajeno al cargo presidencial", fecha=date(2026, 10, 29))
+    def test_no_admite_dos_cargos_activos_ni_amplia_a_otro_comite(self):
+        with self.assertRaises(ValidationError):
+            asignar_cargo(user=self.presidente,comite=self.feria,rol="TESORERO")
+        evento=Faena.objects.create(comite=self.feria,descripcion="Ajeno",fecha=date(2026,10,29))
         self.client.force_login(self.presidente)
-        self.assertEqual(self.client.get(reverse("tesoreria_concepto_detalle", args=[self.ajeno.pk])).status_code, 200)
-        self.assertEqual(self.client.post(reverse("generar_registros_faena", args=[evento.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("tesoreria_concepto_detalle",args=[self.ajeno.pk])).status_code,404)
+        self.assertEqual(self.client.post(reverse("generar_registros_faena",args=[evento.pk])).status_code,404)
 
     def test_borrado_propio_requiere_post_y_elimina_la_cascada(self):
         for usuario in (self.presidente, self.tesorero):
@@ -184,25 +187,24 @@ class AislamientoFinancieroTests(TestCase):
                 self.assertFalse(ObligacionCiudadano.objects.filter(pk=obligacion.pk).exists())
                 self.assertFalse(Abono.objects.filter(pk=abono.pk).exists())
 
-    def test_expediente_filtra_historial_y_totales_aunque_tenga_permiso_de_padron(self):
-        self.presidente.user_permissions.add(Permission.objects.get(content_type__app_label="core", codename="view_ciudadano"))
+    def test_un_permiso_global_heredado_no_abre_el_padron_a_un_cargo(self):
+        self.presidente.user_permissions.add(Permission.objects.get(content_type__app_label="core",codename="view_ciudadano"))
         self.client.force_login(self.presidente)
-        respuesta = self.client.get(reverse("perfil_ciudadano", args=[self.ciudadano.pk]))
-        self.assertContains(respuesta, "Cuota propia")
-        self.assertNotContains(respuesta, "Concepto financiero reservado")
-        self.assertEqual(respuesta.context["resumen"]["total_abonado"], Decimal("11"))
-        self.assertEqual(respuesta.context["resumen"]["conceptos"], 1)
+        self.assertEqual(self.client.get(reverse("perfil_ciudadano",args=[self.ciudadano.pk])).status_code,404)
 
     def test_inicio_filtra_movimientos_heredados(self):
+        from django.utils import timezone
+        hoy = timezone.localdate()
         for comite, texto in ((self.agua, "Movimiento propio"), (self.feria, "Movimiento reservado")):
-            Pago.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=17, fecha=date(2026, 10, 29))
-            Cooperacion.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=19, fecha=date(2026, 10, 29))
+            Pago.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=17, fecha=hoy)
+            Cooperacion.objects.create(comite=comite, ciudadano=self.ciudadano, concepto=texto, monto=19, fecha=hoy)
         self.client.force_login(self.tesorero)
         respuesta = self.client.get(reverse("dashboard_operativo"))
         financieros = [fila for fila in respuesta.context["actividad_reciente"] if fila["tipo"] in ("Pago", "Cooperación")]
         self.assertEqual(len(financieros), 2)
         self.assertEqual(respuesta.context["metricas"]["pagos_mes"], 1)
-        self.assertEqual(list(respuesta.context["ciudadanos"])[0].total_pagos, 1)
+        # Un cargo financiero no abre el padrón general del tablero.
+        self.assertEqual(list(respuesta.context["ciudadanos"]), [])
 
     def test_admin_financiero_y_asignaciones_reservados_al_superusuario(self):
         self.presidente.is_staff = True
@@ -235,7 +237,7 @@ class AislamientoFinancieroTests(TestCase):
     def test_generacion_para_dos_mil_ciudadanos_sigue_aislada_e_idempotente(self):
         Ciudadano.objects.bulk_create([
             Ciudadano(nombre=f"Ciudadano {numero}", apellido_paterno="Padrón")
-            for numero in range(1998)
+            for numero in range(2000 - Ciudadano.objects.filter(activo=True).count())
         ], batch_size=500)
         Ciudadano.objects.create(nombre="Inactivo", apellido_paterno="Excluido", activo=False)
         concepto = self.crear_concepto(self.agua, "Obligaciones de dos mil ciudadanos")
@@ -250,13 +252,10 @@ class AislamientoFinancieroTests(TestCase):
         self.assertEqual(respuesta.context["page_obj"].paginator.count, 2000)
         self.assertEqual(len(respuesta.context["page_obj"].object_list), 25)
 
-    def test_padron_no_expone_fecha_de_pago_de_otro_comite(self):
-        self.presidente.user_permissions.add(Permission.objects.get(content_type__app_label="core", codename="view_ciudadano"))
-        Pago.objects.create(comite=self.feria, ciudadano=self.ciudadano, concepto="Pago ajeno", monto=7, fecha=date(2025, 3, 5))
+    def test_padron_no_se_abre_por_permiso_global_de_un_cargo(self):
+        self.presidente.user_permissions.add(Permission.objects.get(content_type__app_label="core",codename="view_ciudadano"))
         self.client.force_login(self.presidente)
-        respuesta = self.client.get(reverse("padron_ciudadanos"))
-        ciudadano = next(c for c in respuesta.context["ciudadanos"] if c.pk == self.ciudadano.pk)
-        self.assertIsNone(ciudadano.ultimo_pago_fecha)
+        self.assertEqual(self.client.get(reverse("padron_ciudadanos")).status_code,404)
 
     def test_permisos_globales_no_amplian_el_comite_de_un_cargo_financiero(self):
         self.presidente.user_permissions.set(Permission.objects.filter(content_type__app_label="tesoreria"))

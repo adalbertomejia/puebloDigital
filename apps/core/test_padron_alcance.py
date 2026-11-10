@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 import csv
 import io
 
@@ -92,7 +93,7 @@ class AlcancePadronTests(TestCase):
     def test_cargo_de_tesoreria_sin_rol_operativo_no_abre_el_padron(self):
         tesorero = get_user_model().objects.create_user(username="tesorero")
         comite = Comite.objects.create(nombre="Comité financiero")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=tesorero,
             comite=comite,
             rol=UsuarioApp.Roles.TESORERO,
