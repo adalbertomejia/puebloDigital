@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -19,7 +20,7 @@ class TrazabilidadFinancieraTests(TestCase):
         self.comite = Comite.objects.create(nombre="Agua con seguimiento")
         self.ajeno = Comite.objects.create(nombre="Feria ajena")
         for usuario, rol in ((self.usuario, "TESORERO"), (self.presidente, "PRESIDENTE")):
-            UsuarioApp.objects.create(user=usuario, comite=self.comite, rol=rol)
+            asignar_cargo(user=usuario, comite=self.comite, rol=rol)
         self.ciudadano = Ciudadano.objects.create(nombre="Ana", apellido_paterno="Comunidad")
         self.concepto = ConceptoTesoreria.objects.create(comite=self.comite, concepto="Concepto anterior", naturaleza="PAGO", monto_individual=100, fecha=date(2026, 10, 1))
         self.obligacion = ObligacionCiudadano.objects.create(concepto=self.concepto, ciudadano=self.ciudadano, monto_asignado=100)
@@ -49,7 +50,7 @@ class TrazabilidadFinancieraTests(TestCase):
         concepto = ConceptoTesoreria.objects.create(comite=self.comite, concepto="Por generar", naturaleza="PAGO", monto_individual=100)
         url = reverse("generar_obligaciones_tesoreria", args=[concepto.pk])
         self.assertEqual(self.client.post(url).status_code, 302)
-        obligacion = concepto.obligaciones.get()
+        obligacion = concepto.obligaciones.get(ciudadano=self.ciudadano)
         self.assertEqual(obligacion.creado_por, self.usuario)
         self.client.force_login(self.presidente)
         self.assertEqual(self.client.post(url).status_code, 302)
@@ -57,7 +58,7 @@ class TrazabilidadFinancieraTests(TestCase):
         self.assertEqual(obligacion.creado_por, self.usuario)
         registro = RegistroFinanciero.objects.get(accion="GENERAR")
         self.assertEqual(registro.usuario, self.usuario)
-        self.assertEqual(registro.detalle["creados"], 1)
+        self.assertEqual(registro.detalle["creados"], Ciudadano.objects.filter(activo=True).count())
 
     def test_abono_registra_usuario_real_referencia_importe_y_fecha(self):
         url = reverse("acreditar_obligacion", args=[self.obligacion.pk])
@@ -163,7 +164,7 @@ class TrazabilidadFinancieraTests(TestCase):
         self.client.post(reverse("crear_concepto_tesoreria"), self.datos_concepto())
         concepto = ConceptoTesoreria.objects.get(concepto="Nuevo concepto")
         self.client.post(reverse("generar_obligaciones_tesoreria", args=[concepto.pk]))
-        obligacion = concepto.obligaciones.get()
+        obligacion = concepto.obligaciones.get(ciudadano=self.ciudadano)
         obligacion.acreditar(15, usuario=self.usuario, referencia="REC-UNICO-2026")
         for ruta, args in (("exportar_tesoreria_csv", []), ("exportar_obligaciones_tesoreria_csv", [concepto.pk]), ("exportar_aportaciones_csv", [])):
             with self.subTest(ruta=ruta):

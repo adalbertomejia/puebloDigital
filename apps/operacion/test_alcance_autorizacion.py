@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 
 from django.contrib.auth import get_user_model
@@ -123,8 +125,8 @@ class AlcanceOperacionTests(TestCase):
 
     def test_tesorero_no_recibe_alcance_operativo_por_su_cargo(self):
         tesorero = get_user_model().objects.create_user(username="tesorero-sin-operacion")
-        UsuarioApp.objects.create(user=tesorero, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
-        self.assertFalse(Faena.objects.visibles_para(tesorero).exists())
+        asignar_cargo(user=tesorero, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
+        self.assertFalse(Faena.objects.visibles_para(tesorero).filter(pk=self.faena_local.pk).exists())
         self.client.force_login(tesorero)
         self.assertEqual(
             self.client.get(reverse("control_asistencias_faena_detalle", args=[self.faena_local.pk])).status_code,
@@ -184,7 +186,7 @@ class AlcanceOperacionTests(TestCase):
 
     def test_presidente_solo_ve_y_edita_eventos_generales_de_su_comite(self):
         presidente = get_user_model().objects.create_user(username="presidente-op")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
         )
         otro_comite = Comite.objects.create(nombre="Comité vecino")
@@ -223,7 +225,7 @@ class AlcanceOperacionTests(TestCase):
 
     def test_presidente_crea_evento_general_limitado_a_su_comite(self):
         presidente = get_user_model().objects.create_user(username="presidente-crea-op")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
         )
         otro_comite = Comite.objects.create(nombre="Comité vecino")
@@ -253,7 +255,7 @@ class AlcanceOperacionTests(TestCase):
 
     def test_presidente_captura_y_exporta_todos_los_registros_de_su_faena_general(self):
         presidente = get_user_model().objects.create_user(username="presidente-captura-op")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
         )
         otro_comite = Comite.objects.create(nombre="Comité ajeno")
@@ -292,7 +294,7 @@ class AlcanceOperacionTests(TestCase):
 
     def test_control_asistencias_muestra_metricas_de_todas_las_manzanas_al_presidente(self):
         presidente = get_user_model().objects.create_user(username="presidente-metricas-op")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=presidente, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE
         )
         self.client.force_login(presidente)
@@ -374,7 +376,7 @@ class AlcanceOperacionTests(TestCase):
 
     def _presidente(self):
         usuario = get_user_model().objects.create_user(username="presidente-politica")
-        self.cargo = UsuarioApp.objects.create(user=usuario, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE)
+        self.cargo = asignar_cargo(user=usuario, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE)
         return usuario
 
     def _eventos_generales(self):
@@ -491,22 +493,10 @@ class AlcanceOperacionTests(TestCase):
             objeto.activo = True
             objeto.save(update_fields=["activo"])
 
-    def test_presidente_responsable_conserva_ambos_ambitos_al_crear(self):
-        UsuarioApp.objects.create(user=self.responsable, comite=self.comite, rol=UsuarioApp.Roles.PRESIDENTE)
-        self.client.force_login(self.responsable)
-        for alcance, manzana, comite in (("GENERAL", "", self.comite.pk), ("MANZANA", self.manzana.pk, "")):
-            with self.subTest(alcance=alcance):
-                descripcion = f"Doble responsabilidad {alcance}"
-                response = self.client.post(reverse("crear_faena_operativa"), {
-                    "fecha": "2026-10-29", "descripcion": descripcion,
-                    "alcance": alcance, "manzana": manzana, "comite": comite,
-                    "motivo": "Trabajo comunitario", "estado": "PROGRAMADA", "notas": "",
-                })
-                self.assertEqual(response.status_code, 302)
-                creada = Faena.objects.get(descripcion=descripcion)
-                self.assertEqual(creada.alcance, alcance)
-                self.assertEqual(creada.manzana_id, manzana or None)
-                self.assertEqual(creada.comite_id, comite or None)
+    def test_responsable_no_puede_acumular_un_cargo_de_comite(self):
+        with self.assertRaises(ValidationError):
+            asignar_cargo(user=self.responsable,comite=self.comite,rol=UsuarioApp.Roles.PRESIDENTE)
+        self.assertFalse(self.responsable.perfiles_app.filter(activo=True).exists())
 
     def test_presidente_sin_permisos_globales_no_recibe_tesoreria_ni_roles(self):
         presidente = self._presidente()

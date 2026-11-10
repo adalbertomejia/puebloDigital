@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 from decimal import Decimal
 from django.contrib.auth import get_user_model
@@ -18,7 +19,7 @@ class CuotasMensualesAguaTests(TestCase):
         self.usuario = get_user_model().objects.create_user(username="tesorero-agua-mensual")
         self.presidente = get_user_model().objects.create_user(username="presidente-agua-mensual")
         for usuario, rol in ((self.usuario,"TESORERO"),(self.presidente,"PRESIDENTE")):
-            UsuarioApp.objects.create(user=usuario, comite=self.comite, rol=rol)
+            asignar_cargo(user=usuario, comite=self.comite, rol=rol)
         self.ciudadano = Ciudadano.objects.create(nombre="Ana", apellido_paterno="Prueba", numero_contrato="C-001")
         self.toma = Toma.objects.create(ciudadano=self.ciudadano, numero_toma="T-099", costo_anual=999)
         for estado in ("SUSPENDIDA", "CANCELADA"):
@@ -86,7 +87,7 @@ class CuotasMensualesAguaTests(TestCase):
     def test_otro_comite_no_ve_agua_ni_crea_cuotas(self):
         otro=Comite.objects.create(nombre="Feria",tipo="FERIA")
         u=get_user_model().objects.create_user(username="tesorero-feria-mensual")
-        UsuarioApp.objects.create(user=u,comite=otro,rol="TESORERO")
+        asignar_cargo(user=u,comite=otro,rol="TESORERO")
         self.client.force_login(u)
         self.assertEqual(self.client.get(reverse("control_agua")).status_code,404)
         self.assertEqual(self.crear().status_code,404)

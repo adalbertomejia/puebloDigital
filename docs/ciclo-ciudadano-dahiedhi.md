@@ -26,8 +26,8 @@ No se asignan nuevos permisos automáticamente ni se reemplaza la política de r
 | Consultar ciudadano | `Ciudadano.objects.visibles_para`, según el permiso global o responsabilidad territorial existente |
 | Alta | `core.view_ciudadano` + `core.add_ciudadano` |
 | Editar, cambiar manzana, baja/reactivación | `core.view_ciudadano` + `core.change_ciudadano` |
-| Eliminar | Superusuario; o personal staff/Secretaría activa de Delegación con `core.view_ciudadano` + **`core.delete_ciudadano` explícito** |
-| Finanzas | `tiene_acceso_financiero` y `limitar_finanzas` existentes: superusuario o presidente/tesorero de su comité activo |
+| Eliminar | Superusuario; o personal staff de administración global sin cargos de comité con `core.view_ciudadano` + **`core.delete_ciudadano` explícito** |
+| Finanzas | `tiene_acceso_financiero` y `limitar_finanzas` existentes: superusuario; presidente/tesorero operan y solo lectura consulta su comité activo |
 
 Las vistas de asistencia, agua, recibos, auditoría y exportaciones mantienen sus autorizaciones existentes. Un cargo de comité por sí solo no concede edición o eliminación global de ciudadanos. Los responsables no reciben acciones de padrón nuevas automáticamente. Los duplicados con historial requieren revisión manual.
 
@@ -68,3 +68,8 @@ No hay validación visual en navegador ni ejecución sobre PostgreSQL/producció
 Los tokens previenen reenvíos secuenciales; no garantizan idempotencia distribuida ante solicitudes simultáneas. El cambio de estado usa además estado anterior y bloqueo de fila, cuya eficacia depende del motor.
 
 Las eliminaciones de eventos o conceptos completos conservan su comportamiento previo; esta entrega protege la eliminación del ciudadano. Quedan fuera cortes, balances y la extensión financiera por concepto.
+
+
+## Actualización de roles y cargo único
+
+La política vigente se encuentra en [Roles operativos y cargo único](roles-operativos-comite.md). Reemplaza la excepción anterior de Secretaría y los permisos globales de cuentas con cargos de comité. Agrega dos migraciones posteriores a las cinco del ciclo ciudadano; requiere auditar asignaciones antes de aplicarlas. Resultado actual: 308 pruebas, 301 aprobadas y las mismas siete incidencias históricas. Las 22 pruebas nuevas de roles/migración pasan y se verificaron consulta móvil e impresión en Chromium.

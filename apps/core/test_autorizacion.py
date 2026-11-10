@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from apps.comites.test_helpers import asignar_cargo
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -65,21 +67,23 @@ class ResponsabilidadesActivasTests(TestCase):
     def test_deriva_cargos_activos_de_comite_y_omite_asignaciones_inactivas(self):
         from apps.core.autorizacion import responsabilidades_activas
 
+        self.manzana.activa = False
+        self.manzana.save()
         comite_activo = Comite.objects.create(nombre="Comité del Agua", activo=True)
         comite_inactivo = Comite.objects.create(nombre="Comité anterior", activo=False)
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=self.usuario,
             comite=comite_activo,
             rol=UsuarioApp.Roles.TESORERO,
             activo=True,
         )
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=self.usuario,
             comite=comite_inactivo,
             rol=UsuarioApp.Roles.SECRETARIO,
-            activo=True,
+            activo=False,
         )
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=self.usuario,
             comite=comite_activo,
             rol=UsuarioApp.Roles.LECTURA,
@@ -88,7 +92,7 @@ class ResponsabilidadesActivasTests(TestCase):
 
         responsabilidades = responsabilidades_activas(self.usuario)
 
-        self.assertEqual(len(responsabilidades), 2)
+        self.assertEqual(len(responsabilidades), 1)
         cargo = next(item for item in responsabilidades if item.tipo == "COMITE")
         self.assertEqual(cargo.rol, UsuarioApp.Roles.TESORERO)
         self.assertEqual(cargo.comite, comite_activo)
@@ -134,8 +138,10 @@ class VistaMisResponsabilidadesTests(TestCase):
         ciudadano.manzana = manzana
         ciudadano.save(update_fields=["manzana"])
         PerfilAcceso.objects.create(user=usuario, ciudadano=ciudadano)
+        manzana.responsable=None
+        manzana.save()
         comite = Comite.objects.create(nombre="Comité del Agua", activo=True)
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=usuario,
             comite=comite,
             rol=UsuarioApp.Roles.TESORERO,
@@ -145,7 +151,7 @@ class VistaMisResponsabilidadesTests(TestCase):
         response = self.client.get(reverse("mis_responsabilidades"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Responsable de manzana")
+        self.assertNotContains(response, "Responsable de manzana")
         self.assertContains(response, "Centro")
         self.assertContains(response, "Tesorero")
         self.assertContains(response, "Comité del Agua")
@@ -174,7 +180,8 @@ class VistaMisResponsabilidadesTests(TestCase):
         usuario = get_user_model().objects.create_user(username="sin-vinculo-general")
         ciudadano = Ciudadano.objects.create(nombre="Identidad", apellido_paterno="Historica")
         comite = Comite.objects.create(nombre="Comité del Agua")
-        UsuarioApp.objects.create(user=usuario, ciudadano=ciudadano, comite=comite, rol=UsuarioApp.Roles.TESORERO)
+        with self.assertRaises(ValidationError):
+            UsuarioApp.objects.create(user=usuario, ciudadano=ciudadano, comite=comite, rol=UsuarioApp.Roles.TESORERO)
         self.client.force_login(usuario)
 
         response = self.client.get(reverse("mis_responsabilidades"))
@@ -182,7 +189,7 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["ciudadano_vinculado"])
         self.assertContains(response, "Tu cuenta no tiene un ciudadano vinculado.")
-        self.assertContains(response, "Tesorero")
+        self.assertNotContains(response, "Tesorero")
         self.assertNotContains(response, "Identidad Historica")
 
     def test_ciudadano_inactivo_se_muestra_sin_habilitar_responsabilidad(self):
@@ -201,26 +208,25 @@ class VistaMisResponsabilidadesTests(TestCase):
         self.assertContains(response, "Inactivo")
         self.assertEqual(response.context["responsabilidades"], [])
 
-    def test_mi_acceso_describe_funciones_por_cargo_sin_mezclar_comites(self):
-        usuario = get_user_model().objects.create_user(username="cargos-distintos")
+    def test_mi_acceso_describe_solo_el_cargo_vigente(self):
+        usuario = get_user_model().objects.create_user(username="cargo-vigente")
         agua = Comite.objects.create(nombre="Comité Agua")
         feria = Comite.objects.create(nombre="Comité Feria")
-        UsuarioApp.objects.create(user=usuario, comite=agua, rol="PRESIDENTE")
-        UsuarioApp.objects.create(user=usuario, comite=feria, rol="TESORERO")
+        anterior = asignar_cargo(user=usuario, comite=agua, rol="PRESIDENTE")
+        anterior.activo=False; anterior.save()
+        asignar_cargo(user=usuario, comite=feria, rol="LECTURA")
         self.client.force_login(usuario)
-        response = self.client.get(reverse("mis_responsabilidades"))
-        responsabilidades = {r.comite.pk: r for r in response.context["responsabilidades"]}
-        self.assertIn("Crear y gestionar eventos generales de este comité", responsabilidades[agua.pk].funciones)
-        self.assertNotIn("Crear y gestionar eventos generales de este comité", responsabilidades[feria.pk].funciones)
-        self.assertIn("Generar obligaciones y registrar abonos de este comité", responsabilidades[feria.pk].funciones)
-        self.assertContains(response, "Funciones de este cargo", count=2)
-        self.assertContains(response, "Comité Agua")
-        self.assertContains(response, "Comité Feria")
+        response=self.client.get(reverse("mis_responsabilidades"))
+        self.assertEqual(len(response.context["responsabilidades"]),1)
+        self.assertContains(response,"Consultar asistencias y aportaciones de este comité")
+        self.assertContains(response,"Funciones de este cargo",count=1)
+        self.assertNotContains(response,"Comité Agua")
+        self.assertContains(response,"Comité Feria")
 
     def test_cargo_sin_capacidades_no_promete_funciones_financieras(self):
         usuario = get_user_model().objects.create_user(username="solo-secretario")
         comite = Comite.objects.create(nombre="Comité local")
-        UsuarioApp.objects.create(user=usuario, comite=comite, rol="SECRETARIO")
+        asignar_cargo(user=usuario, comite=comite, rol="SECRETARIO")
         self.client.force_login(usuario)
         response = self.client.get(reverse("mis_responsabilidades"))
         self.assertContains(response, "Secretario")

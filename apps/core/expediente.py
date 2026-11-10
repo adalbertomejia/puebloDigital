@@ -6,6 +6,7 @@ from django.db.models import Count, Exists, OuterRef, Q, Sum
 from apps.operacion.models import AsistenciaJunta, RegistroFaena
 from apps.tesoreria.models import Abono, ObligacionCiudadano
 from apps.tesoreria.queries import anotar_obligaciones
+from .autorizacion import permiso_global_de_modelo
 from apps.tesoreria.autorizacion import tiene_acceso_financiero, limitar_finanzas
 
 
@@ -16,7 +17,7 @@ def puede_ver_finanzas(usuario):
 def registros_asistencia(ciudadano, usuario=None):
     faenas = RegistroFaena.objects.filter(ciudadano=ciudadano)
     juntas = AsistenciaJunta.objects.filter(ciudadano=ciudadano)
-    if usuario is not None and not usuario.has_perm("core.view_ciudadano"):
+    if usuario is not None and not permiso_global_de_modelo(usuario, "core.view_ciudadano"):
         faenas = faenas.visibles_para(usuario)
         juntas = juntas.visibles_para(usuario)
     return faenas, juntas

@@ -43,19 +43,10 @@ def relaciones_ciudadano(ciudadano):
 
 
 def puede_eliminar_ciudadano(usuario):
-    from apps.comites.models import UsuarioApp
-
-    secretaria = UsuarioApp.objects.filter(
-        user=usuario,
-        activo=True,
-        comite__activo=True,
-        comite__tipo="DELEGACION",
-        rol="SECRETARIO",
-    ).exists()
-    return usuario.is_superuser or (
-        (usuario.is_staff or secretaria)
-        and usuario.has_perm("core.view_ciudadano")
-        and usuario.has_perm("core.delete_ciudadano")
+    from .autorizacion import permiso_global_de_modelo
+    return (usuario.is_superuser or usuario.is_staff) and (
+        permiso_global_de_modelo(usuario, "core.view_ciudadano")
+        and permiso_global_de_modelo(usuario, "core.delete_ciudadano")
     )
 
 

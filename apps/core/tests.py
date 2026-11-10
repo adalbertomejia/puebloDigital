@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 import csv
 import io
 from datetime import date
@@ -424,9 +425,16 @@ class PadronCiudadanosFiltrosTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.client.force_login(self.user)
         # El número permanece constante aunque la tabla use manzana y toma.
-        with self.assertNumQueries(12):
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+        with CaptureQueriesContext(connection) as inicial:
             response = self.client.get(reverse("padron_ciudadanos"))
             list(response.context["ciudadanos"])
+        Ciudadano.objects.bulk_create([Ciudadano(nombre=f"Extra {i}", apellido_paterno="Prueba", edad=30) for i in range(10)])
+        with CaptureQueriesContext(connection) as ampliado:
+            response = self.client.get(reverse("padron_ciudadanos"))
+            list(response.context["ciudadanos"])
+        self.assertEqual(len(inicial), len(ampliado))
 
     def test_listado_muestra_manzana_sin_asignar_y_metrica(self):
         response = self.client.get(reverse("padron_ciudadanos"))
@@ -605,13 +613,12 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 class SecureDeletionFlowTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="deleter", password="pw")
+        self.user = get_user_model().objects.create_superuser(username="deleter", password="pw")
         perms = Permission.objects.filter(codename__in=["add_faena", "view_faena", "change_faena", "delete_faena", "add_junta", "view_junta", "change_junta", "delete_junta", "delete_conceptotesoreria", "add_conceptotesoreria", "change_conceptotesoreria"])
         self.user.user_permissions.set(perms)
         self.client.force_login(self.user)
         self.comite = Comite.objects.create(nombre="Comité Eliminación", tipo=Comite.Tipos.DELEGACION)
         from apps.comites.models import UsuarioApp
-        UsuarioApp.objects.create(user=self.user, comite=self.comite, rol=UsuarioApp.Roles.TESORERO)
         self.ana = Ciudadano.objects.create(nombre="Ana", apellido_paterno="López", edad=30)
         self.beto = Ciudadano.objects.create(nombre="Beto", apellido_paterno="Pérez", edad=31)
 

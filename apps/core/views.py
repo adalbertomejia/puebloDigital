@@ -47,7 +47,7 @@ from apps.tesoreria.queries import (
 )
 from apps.tesoreria.forms import BuscarAportacionesForm
 from apps.tesoreria.autorizacion import (
-    acceso_financiero_requerido, comites_financieros, limitar_finanzas, tiene_acceso_financiero,
+    acceso_financiero_requerido, comites_financieros, limitar_finanzas, tiene_acceso_financiero, puede_operar_finanzas,
 )
 
 
@@ -55,10 +55,11 @@ from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaFor
 from .models import Ciudadano, Manzana, CambioEstadoCiudadano
 from .ciudadanos import (consumir_token, token_operacion, retorno_ciudadano, url_expediente, relaciones_ciudadano, puede_eliminar_ciudadano)
 from .forms import EstadoCiudadanoForm, HistorialCiudadanoForm
-from .autorizacion import responsabilidades_activas
+from .autorizacion import responsabilidades_activas, permiso_global_de_modelo
 from apps.operacion.autorizacion import (
     manzanas_responsables as _manzanas_responsables,
     comites_presididos as _comites_presididos,
+    comites_operables, comites_consultables, permiso_global_operativo,
     puede_operar_evento as _puede_operar_evento,
     puede_crear_evento as _puede_crear_evento,
     puede_capturar_evento as _puede_capturar_evento,
@@ -79,7 +80,7 @@ def _ciudadanos_operativos_queryset(usuario=None):
     filtro_pago = Q() if usuario is None else Q(pagos__comite_id__in=comites_financieros(usuario).values("pk"))
     return Ciudadano.objects.select_related("toma", "manzana").annotate(
         ultimo_pago_fecha=Max("pagos__fecha", filter=filtro_pago),
-        adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True) & ~Q(registros_faena__faena__estado="CANCELADA") & (Q() if usuario is None or usuario.has_perm("core.view_ciudadano") else Q(registros_faena__pk__in=RegistroFaena.objects.visibles_para(usuario).values("pk"))), distinct=True),
+        adeudos_faena=Count("registros_faena", filter=Q(registros_faena__genera_adeudo=True) & ~Q(registros_faena__faena__estado="CANCELADA") & (Q() if usuario is None or permiso_global_de_modelo(usuario, "core.view_ciudadano") else Q(registros_faena__pk__in=RegistroFaena.objects.visibles_para(usuario).values("pk"))), distinct=True),
     )
 
 
@@ -89,7 +90,7 @@ def _puede_consultar_padron(usuario):
         and usuario.is_active
         and (
             usuario.is_superuser
-            or usuario.has_perm("core.view_ciudadano")
+            or permiso_global_de_modelo(usuario, "core.view_ciudadano")
             or any(r.tipo == "MANZANA" for r in responsabilidades_activas(usuario))
         )
     )
@@ -99,7 +100,7 @@ def _puede_modificar_padron(usuario, accion):
     return bool(
         usuario.is_authenticated
         and usuario.is_active
-        and (usuario.is_superuser or usuario.has_perm(f"core.{accion}_ciudadano"))
+        and permiso_global_de_modelo(usuario, f"core.{accion}_ciudadano")
     )
 
 
@@ -233,7 +234,7 @@ def exportar_ciudadanos_csv(request):
 
 def _guardar_ciudadano(request, pk=None):
     accion = "change" if pk else "add"
-    if not _puede_modificar_padron(request.user, accion) or not request.user.has_perm("core.view_ciudadano"):
+    if not _puede_modificar_padron(request.user, accion) or not permiso_global_de_modelo(request.user, "core.view_ciudadano"):
         raise Http404
     ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user), pk=pk) if pk else None
     form = CiudadanoOperativoForm(request.POST if request.method == "POST" else None, instance=ciudadano)
@@ -510,7 +511,7 @@ def mis_responsabilidades(request):
 
 
 def _can_delete_operacion_event(user, permission_codename):
-    return user.is_superuser or user.has_perm(permission_codename)
+    return permiso_global_operativo(user, permission_codename)
 
 
 def _money(value):
@@ -597,8 +598,8 @@ def _crear_evento_operativo(request, form_class, event_label, description, detai
     if not _puede_crear_evento(request.user, model):
         raise Http404
     manzanas = _manzanas_responsables(request.user)
-    if not request.user.is_superuser and not request.user.has_perm(f"operacion.add_{model._meta.model_name}"):
-        comites_presididos = _comites_presididos(request.user)
+    if not permiso_global_operativo(request.user, f"operacion.add_{model._meta.model_name}"):
+        comites_presididos = comites_operables(request.user)
         if comites_presididos and manzanas:
             return _evento_operativo_form_view(
                 request, form_class, event_label, description, detail_url_name,
@@ -646,7 +647,7 @@ def editar_faena_operativa(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite"), pk=faena_id)
     if not _puede_operar_evento(request.user, faena):
         raise Http404
-    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_faena")
+    es_global = permiso_global_operativo(request.user, "operacion.change_faena")
     comites_presididos = [faena.comite_id] if faena.alcance == Faena.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
@@ -667,7 +668,7 @@ def editar_junta_operativa(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
     if not _puede_operar_evento(request.user, junta):
         raise Http404
-    es_global = request.user.is_superuser or request.user.has_perm("operacion.change_junta")
+    es_global = permiso_global_operativo(request.user, "operacion.change_junta")
     comites_presididos = [junta.comite_id] if junta.alcance == Junta.Alcances.GENERAL and not es_global else None
     return _evento_operativo_form_view(
         request,
@@ -684,7 +685,7 @@ def editar_junta_operativa(request, junta_id):
 
 
 def _confirmar_eliminacion(request, *, obj, object_type, object_label, cancel_url, success_redirect_name, permission, error_message, success_message, warning_message, deletion_summary):
-    if not (request.user.is_superuser or request.user.has_perm(permission)):
+    if not permiso_global_operativo(request.user, permission):
         messages.error(request, error_message)
         return redirect(cancel_url)
     if request.method == "POST":
@@ -773,9 +774,9 @@ def _attendance_queryset(model, relation_name, pending_status, usuario=None):
     """Annotate event querysets with operational attendance metrics."""
     queryset = model.objects.visibles_para(usuario) if usuario is not None else model.objects.all()
     participant_model = model._meta.get_field(relation_name).related_model
-    if usuario is not None and not usuario.is_superuser and not usuario.has_perm(f"operacion.view_{participant_model._meta.model_name}"):
+    if usuario is not None and not usuario.is_superuser and not permiso_global_operativo(usuario, f"operacion.view_{participant_model._meta.model_name}"):
         manzana_ids = _manzanas_responsables(usuario)
-        comite_ids = _comites_presididos(usuario)
+        comite_ids = comites_consultables(usuario)
         event_relation = "faena" if model is Faena else "junta"
         scoped_filter = Q(pk__in=[])
         if manzana_ids:
@@ -880,9 +881,11 @@ MESES = [
 ]
 
 
-def _attendance_years():
-    faena_years = Faena.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
-    junta_years = Junta.objects.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
+def _attendance_years(usuario=None):
+    faenas = Faena.objects.visibles_para(usuario) if usuario is not None else Faena.objects.all()
+    juntas = Junta.objects.visibles_para(usuario) if usuario is not None else Junta.objects.all()
+    faena_years = faenas.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
+    junta_years = juntas.annotate(year=ExtractYear("fecha")).values_list("year", flat=True)
     return sorted({year for year in chain(faena_years, junta_years) if year}, reverse=True)
 
 
@@ -972,7 +975,7 @@ def control_asistencias(request):
                 "manzana": manzana,
             },
             "meses": MESES,
-            "anios": _attendance_years(),
+            "anios": _attendance_years(request.user),
             "alcances": Faena.Alcances.choices,
             "manzanas": Manzana.objects.filter(
                 pk__in=[r.manzana.pk for r in responsabilidades_activas(request.user) if r.tipo == "MANZANA" and r.manzana]
@@ -982,13 +985,27 @@ def control_asistencias(request):
     )
 
 
-def _event_detail_context(event, registros, event_type, description):
+def _filtrar_participantes(registros, params):
+    q = params.get("q", "").strip()
+    if q:
+        registros = registros.filter(filtro_busqueda_ciudadano(q, prefijo="ciudadano__", extra_fields=("ciudadano__toma__numero_toma",)))
+    if params.get("estado") in dict(RegistroFaena.Estatus.choices):
+        registros = registros.filter(estatus=params["estado"])
+    return registros
+
+
+def _event_detail_context(event, registros, event_type, description, request=None):
     total = registros.count()
     cantidad_adeudos = registros.filter(genera_adeudo=True).count()
     monto_total_adeudos = registros.filter(genera_adeudo=True).aggregate(total=Sum("monto_adeudo"))["total"] or 0
     registradas = registros.exclude(estatus="PENDIENTE").count()
     pendientes = registros.filter(estatus="PENDIENTE").count()
     porcentaje = round((registradas / total) * 100) if total else 0
+    params = request.GET if request is not None else {}
+    participantes = _filtrar_participantes(registros, params).select_related("ciudadano").order_by("estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre", "pk")
+    pagina = Paginator(participantes, 25).get_page(params.get("page"))
+    consulta = request.GET.copy() if request is not None else {}
+    consulta.pop("page", None)
     return {
         "event": event,
         "event_type": event_type,
@@ -1003,7 +1020,10 @@ def _event_detail_context(event, registros, event_type, description):
         },
         "estado_operacional": event.estado if event.estado != event.Estados.PROGRAMADA else ("PROGRAMADA" if total == 0 else ("REGISTROS_GENERADOS" if pendientes else "COMPLETADA")),
         "can_capture": event.estado == event.Estados.PROGRAMADA and total > 0 and pendientes > 0,
-        "participantes": registros.select_related("ciudadano").order_by("estatus", "ciudadano__apellido_paterno", "ciudadano__apellido_materno", "ciudadano__nombre")[:200],
+        "participantes": pagina, "participantes_page": pagina, "hay_participantes": total > 0,
+        "filtro_participante": params.get("q", ""), "filtro_estado": params.get("estado", ""),
+        "estados_participante": RegistroFaena.Estatus.choices,
+        "consulta_participantes": consulta.urlencode() if request is not None else "",
     }
 
 
@@ -1063,7 +1083,7 @@ def _exportar_participantes_csv(event, registros, event_type, description):
 @login_required
 def control_asistencias_faena_detalle(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=faena_id)
-    context = _event_detail_context(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
+    context = _event_detail_context(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion, request)
     context["admin_change_url"] = reverse("editar_faena_operativa", args=[faena.pk]) if _puede_operar_evento(request.user, faena) else ""
     context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, faena)
     context["capture_url"] = reverse("captura_asistencia_faena", args=[faena.pk])
@@ -1076,7 +1096,7 @@ def control_asistencias_faena_detalle(request, faena_id):
 @login_required
 def control_asistencias_junta_detalle(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
-    context = _event_detail_context(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
+    context = _event_detail_context(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema, request)
     context["admin_change_url"] = reverse("editar_junta_operativa", args=[junta.pk]) if _puede_operar_evento(request.user, junta) else ""
     context["can_capture"] = context["can_capture"] and _puede_capturar_evento(request.user, junta)
     context["capture_url"] = reverse("captura_asistencia_junta", args=[junta.pk])
@@ -1089,13 +1109,13 @@ def control_asistencias_junta_detalle(request, junta_id):
 @login_required
 def exportar_participantes_faena_csv(request, faena_id):
     faena = get_object_or_404(Faena.objects.visibles_para(request.user).select_related("comite"), pk=faena_id)
-    return _exportar_participantes_csv(faena, faena.registros.all().visibles_para(request.user), "Faena", faena.descripcion)
+    return _exportar_participantes_csv(faena, _filtrar_participantes(faena.registros.all().visibles_para(request.user), request.GET), "Faena", faena.descripcion)
 
 
 @login_required
 def exportar_participantes_junta_csv(request, junta_id):
     junta = get_object_or_404(Junta.objects.visibles_para(request.user).select_related("comite", "manzana"), pk=junta_id)
-    return _exportar_participantes_csv(junta, junta.asistencias.all().visibles_para(request.user), "Junta", junta.tema)
+    return _exportar_participantes_csv(junta, _filtrar_participantes(junta.asistencias.all().visibles_para(request.user), request.GET), "Junta", junta.tema)
 
 
 def _capture_config(event_kind):
@@ -1524,12 +1544,12 @@ from apps.tesoreria.forms import AbonoForm, ConceptoTesoreriaForm
 from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 
-def _can_modify_tesoreria(user):
-    return tiene_acceso_financiero(user)
+def _can_modify_tesoreria(user, concepto=None):
+    return puede_operar_finanzas(user, concepto.comite_id if concepto is not None else None)
 
 
-def _can_delete_tesoreria(user):
-    return tiene_acceso_financiero(user)
+def _can_delete_tesoreria(user, concepto=None):
+    return _can_modify_tesoreria(user, concepto)
 
 
 def _filtros_tesoreria(params):
@@ -1604,6 +1624,8 @@ def tesoreria_operativa(request):
     for parametro in ("page", "pagina_conceptos", "pagina_cooperaciones"):
         export_params.pop(parametro, None)
     filtros = _filtros_tesoreria(request.GET)
+    for concepto in chain(pagos_page.object_list, cooperaciones_page.object_list):
+        concepto.puede_modificar = _can_modify_tesoreria(request.user, concepto)
     context = {
         "pagos_page": pagos_page, "cooperaciones_page": cooperaciones_page,
         "metricas": metricas, "filtros": filtros,
@@ -2068,10 +2090,9 @@ def exportar_aportaciones_csv(request):
 @acceso_financiero_requerido
 @transaction.atomic
 def crear_concepto_tesoreria(request, pk=None):
-    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user), pk=pk) if pk else None
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user, escritura=True), pk=pk) if pk else None
     if not _can_modify_tesoreria(request.user):
-        messages.error(request, "No tienes permisos para modificar tesorería.")
-        return redirect("tesoreria_operativa")
+        raise Http404
     form = ConceptoTesoreriaForm(request.POST or None, instance=concepto, usuario=request.user)
     if request.method == "POST" and form.is_valid():
         obj = form.save(commit=False)
@@ -2092,7 +2113,7 @@ def crear_concepto_tesoreria(request, pk=None):
 @login_required
 @acceso_financiero_requerido
 def eliminar_concepto_tesoreria(request, pk):
-    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user, escritura=True).select_related("comite", "manzana", "creado_por"), pk=pk)
     if not _can_delete_tesoreria(request.user):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
@@ -2122,9 +2143,8 @@ def eliminar_concepto_tesoreria(request, pk):
 @acceso_financiero_requerido
 def generar_obligaciones_tesoreria(request, pk):
     if not _can_modify_tesoreria(request.user):
-        messages.error(request, "No tienes permisos para generar obligaciones.")
-        return redirect("tesoreria_operativa")
-    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
+        raise Http404
+    concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user, escritura=True).select_related("manzana"), pk=pk)
     try:
         resultado = generar_obligaciones_faltantes(concepto, usuario=request.user)
     except ValidationError as error:
@@ -2202,7 +2222,7 @@ def tesoreria_concepto_detalle(request, pk):
     return render(request, "dashboard/tesoreria_detalle.html", {
         "concepto": concepto, "obligaciones": page.object_list, "page_obj": page, "filtros": filtros,
         "metricas": metricas, "manzanas": Manzana.objects.order_by("nombre"), "sexos": Ciudadano.Sexos.choices,
-        "motivos_alta": Ciudadano.MotivosAlta.choices, "can_modify": _can_modify_tesoreria(request.user),
+        "motivos_alta": Ciudadano.MotivosAlta.choices, "can_modify": _can_modify_tesoreria(request.user, concepto),
         "export_querystring": export_params.urlencode(), "current_querystring": export_params.urlencode(),
     })
 
@@ -2237,10 +2257,9 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
 @login_required
 @acceso_financiero_requerido
 def acreditar_obligacion(request, pk):
-    obligacion = get_object_or_404(limitar_finanzas(ObligacionCiudadano.objects.all(), request.user, "concepto__comite_id").select_related("ciudadano", "concepto"), pk=pk)
+    obligacion = get_object_or_404(limitar_finanzas(ObligacionCiudadano.objects.all(), request.user, "concepto__comite_id", escritura=True).select_related("ciudadano", "concepto"), pk=pk)
     if not _can_modify_tesoreria(request.user):
-        messages.error(request, "No tienes permisos para acreditar pagos.")
-        return redirect("tesoreria_concepto_detalle", obligacion.concepto_id)
+        raise Http404
     if request.method == "POST":
         form = AbonoForm(request.POST, obligacion=obligacion)
         if form.is_valid():
@@ -2311,6 +2330,8 @@ def crear_cuota_mensual_agua(request):
 @login_required
 @acceso_financiero_requerido
 def seleccionar_obligacion(request):
+    if not puede_operar_finanzas(request.user):
+        raise Http404
     from apps.tesoreria.forms import SeleccionarObligacionForm
     from apps.tesoreria.selectores import obligaciones_pendientes
     form = SeleccionarObligacionForm(request.POST if request.method == "POST" else None, usuario=request.user)

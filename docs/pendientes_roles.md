@@ -1,5 +1,13 @@
 # Roles y alcance — Dahiedhi
 
+## Política vigente del MVP
+
+**La decisión actual sustituye las propuestas históricas de cargos combinados que aparecen más abajo.** Una cuenta operativa pertenece a un ciudadano y admite un solo cargo activo; ser responsable de manzana también ocupa ese cargo. Presidente y tesorero administran/capturan asistencias y operan aportaciones de su comité. Ambos consultan e imprimen recibos desde su misma cuenta. Solo lectura consulta, imprime y comparte enlaces autorizados sin escrituras. Secretaría y Capturista no se amplían.
+
+Configuración, restricciones, auditoría previa a las dos migraciones nuevas y resultados de prueba: [Roles operativos y cargo único](roles-operativos-comite.md).
+
+Los apartados siguientes conservan el historial de decisiones anterior y no deben utilizarse para permitir varios cargos vigentes.
+
 ## Decisión vigente del cliente — 29 de octubre de 2026
 
 El **PRESIDENTE opera su comité**. Sustituye la propuesta inicial de un operador separado. En este corte se mantiene el alcance implementado: eventos **generales** de sus comités activos; la operación de eventos de manzana corresponde a su responsable. Tener comité convocante en un evento territorial no concede su gestión al presidente.

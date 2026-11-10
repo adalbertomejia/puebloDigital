@@ -2,6 +2,7 @@
 {% load static %}
 {% block title %}Buscar aportaciones{% endblock %}
 {% block content %}
+{% include "dashboard/components/acciones_consulta.html" %}
 <nav class="mb-3 text-sm text-slate-600" aria-label="Migas de pan"><a href="{% url 'dashboard_operativo' %}">Inicio</a> / <a href="{% url 'resumen_aportaciones' %}{% if resumen_querystring %}?{{ resumen_querystring }}{% endif %}">Resumen de aportaciones</a> / <span aria-current="page">Buscar aportaciones</span></nav>
 <header class="search-contributions__header">
   <div><p class="search-contributions__eyebrow">Búsqueda avanzada de aportaciones</p><h1>Buscar aportaciones</h1><p>Localiza aportaciones y abonos por ciudadano, concepto, manzana o periodo.</p></div>

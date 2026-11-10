@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 import json
 from datetime import date
 from django.contrib.auth import get_user_model
@@ -14,10 +15,10 @@ class InterfazOperativaTests(TestCase):
         self.usuario = get_user_model().objects.create_user(username="cajera-ui")
         self.comite = Comite.objects.create(nombre="Comité propio", tipo="AGUA")
         self.ajeno = Comite.objects.create(nombre="Comité ajeno", tipo="FERIA")
-        UsuarioApp.objects.create(user=self.usuario, comite=self.comite, rol="TESORERO")
         self.admin = get_user_model().objects.create_superuser(username="admin-ui", email="admin@example.com", password="unused")
         self.ciudadano = Ciudadano.objects.create(nombre="Ana", apellido_paterno="Propia", numero_contrato="C-UI-001", edad=30)
         self.otro = Ciudadano.objects.create(nombre="Persona", apellido_paterno="Reservada", numero_contrato="C-OCULTO")
+        asignar_cargo(user=self.usuario, ciudadano=self.ciudadano, comite=self.comite, rol="TESORERO")
         Toma.objects.create(ciudadano=self.ciudadano, numero_toma="T-UI-099")
         c = ConceptoTesoreria.objects.create(comite=self.comite, concepto="Cuota propia", naturaleza="PAGO", monto_individual=100)
         otro = ConceptoTesoreria.objects.create(comite=self.ajeno, concepto="Cuota reservada", naturaleza="PAGO", monto_individual=100)

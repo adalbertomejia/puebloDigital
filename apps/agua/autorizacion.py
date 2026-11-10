@@ -21,7 +21,7 @@ def puede_operar_agua(usuario):
         comite = comite_agua()
     except ValidationError:
         return False
-    return comites_financieros(usuario).filter(pk=comite.pk).exists()
+    return comites_financieros(usuario, escritura=True).filter(pk=comite.pk).exists()
 
 
 def acceso_agua_requerido(vista):

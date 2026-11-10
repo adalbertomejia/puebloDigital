@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 from datetime import date
 from decimal import Decimal
 from django.contrib.auth import get_user_model
@@ -61,7 +62,7 @@ class CitizenCycleTests(TestCase):
 
     def staff(self, perms=()):
         user = get_user_model().objects.create_user("secretary", password="pw")
-        UsuarioApp.objects.create(user=user, comite=self.comite, rol="SECRETARIO")
+        asignar_cargo(user=user, comite=self.comite, rol="SECRETARIO")
         user.user_permissions.set(
             Permission.objects.filter(
                 content_type__app_label="core", codename__in=perms
@@ -239,25 +240,19 @@ class CitizenCycleTests(TestCase):
             with self.assertRaises(ProtectedError):
                 self.c.delete()
             obj.delete()
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=self.user, ciudadano=self.c, comite=self.comite, rol="LECTURA"
         )
         self.submit("eliminar_ciudadano")
         self.assertTrue(Ciudadano.objects.filter(pk=self.c.pk).exists())
 
-    def test_secretary_needs_explicit_delete_permission(self):
-        user = self.staff(["view_ciudadano", "change_ciudadano", "add_ciudadano"])
-        self.assertEqual(
-            self.client.get(self.url("eliminar_ciudadano")).status_code, 404
-        )
-        user.user_permissions.add(
-            Permission.objects.get(
-                content_type__app_label="core", codename="delete_ciudadano"
-            )
-        )
-        self.assertEqual(
-            self.client.get(self.url("eliminar_ciudadano")).status_code, 200
-        )
+    def test_administrador_global_necesita_permiso_explicito_de_eliminacion(self):
+        user=get_user_model().objects.create_user('admin-operativo',is_staff=True)
+        user.user_permissions.set(Permission.objects.filter(content_type__app_label='core',codename__in=['view_ciudadano','change_ciudadano']))
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(self.url('eliminar_ciudadano')).status_code,404)
+        user.user_permissions.add(Permission.objects.get(content_type__app_label='core',codename='delete_ciudadano'))
+        self.assertEqual(self.client.get(self.url('eliminar_ciudadano')).status_code,200)
 
     def test_no_permission_cannot_create_or_change(self):
         self.staff(["view_ciudadano"])
@@ -277,7 +272,7 @@ class CitizenCycleTests(TestCase):
     def test_committee_membership_does_not_grant_global_access(self):
         self.attendance()
         user = get_user_model().objects.create_user("committee")
-        UsuarioApp.objects.create(user=user, comite=self.otro_comite, rol="SECRETARIO")
+        asignar_cargo(user=user, comite=self.otro_comite, rol="SECRETARIO")
         user.user_permissions.add(
             Permission.objects.get(
                 content_type__app_label="core", codename="change_ciudadano"
@@ -335,7 +330,7 @@ class CitizenCycleTests(TestCase):
 
     def test_inactive_committee_profile_cannot_read(self):
         user = get_user_model().objects.create_user("inactive")
-        UsuarioApp.objects.create(
+        asignar_cargo(
             user=user, comite=self.comite, rol="LECTURA", activo=False
         )
         self.attendance()
@@ -373,12 +368,10 @@ class CitizenCycleTests(TestCase):
         self.submit("eliminar_ciudadano")
         self.assertTrue(Ciudadano.objects.filter(pk=self.c.pk).exists())
 
-    def test_finances_hidden_without_permission(self):
-        self.staff(["view_ciudadano"])
-        self.assertFalse(self.client.get(self.url()).context["puede_ver_finanzas"])
-        self.assertEqual(
-            self.client.get(reverse("tesoreria_operativa")).status_code, 404
-        )
+    def test_cargo_obsoleto_no_obtiene_padron_ni_finanzas(self):
+        self.staff(['view_ciudadano'])
+        self.assertEqual(self.client.get(self.url()).status_code,404)
+        self.assertEqual(self.client.get(reverse('tesoreria_operativa')).status_code,404)
 
     def test_return_navigation_and_external_redirect_rejected(self):
         volver = reverse("padron_ciudadanos") + "?q=Ana&estado=activos&page=2"
@@ -453,7 +446,7 @@ class CitizenCycleTests(TestCase):
 
     def test_committee_member_with_delete_permission_cannot_delete(self):
         user = get_user_model().objects.create_user("committee-delete")
-        UsuarioApp.objects.create(user=user, comite=self.otro_comite, rol="SECRETARIO")
+        asignar_cargo(user=user, comite=self.otro_comite, rol="SECRETARIO")
         user.user_permissions.set(
             Permission.objects.filter(
                 content_type__app_label="core",

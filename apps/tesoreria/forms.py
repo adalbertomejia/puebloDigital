@@ -79,7 +79,7 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         if usuario is not None:
             from .autorizacion import comites_financieros
-            self.fields["comite"].queryset = comites_financieros(usuario)
+            self.fields["comite"].queryset = comites_financieros(usuario, escritura=True)
         self.fields["manzana"].queryset = manzanas_disponibles_para_instancia(self.instance)
         self.fields["manzana"].empty_label = "Selecciona una manzana"
         self._apply_dashboard_widgets()

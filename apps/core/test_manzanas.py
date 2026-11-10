@@ -31,9 +31,9 @@ class ManzanaModelTests(TestCase):
     def test_nombre_y_clave_no_se_pueden_repetir(self):
         Manzana.objects.create(nombre="Centro", clave="M-01")
 
-        with self.assertRaises(IntegrityError), transaction.atomic():
+        with self.assertRaises((IntegrityError, ValidationError)), transaction.atomic():
             Manzana.objects.create(nombre="Centro")
-        with self.assertRaises(IntegrityError), transaction.atomic():
+        with self.assertRaises((IntegrityError, ValidationError)), transaction.atomic():
             Manzana.objects.create(nombre="Norte", clave="M-01")
 
     def test_clave_acepta_solo_letras_numeros_y_guiones(self):
@@ -86,7 +86,7 @@ class ManzanaAdminTests(TestCase):
         )
         responsable = crear_ciudadano()
         primera = Manzana.objects.create(nombre="Centro", responsable=responsable)
-        Manzana.objects.create(nombre="Norte", responsable=responsable)
+        Manzana.objects.create(nombre="Norte", responsable=crear_ciudadano(nombre="Ana", apellido_paterno="Otro"))
         crear_ciudadano(nombre="Beto", manzana=primera)
         request = RequestFactory().get("/admin/core/manzana/")
         request.user = usuario

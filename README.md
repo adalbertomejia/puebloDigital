@@ -38,3 +38,6 @@ Implementar en v4:
 
 ## Ciclo ciudadano de Dahiedhi
 La atención diaria se realiza desde `/ciudadanos/`. Consulta [recorridos, permisos, pruebas y límites](docs/ciclo-ciudadano-dahiedhi.md).
+
+## Roles operativos
+Presidente y tesorero operan asistencias y aportaciones de su comité; solo lectura consulta e imprime. Cada ciudadano y cuenta admiten un único cargo activo. Consulta [configuración y auditoría previa a migraciones](docs/roles-operativos-comite.md).

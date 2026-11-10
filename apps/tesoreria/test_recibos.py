@@ -1,3 +1,4 @@
+from apps.comites.test_helpers import asignar_cargo
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -11,7 +12,7 @@ class RecibosTests(TestCase):
     def setUp(self):
         self.usuario = get_user_model().objects.create_user(username='tesorero-recibos')
         self.comite = Comite.objects.create(nombre='Agua recibos', tipo='AGUA')
-        UsuarioApp.objects.create(user=self.usuario, comite=self.comite, rol='TESORERO')
+        asignar_cargo(user=self.usuario, comite=self.comite, rol='TESORERO')
         ciudadano = Ciudadano.objects.create(nombre='Ana', apellido_paterno='Recibos', numero_contrato='C-123')
         concepto = ConceptoTesoreria.objects.create(comite=self.comite, concepto='Cuota agua recibos', naturaleza='PAGO', monto_individual=100)
         self.obligacion = ObligacionCiudadano.objects.create(concepto=concepto, ciudadano=ciudadano, monto_asignado=100)

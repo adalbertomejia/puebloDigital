@@ -2,7 +2,7 @@ from datetime import date
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.conf import settings
 
 
@@ -43,7 +43,20 @@ class Manzana(TimeStampedModel):
         ),
     )
 
+    def clean(self):
+        super().clean()
+        from apps.comites.cargos import validar_responsable
+        validar_responsable(self)
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            if self.responsable_id:
+                Ciudadano.objects.select_for_update().get(pk=self.responsable_id)
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
     class Meta:
+        constraints = [models.UniqueConstraint(fields=["responsable"], condition=models.Q(activa=True, responsable__isnull=False), name="responsable_activo_una_manzana")]
         verbose_name = "Manzana"
         verbose_name_plural = "Manzanas"
         ordering = ["nombre"]
@@ -60,7 +73,8 @@ class CiudadanoQuerySet(models.QuerySet):
             usuario, "is_active", False
         ):
             return self.none()
-        if usuario.is_superuser or usuario.has_perm("core.view_ciudadano"):
+        from .autorizacion import permiso_global_de_modelo
+        if permiso_global_de_modelo(usuario, "core.view_ciudadano"):
             return self
 
         from .autorizacion import responsabilidades_activas
