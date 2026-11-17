@@ -215,6 +215,10 @@ class ObligacionCiudadano(TimeStampedModel):
         monto = Decimal(str(monto))
         with transaction.atomic():
             obligacion = ObligacionCiudadano.objects.select_for_update().get(pk=self.pk)
+            if usuario is not None:
+                from .autorizacion import puede_abonar_obligacion
+                if not puede_abonar_obligacion(usuario, obligacion):
+                    raise ValidationError("No tienes autorización para abonar esta obligación.")
             if obligacion.estado == self.Estados.CANCELADO:
                 raise ValidationError("No se pueden registrar abonos sobre una obligación cancelada.")
             if obligacion.estado == self.Estados.PAGADO:

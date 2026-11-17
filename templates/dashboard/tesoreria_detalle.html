@@ -31,7 +31,7 @@
       {% for o in obligaciones %}
         <tr>
           <td>
-            {% if perms.core.view_ciudadano %}<a class="text-teal-700 underline" href="{% url 'perfil_ciudadano' o.ciudadano_id %}?return_to={{ request.get_full_path|urlencode }}" aria-label="Ver expediente de {{ o.ciudadano.nombre_completo }}">{{ o.ciudadano.nombre_completo }}</a>{% else %}{{ o.ciudadano.nombre_completo }}{% endif %}
+            {% if puede_consultar_padron %}<a class="text-teal-700 underline" href="{% url 'perfil_ciudadano' o.ciudadano_id %}?return_to={{ request.get_full_path|urlencode }}" aria-label="Ver expediente de {{ o.ciudadano.nombre_completo }}">{{ o.ciudadano.nombre_completo }}</a>{% else %}{{ o.ciudadano.nombre_completo }}{% endif %}
             {% if o.toma_id %}<span class="block text-xs text-slate-500">Toma: {{ o.numero_toma_registrado }} · Contrato: {{ o.numero_contrato_registrado|default:"Sin contrato" }}</span>{% endif %}
             <details class="pd-obligaciones-table__historial">
               <summary class="text-xs text-indigo-600 cursor-pointer">Historial de abonos</summary>
@@ -42,7 +42,7 @@
           <td class="pd-obligaciones-table__importe">${{ o.saldo_pendiente_calc|floatformat:2 }}</td>
           <td><span class="pd-tag {% if o.estado == 'PAGADO' %}pd-tag--success{% elif o.estado == 'PENDIENTE' %}pd-tag--warning{% else %}pd-tag--neutral{% endif %}">{{ o.get_estado_display }}</span></td>
           <td>{{ o.ultimo_abono|date:'d/m/Y'|default:'Sin abonos' }}</td>
-          <td>{% if can_modify and o.estado == 'PENDIENTE' %}<a class="pd-button pd-button--success pd-button--sm" href="{% url 'acreditar_obligacion' o.pk %}{% if current_querystring %}?next={% url 'tesoreria_concepto_detalle' concepto.pk %}%3F{{ current_querystring|urlencode }}{% endif %}">Acreditar</a>{% endif %}</td>
+          <td>{% if can_abonar and o.estado == 'PENDIENTE' %}<a class="pd-button pd-button--success pd-button--sm" href="{% url 'acreditar_obligacion' o.pk %}{% if current_querystring %}?next={% url 'tesoreria_concepto_detalle' concepto.pk %}%3F{{ current_querystring|urlencode }}{% endif %}">Acreditar</a>{% endif %}</td>
         </tr>
       {% empty %}<tr><td colspan="6">No se encontraron obligaciones con los filtros seleccionados.</td></tr>{% endfor %}
     </tbody>

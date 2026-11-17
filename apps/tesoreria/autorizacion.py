@@ -2,6 +2,8 @@
 
 from functools import wraps
 from django.http import Http404
+from django.db.models import F
+from apps.operacion.autorizacion import manzanas_responsables
 from apps.comites.models import Comite, UsuarioApp
 
 ROLES_ESCRITURA = (UsuarioApp.Roles.PRESIDENTE, UsuarioApp.Roles.TESORERO)
@@ -15,7 +17,10 @@ def comites_financieros(usuario, *, escritura=False):
         return Comite.objects.none()
     if usuario.is_superuser:
         return Comite.objects.all()
-    from apps.core.autorizacion import responsabilidades_activas
+    from apps.core.autorizacion import responsabilidades_activas, es_secretaria_central
+    permiso = "operar_finanzas_centrales" if escritura else "consultar_finanzas_centrales"
+    if es_secretaria_central(usuario) and (usuario.has_perm(f"core.{permiso}") or (not escritura and usuario.has_perm("core.operar_finanzas_centrales"))):
+        return Comite.objects.filter(activo=True)
 
     roles = ROLES_ESCRITURA if escritura else ROLES_CONSULTA
     ids = [
@@ -27,10 +32,12 @@ def comites_financieros(usuario, *, escritura=False):
 
 
 def tiene_acceso_financiero(usuario):
-    return comites_financieros(usuario).exists()
+    return bool(manzanas_responsables(usuario)) or comites_financieros(usuario).exists()
 
 
 def puede_operar_finanzas(usuario, comite_id=None):
+    if comite_id is None and manzanas_responsables(usuario):
+        return True
     comites = comites_financieros(usuario, escritura=True)
     return (comites.filter(pk=comite_id) if comite_id is not None else comites).exists()
 
@@ -42,6 +49,21 @@ def limitar_finanzas(queryset, usuario, campo_comite="comite_id", *, escritura=F
         and usuario.is_superuser
     ):
         return queryset
+    manzanas = manzanas_responsables(usuario)
+    if manzanas:
+        modelo = queryset.model._meta.model_name
+        if modelo == "conceptotesoreria":
+            return queryset.filter(alcance="MANZANA", manzana_id__in=manzanas)
+        if modelo in ("obligacionciudadano", "abono"):
+            prefijo = "obligacion__" if modelo == "abono" else ""
+            return queryset.filter(**{
+                f"{prefijo}concepto__alcance": "MANZANA",
+                f"{prefijo}concepto__manzana_id__in": manzanas,
+                f"{prefijo}ciudadano__manzana_id": F(f"{prefijo}concepto__manzana_id"),
+            })
+        # Legacy payments and audit records lack sufficient citizen/territory
+        # information to safely expose them to territorial operators.
+        return queryset.none()
     return queryset.filter(
         **{
             f"{campo_comite}__in": comites_financieros(
@@ -59,3 +81,11 @@ def acceso_financiero_requerido(vista):
         return vista(request, *args, **kwargs)
 
     return protegida
+
+
+def puede_abonar_obligacion(usuario, obligacion):
+    from .models import ObligacionCiudadano
+    return limitar_finanzas(
+        ObligacionCiudadano.objects.filter(pk=obligacion.pk), usuario,
+        "concepto__comite_id", escritura=True,
+    ).exists()

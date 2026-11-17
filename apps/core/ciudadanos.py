@@ -35,10 +35,10 @@ def relaciones_ciudadano(ciudadano):
     return [
         (
             rel.related_model._meta.verbose_name_plural,
-            getattr(ciudadano, rel.get_accessor_name()).count(),
+            rel.related_model._default_manager.filter(**{rel.field.name: ciudadano}).count(),
         )
         for rel in ciudadano._meta.related_objects
-        if rel.one_to_many
+        if rel.one_to_many or rel.one_to_one
     ]
 
 

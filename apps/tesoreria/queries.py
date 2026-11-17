@@ -16,7 +16,7 @@ DINERO = DecimalField(max_digits=14, decimal_places=2)
 CERO = Value(Decimal("0.00"), output_field=DINERO)
 
 
-def anotar_conceptos(queryset=None):
+def anotar_conceptos(queryset=None, *, usuario=None):
     """Añade todas las métricas de tarjeta sin multiplicar montos por cada abono."""
     if queryset is None:
         queryset = ConceptoTesoreria.objects.all()
@@ -25,6 +25,11 @@ def anotar_conceptos(queryset=None):
         obligacion__concepto=OuterRef("pk"),
         obligacion__estado__in=[ObligacionCiudadano.Estados.PENDIENTE, ObligacionCiudadano.Estados.PAGADO],
     )
+
+    if usuario is not None:
+        from .autorizacion import limitar_finanzas
+        obligaciones = limitar_finanzas(obligaciones, usuario, "concepto__comite_id")
+        abonos = limitar_finanzas(abonos, usuario, "obligacion__concepto__comite_id")
 
     def cuenta(estado=None):
         base = obligaciones.filter(estado=estado) if estado else obligaciones
@@ -58,8 +63,8 @@ def aplicar_filtros_conceptos(queryset, params):
     return (filtro.qs if filtro.is_valid() else queryset.none()).order_by("-fecha", "-created_at", "-pk")
 
 
-def conceptos_filtrados(params, *, queryset=None):
-    return aplicar_filtros_conceptos(anotar_conceptos(queryset), params)
+def conceptos_filtrados(params, *, queryset=None, usuario=None):
+    return aplicar_filtros_conceptos(anotar_conceptos(queryset, usuario=usuario), params)
 
 
 def anotar_obligaciones(queryset):

@@ -22,6 +22,8 @@ class ResponsabilidadActiva:
             "Generar obligaciones y registrar abonos de este comité",
             "Eliminar conceptos de este comité con confirmación",
         )
+        if self.tipo == "SECRETARIA":
+            return ("Gestionar el ciclo ciudadano de toda la comunidad", "Gestionar eventos y asistencias comunitarias")
         if self.tipo == "GLOBAL":
             return (
                 "Administrar cuentas, vínculos y cargos",
@@ -32,6 +34,7 @@ class ResponsabilidadActiva:
                 "Consultar el padrón de mi manzana",
                 "Crear y gestionar eventos de mi manzana",
                 "Capturar y exportar participantes de mi manzana en eventos generales",
+                "Consultar y abonar conceptos exclusivos de mi manzana",
             )
         if self.tipo == "COMITE" and self.rol in ("PRESIDENTE", "TESORERO"):
             return ("Crear y gestionar eventos generales de este comité", "Capturar asistencias de este comité") + finanzas
@@ -103,6 +106,9 @@ def responsabilidades_activas(usuario):
             )
         )
 
+    if es_secretaria_central(usuario):
+        responsabilidades.append(ResponsabilidadActiva(tipo="SECRETARIA", rol="SECRETARIA_CENTRAL", etiqueta_rol="Secretaría central"))
+
     cargos = (
         UsuarioApp.objects.select_related("comite")
         .filter(user_id=usuario.pk, activo=True, comite__activo=True)
@@ -121,10 +127,44 @@ def responsabilidades_activas(usuario):
     return responsabilidades
 
 
+def tiene_responsabilidad_asignada(usuario):
+    """Include inconsistent assignments so inherited permissions fail closed."""
+    from .models import Manzana
+    return usuario.perfiles_app.filter(activo=True).exists() or Manzana.objects.filter(
+        activa=True, responsable__perfil_acceso__user_id=usuario.pk
+    ).exists()
+
+
+def es_secretaria_central(usuario):
+    from apps.comites.models import PerfilAcceso
+    return bool(
+        getattr(usuario, "is_authenticated", False)
+        and getattr(usuario, "is_active", False)
+        and usuario.has_perm("core.operar_secretaria_central")
+        and PerfilAcceso.objects.filter(user=usuario, ciudadano__activo=True).exists()
+        and not tiene_responsabilidad_asignada(usuario)
+    )
+
+
+PERMISOS_SECRETARIA = {
+    "core.view_ciudadano", "core.add_ciudadano", "core.change_ciudadano",
+    *(
+        f"operacion.{accion}_{modelo}"
+        for accion in ("view", "add", "change")
+        for modelo in ("faena", "junta", "registrofaena", "asistenciajunta")
+    ),
+}
+
+
 def permiso_global_de_modelo(usuario, permiso):
-    """Committee accounts use contextual roles, never a global permission bypass."""
+    """Operational responsibilities cannot inherit a global permission bypass."""
     if not getattr(usuario, 'is_authenticated', False) or not getattr(usuario, 'is_active', False):
         return False
-    return usuario.is_superuser or (
-        usuario.has_perm(permiso) and not usuario.perfiles_app.exists()
-    )
+    if usuario.is_superuser:
+        return True
+    if tiene_responsabilidad_asignada(usuario):
+        return False
+    secretaria = es_secretaria_central(usuario)
+    if usuario.perfiles_app.exists() and not secretaria:
+        return False
+    return (permiso in PERMISOS_SECRETARIA and secretaria) or usuario.has_perm(permiso)

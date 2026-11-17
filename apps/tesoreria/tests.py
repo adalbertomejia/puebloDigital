@@ -680,7 +680,7 @@ class ResumenAportacionesTests(TestCase):
         textos = (
             ("Aportaciones por concepto", "Agrupa el dinero recibido por concepto, naturaleza y territorio."),
             ("Resumen por manzana", "Consulta las aportaciones registradas para cada territorio."),
-            ("Movimientos recientes", "Consulta los últimos abonos registrados en Tesorería."),
+            ("Aportaciones recientes", "Consulta los últimos abonos registrados en Tesorería."),
             ("Aportaciones por ciudadano", "Identifica a quienes más han aportado según los filtros aplicados."),
         )
         for titulo, descripcion in textos:
@@ -702,7 +702,6 @@ class ResumenAportacionesTests(TestCase):
         response = self.get()
         for mensaje in (
             "No hay aportaciones agrupadas por concepto para los filtros seleccionados.",
-            "Sin movimientos registrados",
             "No hay movimientos recientes con los filtros seleccionados.",
             "No se encontraron ciudadanos con aportaciones para los filtros seleccionados.",
         ):
@@ -743,7 +742,7 @@ class ResumenAportacionesTests(TestCase):
         self.assertEqual(response.context["aportaciones_ciudadanos_visibles"], 2)
         self.assertEqual(response.context["monto_movimientos_visible"], Decimal("75"))
         nombres = {campo["name"] for campo in response.context["campos_control_movimientos"]}
-        self.assertIn("limite_ciudadanos", nombres)
+        self.assertIn("ciudadanos_por_pagina", nombres)
         self.assertIn("orden_ciudadanos", nombres)
         self.assertNotIn("desconocido", nombres)
 
@@ -767,7 +766,8 @@ class ResumenAportacionesTests(TestCase):
         self.assertContains(response, enlace)
 
     def test_busqueda_textual_nombre_apellidos_contrato_y_concepto(self):
-        casos = (("Ana", 2), ("López Ríos", 2), ("C-10", 2), ("Feria manzana", 2), (str(self.a3.pk), 1))
+        # General search includes concept names: "manzana" also contains "Ana".
+        casos = (("Ana", 3), ("López Ríos", 2), ("C-10", 2), ("Feria manzana", 2), (str(self.a3.pk), 1))
         for texto, cantidad in casos:
             with self.subTest(texto=texto):
                 response = self.buscar({"q": texto})

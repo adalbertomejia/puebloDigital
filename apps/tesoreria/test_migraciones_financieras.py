@@ -13,10 +13,11 @@ class MigracionTrazabilidadTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
         try:
-            executor.migrate([("tesoreria", "0001_initial")])
-            anteriores = executor.loader.project_state([("tesoreria", "0001_initial")]).apps
+            inicio = [(app, "0001_initial") for app in ("core", "comites", "agua", "operacion", "tesoreria")]
+            executor.migrate(inicio)
+            anteriores = executor.loader.project_state(inicio).apps
             comite = anteriores.get_model("comites", "Comite").objects.create(nombre="Comité anterior")
-            ciudadano = anteriores.get_model("core", "Ciudadano").objects.create(nombre="Ana", apellido_paterno="Anterior")
+            ciudadano = anteriores.get_model("core", "Ciudadano").objects.create(nombre="Ana", apellido_paterno="Anterior", edad=30)
             concepto = anteriores.get_model("tesoreria", "ConceptoTesoreria").objects.create(comite_id=comite.pk, concepto="Cuota anterior", naturaleza="PAGO", monto_individual=100, fecha=date(2026, 10, 1))
             obligacion = anteriores.get_model("tesoreria", "ObligacionCiudadano").objects.create(concepto_id=concepto.pk, ciudadano_id=ciudadano.pk, monto_asignado=100)
             abono = anteriores.get_model("tesoreria", "Abono").objects.create(obligacion_id=obligacion.pk, monto=17, fecha=date(2026, 10, 2), notas="Registro conservado")
@@ -42,7 +43,7 @@ class MigracionVinculosAsistenciaTests(TransactionTestCase):
 
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
-        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0002_evento_motivo_comite_opcional')]
+        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0004_evento_motivo_comite_opcional')]
         legacy_pk = None
         modelo = None
         campo_original = None
@@ -99,7 +100,7 @@ class MigracionFaenaHistoricaTests(TransactionTestCase):
 
         executor = MigrationExecutor(connection)
         destinos = executor.loader.graph.leaf_nodes()
-        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0002_evento_motivo_comite_opcional')]
+        anterior = [('tesoreria', '0003_cuotas_mensuales_agua'), ('operacion', '0004_evento_motivo_comite_opcional')]
         legacy_model = None
         modelo = None
         pk = None

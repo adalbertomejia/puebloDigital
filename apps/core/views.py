@@ -52,7 +52,7 @@ from apps.tesoreria.autorizacion import (
 
 
 from .forms import CiudadanoOperativoForm, DashboardFormMixin, FaenaOperativaForm, JuntaOperativaForm
-from .models import Ciudadano, Manzana, CambioEstadoCiudadano
+from .models import Ciudadano, Manzana, CambioEstadoCiudadano, CambioManzanaCiudadano
 from .ciudadanos import (consumir_token, token_operacion, retorno_ciudadano, url_expediente, relaciones_ciudadano, puede_eliminar_ciudadano)
 from .forms import EstadoCiudadanoForm, HistorialCiudadanoForm
 from .autorizacion import responsabilidades_activas, permiso_global_de_modelo
@@ -242,7 +242,14 @@ def _guardar_ciudadano(request, pk=None):
     key = f"guardar:{pk}"
     if request.method == "POST" and form.is_valid():
         if consumir_token(request, key):
-            ciudadano = form.save()
+            with transaction.atomic():
+                anterior = Ciudadano.objects.select_for_update().get(pk=pk).manzana_id if pk else None
+                ciudadano = form.save()
+                if pk and anterior != ciudadano.manzana_id:
+                    CambioManzanaCiudadano.objects.create(
+                        ciudadano=ciudadano, anterior_id=anterior,
+                        nueva_id=ciudadano.manzana_id, usuario=request.user,
+                    )
             messages.success(request, f"Se guardó correctamente a {ciudadano.nombre_completo}.")
             return redirect(url_expediente(ciudadano.pk, return_to))
         return redirect(url_expediente(pk, return_to) if pk else return_to)
@@ -271,7 +278,7 @@ def editar_ciudadano_operativo(request, pk):
 @login_required
 @require_http_methods(["GET", "POST"])
 def estado_ciudadano(request, pk):
-    if not _puede_modificar_padron(request.user, "change") or not request.user.has_perm("core.view_ciudadano"):
+    if not _puede_modificar_padron(request.user, "change") or not permiso_global_de_modelo(request.user, "core.view_ciudadano"):
         raise Http404
     ciudadano = get_object_or_404(Ciudadano.objects.visibles_para(request.user), pk=pk)
     key = f"estado:{pk}:{ciudadano.activo}"
@@ -979,7 +986,7 @@ def control_asistencias(request):
             "alcances": Faena.Alcances.choices,
             "manzanas": Manzana.objects.filter(
                 pk__in=[r.manzana.pk for r in responsabilidades_activas(request.user) if r.tipo == "MANZANA" and r.manzana]
-            ).order_by("nombre") if not request.user.is_superuser and not request.user.has_perm("operacion.view_faena") else Manzana.objects.order_by("nombre"),
+            ).order_by("nombre") if not request.user.is_superuser and not permiso_global_operativo(request.user, "operacion.view_faena") else Manzana.objects.order_by("nombre"),
             "tipo_activo": request.GET.get("tipo", ""),
         },
     )
@@ -1518,6 +1525,7 @@ def perfil_ciudadano(request, pk):
         "asistencias_page": paginar(asistencias, request, "asistencias_page"),
         "movimientos_page": paginar(movimientos, request, "movimientos_page"),
         "cambios_page": paginar(cambios, request, "cambios_page"),
+        "cambios_manzana_page": paginar(ciudadano.cambios_manzana.select_related("anterior", "nueva", "usuario"), request, "cambios_manzana_page"),
     }
     for parametro, pagina in paginas.items():
         params = request.GET.copy()
@@ -1533,7 +1541,7 @@ def perfil_ciudadano(request, pk):
     return render(request, "dashboard/perfil_ciudadano.html", {
         **paginas, "ciudadano": ciudadano, "return_to": return_to, "origen": origen,
         "resumen": obtener_resumen_ciudadano(ciudadano, request.user), "puede_ver_finanzas": ver_finanzas,
-        "puede_editar": _puede_modificar_padron(request.user, "change") and request.user.has_perm("core.view_ciudadano"),
+        "puede_editar": _puede_modificar_padron(request.user, "change") and permiso_global_de_modelo(request.user, "core.view_ciudadano"),
         "puede_eliminar": puede_eliminar_ciudadano(request.user), "filtros_historial": filtros,
         "hay_asistencias": hay_asistencias, "hay_obligaciones": hay_obligaciones, "hay_abonos": hay_abonos, "hay_cambios": hay_cambios,
         "hay_filtros": bool(desde or hasta or tipo or estado) or not valido, "hay_movimientos": hay_movimientos,
@@ -1545,6 +1553,8 @@ from apps.tesoreria.models import Abono, ConceptoTesoreria, ObligacionCiudadano
 
 
 def _can_modify_tesoreria(user, concepto=None):
+    if _manzanas_responsables(user) and not user.is_superuser:
+        return False
     return puede_operar_finanzas(user, concepto.comite_id if concepto is not None else None)
 
 
@@ -1569,9 +1579,11 @@ def _etiqueta_estado_general(estado):
     return {"SIN_GENERAR": "Sin generar", "CON_PENDIENTES": "Con pendientes", "COMPLETADO": "Completado"}[estado]
 
 
-def _metricas_conceptos(conceptos):
+def _metricas_conceptos(conceptos, usuario=None):
     concepto_ids = conceptos.order_by().values("pk")
     obligaciones = ObligacionCiudadano.objects.filter(concepto_id__in=Subquery(concepto_ids))
+    if usuario is not None:
+        obligaciones = limitar_finanzas(obligaciones, usuario, "concepto__comite_id")
     datos = obligaciones.aggregate(
         total_asignado=Sum("monto_asignado", filter=~Q(estado=ObligacionCiudadano.Estados.CANCELADO)),
         pagadas=Count("pk", filter=Q(estado=ObligacionCiudadano.Estados.PAGADO)),
@@ -1579,7 +1591,7 @@ def _metricas_conceptos(conceptos):
     )
     asignado = datos["total_asignado"] or Decimal("0.00")
     abonado = Abono.objects.filter(
-        obligacion__concepto_id__in=Subquery(concepto_ids),
+        obligacion_id__in=Subquery(obligaciones.values("pk")),
         obligacion__estado__in=[ObligacionCiudadano.Estados.PENDIENTE, ObligacionCiudadano.Estados.PAGADO],
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     aplicables = (datos["pagadas"] or 0) + (datos["pendientes"] or 0)
@@ -1587,8 +1599,8 @@ def _metricas_conceptos(conceptos):
         "total_asignado": asignado,
         "total_abonado": abonado,
         "saldo_pendiente": max(asignado - abonado, Decimal("0.00")),
-        "ciudadanos_pendientes": ObligacionCiudadano.objects.filter(
-            concepto_id__in=Subquery(concepto_ids), estado=ObligacionCiudadano.Estados.PENDIENTE,
+        "ciudadanos_pendientes": obligaciones.filter(
+            estado=ObligacionCiudadano.Estados.PENDIENTE,
         ).values("ciudadano_id").distinct().count(),
         "porcentaje_cumplimiento": round(((datos["pagadas"] or 0) / aplicables) * 100, 1) if aplicables else 0,
     }
@@ -1597,8 +1609,8 @@ def _metricas_conceptos(conceptos):
 @login_required
 @acceso_financiero_requerido
 def tesoreria_operativa(request):
-    conceptos_qs = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
-    metricas = _metricas_conceptos(conceptos_qs)
+    conceptos_qs = conceptos_filtrados(request.GET, usuario=request.user, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
+    metricas = _metricas_conceptos(conceptos_qs, request.user)
     pagos_page = Paginator(
         conceptos_qs.filter(naturaleza=ConceptoTesoreria.Naturalezas.PAGO), 3,
     ).get_page(request.GET.get("pagina_conceptos"))
@@ -1644,7 +1656,7 @@ def tesoreria_operativa(request):
 @login_required
 @acceso_financiero_requerido
 def exportar_tesoreria_csv(request):
-    conceptos = conceptos_filtrados(request.GET, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
+    conceptos = conceptos_filtrados(request.GET, usuario=request.user, queryset=limitar_finanzas(ConceptoTesoreria.objects.all(), request.user))
     partes = ["tesoreria"]
     naturaleza = request.GET.get("naturaleza")
     if naturaleza in dict(ConceptoTesoreria.Naturalezas.choices):
@@ -1957,9 +1969,9 @@ def resumen_aportaciones(request):
     # El objetivo financiero procede de las mismas obligaciones que alimentan
     # las tarjetas de Tesorería. Se obtiene en una sola consulta agrupada para
     # que la visualización no introduzca accesos por concepto (N+1).
-    objetivos = ObligacionCiudadano.objects.filter(
+    objetivos = limitar_finanzas(ObligacionCiudadano.objects.filter(
         concepto_id__in=[fila["obligacion__concepto_id"] for fila in conceptos_resumen],
-    ).exclude(estado=ObligacionCiudadano.Estados.CANCELADO).values(
+    ), request.user, "concepto__comite_id").exclude(estado=ObligacionCiudadano.Estados.CANCELADO).values(
         "concepto_id"
     ).annotate(total=Sum("monto_asignado"))
     objetivos_por_concepto = {fila["concepto_id"]: fila["total"] for fila in objetivos}
@@ -2178,8 +2190,10 @@ def _filtros_obligaciones(params):
     )}
 
 
-def _metricas_concepto(concepto):
+def _metricas_concepto(concepto, usuario=None):
     obligaciones = ObligacionCiudadano.objects.filter(concepto=concepto)
+    if usuario is not None:
+        obligaciones = limitar_finanzas(obligaciones, usuario, "concepto__comite_id")
     resumen = obligaciones.aggregate(
         total=Count("pk"), pagadas=Count("pk", filter=Q(estado=ObligacionCiudadano.Estados.PAGADO)),
         pendientes=Count("pk", filter=Q(estado=ObligacionCiudadano.Estados.PENDIENTE)),
@@ -2190,7 +2204,7 @@ def _metricas_concepto(concepto):
     # Alias conservado para integraciones internas anteriores; la interfaz usa "asignado".
     resumen["total_generado"] = resumen["total_asignado"]
     resumen["total_abonado"] = Abono.objects.filter(
-        obligacion__concepto=concepto,
+        obligacion_id__in=Subquery(obligaciones.values("pk")),
         obligacion__estado__in=[ObligacionCiudadano.Estados.PENDIENTE, ObligacionCiudadano.Estados.PAGADO],
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     resumen["saldo_pendiente"] = max(resumen["total_asignado"] - resumen["total_abonado"], Decimal("0.00"))
@@ -2205,12 +2219,12 @@ def _metricas_concepto(concepto):
 @acceso_financiero_requerido
 def tesoreria_concepto_detalle(request, pk):
     concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("comite", "manzana", "creado_por"), pk=pk)
-    metricas = _metricas_concepto(concepto)
+    metricas = _metricas_concepto(concepto, request.user)
     concepto.cantidad_obligaciones = metricas["total"]
     concepto.cantidad_pagada = metricas["pagadas"]
     concepto.cantidad_pendiente = metricas["pendientes"]
     concepto.cantidad_cancelada = metricas["canceladas"]
-    obligaciones = anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto))
+    obligaciones = anotar_obligaciones(limitar_finanzas(ObligacionCiudadano.objects.filter(concepto=concepto), request.user, "concepto__comite_id"))
     obligaciones = aplicar_filtros_obligaciones(obligaciones, request.GET).prefetch_related(
         Prefetch("abonos", queryset=Abono.objects.select_related("creado_por").order_by("-fecha", "-created_at"))
     )
@@ -2223,6 +2237,7 @@ def tesoreria_concepto_detalle(request, pk):
         "concepto": concepto, "obligaciones": page.object_list, "page_obj": page, "filtros": filtros,
         "metricas": metricas, "manzanas": Manzana.objects.order_by("nombre"), "sexos": Ciudadano.Sexos.choices,
         "motivos_alta": Ciudadano.MotivosAlta.choices, "can_modify": _can_modify_tesoreria(request.user, concepto),
+        "can_abonar": puede_operar_finanzas(request.user),
         "export_querystring": export_params.urlencode(), "current_querystring": export_params.urlencode(),
     })
 
@@ -2232,7 +2247,7 @@ def tesoreria_concepto_detalle(request, pk):
 def exportar_obligaciones_tesoreria_csv(request, pk):
     concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user).select_related("manzana"), pk=pk)
     obligaciones = aplicar_filtros_obligaciones(
-        anotar_obligaciones(ObligacionCiudadano.objects.filter(concepto=concepto)), request.GET
+        anotar_obligaciones(limitar_finanzas(ObligacionCiudadano.objects.filter(concepto=concepto), request.user, "concepto__comite_id")), request.GET
     )
     partes = ["obligaciones", concepto.get_naturaleza_display(), concepto.concepto]
     if concepto.manzana_id: partes.append(str(concepto.manzana))
@@ -2258,7 +2273,7 @@ def exportar_obligaciones_tesoreria_csv(request, pk):
 @acceso_financiero_requerido
 def acreditar_obligacion(request, pk):
     obligacion = get_object_or_404(limitar_finanzas(ObligacionCiudadano.objects.all(), request.user, "concepto__comite_id", escritura=True).select_related("ciudadano", "concepto"), pk=pk)
-    if not _can_modify_tesoreria(request.user):
+    if not puede_operar_finanzas(request.user):
         raise Http404
     if request.method == "POST":
         form = AbonoForm(request.POST, obligacion=obligacion)

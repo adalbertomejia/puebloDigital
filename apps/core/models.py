@@ -153,6 +153,11 @@ class Ciudadano(TimeStampedModel):
     observaciones = models.TextField(blank=True)
 
     class Meta:
+        permissions = [
+            ("operar_secretaria_central", "Operar Secretaría central"),
+            ("consultar_finanzas_centrales", "Consultar finanzas centrales"),
+            ("operar_finanzas_centrales", "Operar finanzas centrales"),
+        ]
         verbose_name = '🧑 Ciudadano'
         verbose_name_plural = '🧑 Ciudadanos'
         ordering = ['apellido_paterno', 'apellido_materno', 'nombre']
@@ -200,3 +205,16 @@ class CambioEstadoCiudadano(TimeStampedModel):
         ordering = ["-fecha", "-pk"]
         verbose_name = "Cambio de estado ciudadano"
         verbose_name_plural = "Cambios de estado ciudadano"
+
+
+class CambioManzanaCiudadano(TimeStampedModel):
+    """Territorial changes captured from the operational citizen form."""
+    ciudadano = models.ForeignKey(Ciudadano, on_delete=models.PROTECT, related_name="cambios_manzana")
+    anterior = models.ForeignKey(Manzana, on_delete=models.PROTECT, null=True, blank=True, related_name="salidas_ciudadanos")
+    nueva = models.ForeignKey(Manzana, on_delete=models.PROTECT, null=True, blank=True, related_name="entradas_ciudadanos")
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "Cambio de manzana ciudadano"
+        verbose_name_plural = "Cambios de manzana ciudadanos"
