@@ -1,0 +1,19 @@
+{
+  "comprobaciones": 13,
+  "resultados": [
+    "Resumen: 14,000 cobrados, 20,000 asignados y 6,000 pendientes",
+    "Seis pantallas sin desbordamiento de documento: 1440px",
+    "Seis pantallas sin desbordamiento de documento: 390px",
+    "Seis pantallas sin desbordamiento de documento: 320px",
+    "Filtro de cobros cambia recaudación sin alterar saldo de cohorte",
+    "Importe desconocido no se representa como cero",
+    "Simulación territorial: conceptos propios, sin caja general",
+    "Faltante explicado puede enviarse; no se confirma ni se autoaprueba",
+    "Confirmación por segundo perfil con diferencia cero; snapshot no varía por filtros",
+    "Lectura: sin preparación, revisión o confirmación",
+    "CSV agregado con alcance y metodología, sin obligaciones individuales",
+    "Informe imprimible: navegación oculta y PDF de muestra generado",
+    "Sin errores JavaScript"
+  ],
+  "errores": []
+}
