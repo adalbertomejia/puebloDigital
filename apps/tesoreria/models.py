@@ -211,9 +211,23 @@ class ObligacionCiudadano(TimeStampedModel):
             self.save(update_fields=["estado", "updated_at"])
         return self.estado
 
-    def acreditar(self, monto, fecha=None, notas="", *, usuario=None, referencia=""):
+    def acreditar(self, monto, fecha=None, notas="", *, usuario=None, referencia="", fondo=None, medio=None, clave_operacion=None):
         monto = Decimal(str(monto))
         with transaction.atomic():
+            if fondo is not None:
+                from .balance_autorizacion import puede_gestionar_fondo
+                from .autorizacion import puede_abonar_obligacion
+                fondo = FondoRecurso.objects.select_for_update().get(pk=fondo.pk)
+                if usuario is None or not puede_gestionar_fondo(usuario, fondo) or not puede_abonar_obligacion(usuario, self):
+                    raise ValidationError("No tienes autorización para recibir este abono en el fondo.")
+                if clave_operacion is None:
+                    raise ValidationError("Falta la referencia única de la operación.")
+                anterior = MovimientoRecurso.objects.select_related("abono").filter(clave_operacion=clave_operacion).first()
+                if anterior:
+                    a = anterior.abono
+                    if not a or anterior.fondo_id != fondo.pk or anterior.medio != medio or anterior.registrado_por_id != usuario.pk or a.obligacion_id != self.pk or a.monto != monto or a.fecha != (fecha or timezone.localdate()) or a.referencia != referencia or a.notas != notas:
+                        raise ValidationError("La operación ya corresponde a otro cobro o a otros datos.")
+                    return a
             obligacion = ObligacionCiudadano.objects.select_for_update().get(pk=self.pk)
             if usuario is not None:
                 from .autorizacion import puede_abonar_obligacion
@@ -229,6 +243,9 @@ class ObligacionCiudadano(TimeStampedModel):
             if monto > saldo:
                 raise ValidationError(f"El abono no puede superar el saldo pendiente de ${saldo:.2f}.")
             abono = Abono.objects.create(obligacion=obligacion, monto=monto, fecha=fecha or timezone.localdate(), notas=notas, creado_por=usuario, referencia=referencia)
+            if fondo is not None:
+                from .recursos import registrar_cobro
+                registrar_cobro(usuario=usuario, fondo=fondo, abono=abono, medio=medio, clave_operacion=clave_operacion)
             obligacion.actualizar_estado_por_abonos(save=True)
             if usuario is not None:
                 from .auditoria import registrar_movimiento
@@ -281,6 +298,11 @@ class Abono(TimeStampedModel):
             raise ValidationError(f"El abono no puede superar el saldo pendiente de ${saldo_disponible:.2f}.")
 
     def save(self, *args, **kwargs):
+        if self.pk and MovimientoRecurso.objects.filter(abono_id=self.pk).exists():
+            previo = type(self).objects.get(pk=self.pk)
+            campos = ("monto", "fecha", "obligacion_id", "referencia", "notas", "creado_por_id")
+            if any(getattr(self, c) != getattr(previo, c) for c in campos):
+                raise ValidationError("Este abono ya tiene un movimiento de recursos documentado y no puede modificarse.")
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -323,3 +345,6 @@ class RegistroFinanciero(models.Model):
 
     def __str__(self):
         return f"{self.get_accion_display()} — {self.concepto_nombre} — {self.usuario_nombre}"
+
+
+from .recursos_models import FondoRecurso, MovimientoRecurso, CorteRecurso, EventoCorteRecurso

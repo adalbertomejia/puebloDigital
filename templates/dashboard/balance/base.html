@@ -1,0 +1,6 @@
+{% extends 'dashboard/base_dashboard.html' %}{% load static %}
+{% block extra_js %}<link rel="stylesheet" href="{% static 'css/balance-recursos.css' %}"><script src="{% static 'js/balance-recursos.js' %}" defer></script>{% block balance_js %}{% endblock %}{% endblock %}
+{% block content %}
+<nav class="balance-nav no-print" aria-label="Recaudación y recursos"><a class="pd-button pd-button--secondary" href="{% url 'balance_recaudacion' %}">Resumen</a><a class="pd-button pd-button--secondary" href="{% url 'balance_conceptos' %}">Conceptos y adeudos</a><a class="pd-button pd-button--secondary" href="{% url 'balance_transparencia' %}">Transparencia</a><a class="pd-button pd-button--secondary" href="{% url 'fondos_recursos' %}">Recursos y salidas</a><a class="pd-button pd-button--secondary" href="{% url 'cortes_recursos' %}">Cortes</a></nav>
+<div class="balance-workspace">{% block balance_content %}{% endblock %}</div>
+{% endblock %}

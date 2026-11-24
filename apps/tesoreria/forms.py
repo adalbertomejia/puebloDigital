@@ -86,26 +86,56 @@ class ConceptoTesoreriaForm(DashboardFormMixin, forms.ModelForm):
 
 
 class AbonoForm(DashboardFormMixin, forms.ModelForm):
+    fondo_recurso = forms.ModelChoiceField(queryset=None, required=False, label="Fondo que recibe el cobro (opcional)", help_text="Solo selecciona un fondo si este dinero no estaba incluido en su apertura. Los cobros sin fondo siguen formando parte de la recaudación.")
+    medio_recurso = forms.ChoiceField(required=False, choices=[("", "Sin atribuir a un fondo"), ("EFECTIVO", "Efectivo"), ("TRANSFERENCIA", "Transferencia")], label="Medio de cobro para el fondo")
+    clave_recurso = forms.UUIDField(required=False, widget=forms.HiddenInput)
+
     class Meta:
         model = Abono
         fields = ["monto", "fecha", "referencia", "notas"]
         widgets = {"fecha": forms.DateInput(attrs={"type": "date"}), "notas": forms.Textarea(attrs={"rows": 3})}
         labels = {"monto": "Monto a abonar", "fecha": "Fecha", "notas": "Notas"}
 
-    def __init__(self, *args, obligacion=None, **kwargs):
+    def __init__(self, *args, obligacion=None, usuario=None, **kwargs):
         self.obligacion = obligacion
+        self.usuario = usuario
         super().__init__(*args, **kwargs)
+        from .balance_autorizacion import fondos_visibles, puede_gestionar_fondo
+        from .models import FondoRecurso
+        import uuid
+        self.fields["fondo_recurso"].queryset = FondoRecurso.objects.none()
+        if usuario is not None and obligacion is not None:
+            ids = [f.pk for f in fondos_visibles(usuario).filter(activo=True, comite_id=obligacion.concepto.comite_id) if puede_gestionar_fondo(usuario, f) and (not f.manzana_id or (obligacion.concepto.alcance == "MANZANA" and obligacion.concepto.manzana_id == f.manzana_id))]
+            self.fields["fondo_recurso"].queryset = FondoRecurso.objects.filter(pk__in=ids)
+        self.fields["clave_recurso"].initial = uuid.uuid4
         self._apply_dashboard_widgets()
         if not self.is_bound:
             self.fields["fecha"].initial = timezone.localdate()
             if obligacion:
                 self.fields["monto"].initial = obligacion.saldo_pendiente
 
+    def clean(self):
+        data = super().clean()
+        if bool(data.get("fondo_recurso")) != bool(data.get("medio_recurso")):
+            raise ValidationError("Selecciona conjuntamente el fondo y su medio, o deja ambos vacíos.")
+        if data.get("fondo_recurso") and not data.get("clave_recurso"):
+            raise ValidationError("El formulario de cobro caducó. Vuelve a abrirlo.")
+        return data
+
     def clean_monto(self):
         monto = self.cleaned_data["monto"]
         if monto <= 0:
             raise ValidationError("El monto del abono debe ser mayor que cero.")
-        if self.obligacion and monto > self.obligacion.saldo_pendiente:
+        reintento = False
+        if self.usuario is not None and self.data.get("clave_recurso"):
+            import uuid
+            from .models import MovimientoRecurso
+            try:
+                clave = uuid.UUID(str(self.data["clave_recurso"]))
+                reintento = MovimientoRecurso.objects.filter(clave_operacion=clave, registrado_por=self.usuario, abono__obligacion=self.obligacion, abono__monto=monto).exists()
+            except (ValueError, TypeError, AttributeError):
+                pass
+        if self.obligacion and monto > self.obligacion.saldo_pendiente and not reintento:
             raise ValidationError(f"El abono no puede superar el saldo pendiente de ${self.obligacion.saldo_pendiente:.2f}.")
         return monto
 

@@ -116,7 +116,7 @@ class TrazabilidadFinancieraTests(TestCase):
         self.assertFalse(Abono.objects.exists())
         registros = RegistroFinanciero.objects.filter(concepto_id_registrado=pk)
         self.assertEqual(registros.count(), 2)
-        self.assertEqual(registros.get(accion="ELIMINAR").detalle["total_abonado"], "10")
+        self.assertEqual(Decimal(registros.get(accion="ELIMINAR").detalle["total_abonado"]), Decimal("10.00"))
         response = self.client.get(reverse("actividad_financiera"))
         self.assertContains(response, "Concepto anterior")
         self.assertContains(response, "ANTES-DE-BORRAR")

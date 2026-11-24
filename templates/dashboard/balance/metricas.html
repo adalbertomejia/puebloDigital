@@ -1,0 +1,5 @@
+<div class="balance-metrics">
+<article class="balance-card"><h2>Recaudación del periodo</h2><p class="balance-value">${{ datos.recaudacion.conocido|floatformat:2 }}</p>{% if datos.recaudacion.desconocidos %}<p class="balance-warning">Subtotal conocido + {{ datos.recaudacion.desconocidos }} importe(s) sin determinar.</p>{% else %}<p class="balance-note">Abonos recibidos, sin duplicar obligaciones.</p>{% endif %}</article>
+<article class="balance-card"><h2>Asignado vigente de la cohorte</h2><p class="balance-value">${{ datos.cartera.asignado.conocido|floatformat:2 }}</p>{% if datos.cartera.asignado.desconocidos %}<p class="balance-warning">Subtotal: {{ datos.cartera.asignado.desconocidos }} importe(s) desconocidos.</p>{% endif %}<p class="balance-note">Excluye obligaciones canceladas.</p></article>
+<article class="balance-card"><h2>Saldo pendiente actual</h2><p class="balance-value">{% if datos.cartera.saldo is None %}Indeterminado{% else %}${{ datos.cartera.saldo|floatformat:2 }}{% endif %}</p><p class="balance-note">Es deuda por cobrar, no dinero disponible.</p></article>
+</div>

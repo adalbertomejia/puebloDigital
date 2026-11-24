@@ -1269,6 +1269,14 @@ def _capture_payload(event, config, usuario=None):
     }
 
 
+def _bloquear_asistencias_autorizadas(queryset):
+    # PostgreSQL cannot lock a DISTINCT query. Keep authorization in a subquery
+    # and lock only the actual participant rows, in a stable order.
+    return queryset.model.objects.filter(
+        pk__in=Subquery(queryset.order_by().values("pk"))
+    ).select_related("ciudadano").order_by("pk").select_for_update(of=("self",))
+
+
 def _json_capture_action(request, event, config):
     action = request.POST.get("action")
     record_id = request.POST.get("record_id")
@@ -1277,7 +1285,8 @@ def _json_capture_action(request, event, config):
         return JsonResponse({"ok": False, "error": "Acción inválida."}, status=400)
 
     with transaction.atomic():
-        registros_locked = getattr(event, config["relation"]).all().capturables_para(request.user).select_for_update()
+        type(event).objects.select_for_update().get(pk=event.pk)
+        registros_locked = _bloquear_asistencias_autorizadas(getattr(event, config["relation"]).all().capturables_para(request.user))
         registro = get_object_or_404(registros_locked, pk=record_id)
         expected = request.POST.get("expected_status")
         if action in {"asistio", "falto"}:
@@ -1325,7 +1334,7 @@ def _captura_asistencia(request, event_kind, event_id):
                 # Serialize capture for the event, then lock only submitted rows.
                 type(event).objects.select_for_update().get(pk=event.pk)
                 ids = [int(m[1]) for key in request.POST if (m := re.fullmatch(r"registro_([0-9]{1,18})_estatus", key))]
-                registros = list(registros_qs.filter(pk__in=ids).select_for_update())
+                registros = list(_bloquear_asistencias_autorizadas(registros_qs.filter(pk__in=ids)))
                 updated = _update_attendance_records(request, registros, config)
         except ValidationError as exc:
             error_captura = " ".join(exc.messages)
@@ -2276,10 +2285,10 @@ def acreditar_obligacion(request, pk):
     if not puede_operar_finanzas(request.user):
         raise Http404
     if request.method == "POST":
-        form = AbonoForm(request.POST, obligacion=obligacion)
+        form = AbonoForm(request.POST, obligacion=obligacion, usuario=request.user)
         if form.is_valid():
             try:
-                abono = obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"])
+                abono = obligacion.acreditar(form.cleaned_data["monto"], form.cleaned_data["fecha"], form.cleaned_data["notas"], usuario=request.user, referencia=form.cleaned_data["referencia"], fondo=form.cleaned_data.get("fondo_recurso"), medio=form.cleaned_data.get("medio_recurso"), clave_operacion=form.cleaned_data.get("clave_recurso"))
                 messages.success(request, format_html('Se registró correctamente el abono. <a href="{}" target="_blank" rel="noopener">Imprimir recibo {}</a>', reverse("recibo_abono", args=[abono.folio_recibo]), abono.folio_recibo))
                 siguiente = request.POST.get("next", "")
                 if siguiente.startswith(f"/tesoreria/conceptos/{obligacion.concepto_id}/"):
@@ -2288,7 +2297,7 @@ def acreditar_obligacion(request, pk):
             except Exception as exc:
                 form.add_error(None, exc)
     else:
-        form = AbonoForm(obligacion=obligacion)
+        form = AbonoForm(obligacion=obligacion, usuario=request.user)
     siguiente = request.GET.get("next", "")
     return render(request, "dashboard/tesoreria_abono_form.html", {"form": form, "obligacion": obligacion, "abonos": obligacion.abonos.select_related("creado_por"), "next": siguiente})
 

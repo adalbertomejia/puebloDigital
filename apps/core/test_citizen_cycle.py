@@ -535,6 +535,12 @@ class LegacyUnknownAmountTests(TransactionTestCase):
                 reverse("perfil_ciudadano", args=[self.ciudadano.pk])
             )
             self.assertContains(response, "Por revisar")
+            balance = self.client.get(reverse("balance_recaudacion"))
+            self.assertIsNone(balance.context["datos"]["cartera"]["saldo"])
+            if expected_key == "asignado":
+                self.assertEqual(balance.context["datos"]["cartera"]["asignado"]["desconocidos"], 1)
+            else:
+                self.assertEqual(balance.context["datos"]["recaudacion"]["desconocidos"], 1)
             self.assertContains(
                 response,
                 "Desconocido" if expected_key == "asignado" else "Importe desconocido",
