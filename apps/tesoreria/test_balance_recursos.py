@@ -72,6 +72,31 @@ class BalanceRecursosTests(TestCase):
         self.client.force_login(user)
         return self.client.get(reverse(nombre,args=[pk] if pk else []),query)
 
+    def test_secretaria_por_cargo_gestiona_solo_fondos_de_delegacion(self):
+        secretaria = self.cuenta("secretaria-por-cargo", "SECRETARIO")
+        tesorero_ajeno = self.cuenta("tesorero-externo", "TESORERO", self.b)
+        fondo_ajeno = self.fondo_nuevo("Fondo de otro comité", usuario=tesorero_ajeno, comite=self.b)
+
+        inicio = self.get(secretaria, "dashboard_operativo")
+        for nombre in ("balance_recaudacion", "fondos_recursos", "cortes_recursos"):
+            self.assertContains(inicio, f'href="{reverse(nombre)}"')
+        formulario = self.get(secretaria, "fondo_recurso_crear")
+        self.assertQuerySetEqual(formulario.context["form"].fields["comite"].queryset, [self.a])
+        fondo = self.fondo_nuevo("Fondo de Secretaría", usuario=secretaria)
+        self.assertEqual(fondo.comite_id, self.a.pk)
+        self.salida(usuario=secretaria)
+        corte = self.enviar(usuario=secretaria)
+        self.assertEqual(corte.preparado_por_id, secretaria.pk)
+        self.assertFalse(self.get(secretaria, "corte_recurso_detalle", corte.pk).context["revision"])
+        self.assertTrue(self.get(self.pres, "corte_recurso_detalle", corte.pk).context["revision"])
+
+        for nombre in ("fondo_recurso_detalle", "fondo_recurso_salida", "preparar_corte_recurso"):
+            self.assertEqual(self.get(secretaria, nombre, fondo_ajeno.pk).status_code, 404)
+        with self.assertRaises(PermissionDenied):
+            self.salida(usuario=secretaria, fondo=fondo_ajeno)
+        with self.assertRaises(PermissionDenied):
+            self.fondo_nuevo("Apertura ajena", usuario=secretaria, comite=self.b)
+
     def test_resumen_no_suma_apertura_ni_adeudos_como_recaudacion(self):
         self.o.acreditar(25,usuario=self.teso)
         r=self.get(self.teso,"balance_recaudacion")

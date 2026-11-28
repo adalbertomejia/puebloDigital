@@ -8,7 +8,7 @@ from apps.core.forms import DashboardFormMixin
 from apps.comites.models import Comite
 from apps.core.models import Manzana
 from .models import ConceptoTesoreria, ObligacionCiudadano, FondoRecurso, MovimientoRecurso
-from .balance_autorizacion import secretaria_financiera, fondos_visibles
+from .balance_autorizacion import comites_de_fondos_secretaria, fondos_visibles
 from apps.core.autorizacion import responsabilidades_activas
 
 
@@ -66,8 +66,7 @@ def opciones_fondo(user):
     ids = [r.comite.pk for r in rs if r.tipo == "COMITE" and r.rol in ("PRESIDENTE", "TESORERO")]
     manzanas = [r.manzana.pk for r in rs if r.tipo == "MANZANA"]
     comites = Comite.objects.filter(activo=True, pk__in=ids)
-    if secretaria_financiera(user):
-        comites = comites | Comite.objects.filter(activo=True, tipo="DELEGACION")
+    comites = comites | comites_de_fondos_secretaria(user)
     if manzanas:
         comites = Comite.objects.filter(activo=True)
     return comites.distinct(), Manzana.objects.filter(activa=True, pk__in=manzanas), bool(manzanas)

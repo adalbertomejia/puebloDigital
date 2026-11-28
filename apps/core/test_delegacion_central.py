@@ -95,9 +95,12 @@ class DelegacionCentralTests(TestCase):
                 self.obligacion.refresh_from_db()
                 self.assertTrue(self.obligacion.abonos.filter(creado_por=cargo.user, monto=Decimal("10")).exists())
 
-    def test_alcance_operativo_no_amplia_permisos_del_balance(self):
+    def test_secretaria_consulta_balance_y_presidente_conserva_su_ambito(self):
         self.asignar(UsuarioApp.Roles.SECRETARIO, self.delegacion)
-        self.assertEqual(self.client.get(reverse("balance_recaudacion")).status_code, 404)
+        self.assertEqual(self.client.get(reverse("balance_recaudacion")).status_code, 200)
+        self.assertEqual(self.client.get(reverse(
+            "balance_concepto_detalle", args=[self.concepto.pk],
+        )).status_code, 200)
 
         self.asignar(UsuarioApp.Roles.PRESIDENTE, self.delegacion)
         detalle = reverse("balance_concepto_detalle", args=[self.concepto.pk])

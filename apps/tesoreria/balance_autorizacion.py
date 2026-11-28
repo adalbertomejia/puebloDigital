@@ -17,8 +17,22 @@ def secretaria(user):
     return es_secretaria_central(user) and permiso_explicito(user, "core.operar_secretaria_central")
 
 
-def secretaria_financiera(user):
-    return secretaria(user) and any(permiso_explicito(user, p) for p in ("core.operar_finanzas_centrales", "tesoreria.gestionar_recursos"))
+def delegacion_de_secretaria(user):
+    return next(
+        (r.comite.pk for r in responsabilidades_activas(user)
+         if r.operacion_comunitaria and r.rol == "SECRETARIO"),
+        None,
+    )
+
+
+def comites_de_fondos_secretaria(user):
+    comites = Comite.objects.filter(activo=True, tipo=Comite.Tipos.DELEGACION)
+    if secretaria(user) and any(
+        permiso_explicito(user, permiso)
+        for permiso in ("core.operar_finanzas_centrales", "tesoreria.gestionar_recursos")
+    ):
+        return comites
+    return comites.filter(pk=delegacion_de_secretaria(user))
 
 
 def delegaciones(user):
@@ -26,7 +40,12 @@ def delegaciones(user):
 
 
 def consulta_central(user):
-    return secretaria(user) and any(permiso_explicito(user, p) for p in ("tesoreria.consultar_balance", "core.consultar_finanzas_centrales", "core.operar_finanzas_centrales", "tesoreria.gestionar_recursos"))
+    return delegacion_de_secretaria(user) is not None or (
+        secretaria(user) and any(permiso_explicito(user, p) for p in (
+            "tesoreria.consultar_balance", "core.consultar_finanzas_centrales",
+            "core.operar_finanzas_centrales", "tesoreria.gestionar_recursos",
+        ))
+    )
 
 
 def puede_consultar_balance(user):
@@ -53,6 +72,9 @@ def fondos_visibles(user):
         return qs
     if secretaria(user) and any(permiso_explicito(user, p) for p in ("core.consultar_finanzas_centrales", "core.operar_finanzas_centrales", "tesoreria.gestionar_recursos")):
         return qs.filter(comite__activo=True)
+    delegacion_id = delegacion_de_secretaria(user)
+    if delegacion_id is not None:
+        return qs.filter(comite_id=delegacion_id, comite__activo=True)
     responsabilidades = responsabilidades_activas(user)
     comites = [r.comite.pk for r in responsabilidades if r.tipo == "COMITE" and (r.rol in ("PRESIDENTE", "TESORERO", "LECTURA") or r.comite.pk in delegaciones(user))]
     manzanas = [r.manzana.pk for r in responsabilidades if r.tipo == "MANZANA"]
@@ -62,7 +84,7 @@ def fondos_visibles(user):
 def puede_gestionar_fondo(user, fondo):
     if not fondo.activo or not fondos_visibles(user).filter(pk=fondo.pk).exists():
         return False
-    if secretaria_financiera(user) and fondo.comite.tipo == "DELEGACION":
+    if comites_de_fondos_secretaria(user).filter(pk=fondo.comite_id).exists():
         return True
     return any((r.tipo == "COMITE" and r.comite.pk == fondo.comite_id and r.rol in ("PRESIDENTE", "TESORERO")) or (r.tipo == "MANZANA" and r.manzana.pk == fondo.manzana_id) for r in responsabilidades_activas(user))
 
@@ -70,7 +92,7 @@ def puede_gestionar_fondo(user, fondo):
 def puede_preparar_corte(user, fondo):
     if not puede_gestionar_fondo(user, fondo):
         return False
-    return (secretaria_financiera(user) and fondo.comite.tipo == "DELEGACION") or any((r.tipo == "COMITE" and r.comite.pk == fondo.comite_id and r.rol == "TESORERO") or (r.tipo == "MANZANA" and r.manzana.pk == fondo.manzana_id) for r in responsabilidades_activas(user))
+    return (comites_de_fondos_secretaria(user).filter(pk=fondo.comite_id).exists()) or any((r.tipo == "COMITE" and r.comite.pk == fondo.comite_id and r.rol == "TESORERO") or (r.tipo == "MANZANA" and r.manzana.pk == fondo.manzana_id) for r in responsabilidades_activas(user))
 
 
 def puede_revisar_corte(user, corte):
@@ -87,6 +109,6 @@ def exigir_balance(user):
 def puede_abrir_fondo(user, comite, manzana=None):
     if not getattr(user, "is_authenticated", False) or not user.is_active or not comite.activo or (manzana and not manzana.activa):
         return False
-    if secretaria_financiera(user) and comite.tipo == "DELEGACION":
+    if comites_de_fondos_secretaria(user).filter(pk=comite.pk).exists():
         return True
     return any((r.tipo == "COMITE" and r.comite.pk == comite.pk and r.rol in ("PRESIDENTE", "TESORERO")) or (r.tipo == "MANZANA" and manzana and r.manzana.pk == manzana.pk) for r in responsabilidades_activas(user))
