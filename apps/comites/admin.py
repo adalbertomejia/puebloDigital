@@ -35,7 +35,12 @@ class PerfilAccesoAdmin(AdministracionGlobal, admin.ModelAdmin):
 class UsuarioAppAdmin(AdministracionGlobal, admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-        vigentes = {'PRESIDENTE', 'TESORERO', 'LECTURA'}
+        vigentes = {
+            UsuarioApp.Roles.PRESIDENTE,
+            UsuarioApp.Roles.TESORERO,
+            UsuarioApp.Roles.SECRETARIO,
+            UsuarioApp.Roles.LECTURA,
+        }
         if obj is not None:
             vigentes.add(obj.rol)
         form.base_fields['rol'].choices = [('', 'Selecciona un cargo')] + [(value, label) for value, label in UsuarioApp.Roles.choices if value in vigentes]
@@ -45,7 +50,7 @@ class UsuarioAppAdmin(AdministracionGlobal, admin.ModelAdmin):
     fieldsets = (
         ("Asignación del cargo", {
             "fields": ("user", "comite", "rol", "activo"),
-            "description": "Asigna un rol a una cuenta dentro de un comité. Cada cuenta pertenece a un ciudadano y admite un solo cargo activo. Desactiva el anterior antes de cambiarlo.",
+            "description": "Asigna un rol a una cuenta dentro de un comité. Cada cuenta pertenece a un ciudadano y admite un solo cargo activo. Desactiva el anterior antes de cambiarlo. Para Secretaría central, selecciona Delegación y el rol Secretario.",
         }),
         ("Ciudadano registrado en el cargo", {
             "fields": ("ciudadano",),
