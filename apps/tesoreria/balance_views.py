@@ -78,11 +78,12 @@ def balance_concepto_detalle(request, pk):
     exigir_balance(request.user)
     concepto = get_object_or_404(balances.conceptos_autorizados(request.user), pk=pk)
     qs = balances.obligaciones_autorizadas(request.user).filter(concepto=concepto)
-    page = Paginator(balances.cartera(qs).select_related("ciudadano").order_by("ciudadano__apellido_paterno", "pk"), 25).get_page(request.GET.get("page")) if tiene_acceso_financiero(request.user) else None
+    individual = tiene_acceso_financiero(request.user, incluir_cargo_central=False)
+    page = Paginator(balances.cartera(qs).select_related("ciudadano").order_by("ciudadano__apellido_paterno", "pk"), 25).get_page(request.GET.get("page")) if individual else None
     if page:
         for o in page.object_list:
             o.saldo_balance = None if o.monto_asignado is None or o.abonos_desconocidos else max(o.monto_asignado-o.abonado_conocido, Decimal("0.00"))
-    return render(request,"dashboard/balance/detalle.html",{"concepto":concepto, "cartera":balances.resumen_cartera(qs), "page":page, "individual":tiene_acceso_financiero(request.user)})
+    return render(request,"dashboard/balance/detalle.html",{"concepto":concepto, "cartera":balances.resumen_cartera(qs), "page":page, "individual":individual})
 
 
 @login_required

@@ -10,7 +10,7 @@ ROLES_ESCRITURA = (UsuarioApp.Roles.PRESIDENTE, UsuarioApp.Roles.TESORERO)
 ROLES_CONSULTA = (*ROLES_ESCRITURA, UsuarioApp.Roles.LECTURA)
 
 
-def comites_financieros(usuario, *, escritura=False):
+def comites_financieros(usuario, *, escritura=False, incluir_cargo_central=True):
     if not getattr(usuario, "is_authenticated", False) or not getattr(
         usuario, "is_active", False
     ):
@@ -18,6 +18,10 @@ def comites_financieros(usuario, *, escritura=False):
     if usuario.is_superuser:
         return Comite.objects.all()
     from apps.core.autorizacion import responsabilidades_activas, es_secretaria_central
+    responsabilidades = responsabilidades_activas(usuario)
+    if incluir_cargo_central and any(r.operacion_comunitaria for r in responsabilidades):
+        return Comite.objects.filter(activo=True)
+
     permiso = "operar_finanzas_centrales" if escritura else "consultar_finanzas_centrales"
     if es_secretaria_central(usuario) and (usuario.has_perm(f"core.{permiso}") or (not escritura and usuario.has_perm("core.operar_finanzas_centrales"))):
         return Comite.objects.filter(activo=True)
@@ -25,14 +29,16 @@ def comites_financieros(usuario, *, escritura=False):
     roles = ROLES_ESCRITURA if escritura else ROLES_CONSULTA
     ids = [
         r.comite.pk
-        for r in responsabilidades_activas(usuario)
+        for r in responsabilidades
         if r.tipo == "COMITE" and r.rol in roles
     ]
     return Comite.objects.filter(pk__in=ids)
 
 
-def tiene_acceso_financiero(usuario):
-    return bool(manzanas_responsables(usuario)) or comites_financieros(usuario).exists()
+def tiene_acceso_financiero(usuario, *, incluir_cargo_central=True):
+    return bool(manzanas_responsables(usuario)) or comites_financieros(
+        usuario, incluir_cargo_central=incluir_cargo_central,
+    ).exists()
 
 
 def puede_operar_finanzas(usuario, comite_id=None):
@@ -42,7 +48,9 @@ def puede_operar_finanzas(usuario, comite_id=None):
     return (comites.filter(pk=comite_id) if comite_id is not None else comites).exists()
 
 
-def limitar_finanzas(queryset, usuario, campo_comite="comite_id", *, escritura=False):
+def limitar_finanzas(
+    queryset, usuario, campo_comite="comite_id", *, escritura=False, incluir_cargo_central=True,
+):
     if (
         getattr(usuario, "is_authenticated", False)
         and getattr(usuario, "is_active", False)
@@ -67,7 +75,7 @@ def limitar_finanzas(queryset, usuario, campo_comite="comite_id", *, escritura=F
     return queryset.filter(
         **{
             f"{campo_comite}__in": comites_financieros(
-                usuario, escritura=escritura
+                usuario, escritura=escritura, incluir_cargo_central=incluir_cargo_central,
             ).values("pk")
         }
     )

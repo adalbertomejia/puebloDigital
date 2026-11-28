@@ -482,6 +482,7 @@ def dashboard_operativo(request):
 
     context = {
         "q": q,
+        "puede_editar_ciudadanos": _puede_modificar_padron(request.user, "change") and permiso_global_de_modelo(request.user, "core.view_ciudadano"),
         "metricas": metricas,
         "ciudadanos": ciudadanos_page,
         "actividad_reciente": actividad_reciente,
@@ -1567,8 +1568,10 @@ def _can_modify_tesoreria(user, concepto=None):
     return puede_operar_finanzas(user, concepto.comite_id if concepto is not None else None)
 
 
-def _can_delete_tesoreria(user, concepto=None):
-    return _can_modify_tesoreria(user, concepto)
+def _can_delete_tesoreria(user, concepto):
+    return comites_financieros(
+        user, escritura=True, incluir_cargo_central=False,
+    ).filter(pk=concepto.comite_id).exists()
 
 
 def _filtros_tesoreria(params):
@@ -2126,7 +2129,7 @@ def crear_concepto_tesoreria(request, pk=None):
                 detalle={"campos": form.changed_data})
         messages.success(request, "Se guardó correctamente el concepto de tesorería.")
         return redirect("tesoreria_concepto_detalle", obj.pk)
-    can_delete = bool(concepto and _can_delete_tesoreria(request.user))
+    can_delete = bool(concepto and _can_delete_tesoreria(request.user, concepto))
     delete_url = reverse("eliminar_concepto_tesoreria", args=[concepto.pk]) if can_delete else ""
     return render(request, "dashboard/tesoreria_form.html", {"form": form, "concepto": concepto, "cancel_url": reverse("tesoreria_operativa"), "can_delete": can_delete, "delete_url": delete_url})
 
@@ -2135,7 +2138,7 @@ def crear_concepto_tesoreria(request, pk=None):
 @acceso_financiero_requerido
 def eliminar_concepto_tesoreria(request, pk):
     concepto = get_object_or_404(limitar_finanzas(ConceptoTesoreria.objects.all(), request.user, escritura=True).select_related("comite", "manzana", "creado_por"), pk=pk)
-    if not _can_delete_tesoreria(request.user):
+    if not _can_delete_tesoreria(request.user, concepto):
         messages.error(request, "No tienes permisos para eliminar conceptos de tesorería.")
         return redirect("tesoreria_operativa")
     obligaciones = ObligacionCiudadano.objects.filter(concepto=concepto)

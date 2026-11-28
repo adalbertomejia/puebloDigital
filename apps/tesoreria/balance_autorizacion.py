@@ -30,7 +30,7 @@ def consulta_central(user):
 
 
 def puede_consultar_balance(user):
-    return tiene_acceso_financiero(user) or consulta_central(user) or bool(delegaciones(user))
+    return tiene_acceso_financiero(user, incluir_cargo_central=False) or consulta_central(user) or bool(delegaciones(user))
 
 
 def limitar_balance(qs, user, campo="comite_id"):
@@ -41,7 +41,7 @@ def limitar_balance(qs, user, campo="comite_id"):
     ids = delegaciones(user)
     if ids:
         return qs.filter(**{campo+"__in": ids})
-    return limitar_finanzas(qs, user, campo)
+    return limitar_finanzas(qs, user, campo, incluir_cargo_central=False)
 
 
 def fondos_visibles(user):

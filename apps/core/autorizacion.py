@@ -12,6 +12,7 @@ class ResponsabilidadActiva:
     etiqueta_rol: str
     manzana: object = None
     comite: object = None
+    operacion_comunitaria: bool = False
 
     @property
     def funciones(self):
@@ -22,6 +23,8 @@ class ResponsabilidadActiva:
             "Generar obligaciones y registrar abonos de este comité",
             "Eliminar conceptos de este comité con confirmación",
         )
+        if self.operacion_comunitaria:
+            return ("Operar el padrón, eventos, asistencias, Tesorería y Agua de la comunidad",)
         if self.tipo == "SECRETARIA":
             return ("Gestionar el ciclo ciudadano de toda la comunidad", "Gestionar eventos y asistencias comunitarias")
         if self.tipo == "GLOBAL":
@@ -114,17 +117,29 @@ def responsabilidades_activas(usuario):
         .filter(user_id=usuario.pk, activo=True, comite__activo=True)
         .order_by("comite__nombre", "rol")
     )
-    responsabilidades.extend(
-        ResponsabilidadActiva(
+    for cargo in cargos:
+        es_central = (
+            cargo.rol in (UsuarioApp.Roles.SECRETARIO, UsuarioApp.Roles.PRESIDENTE)
+            and cargo.comite.tipo == Comite.Tipos.DELEGACION
+            and not Comite.objects.filter(tipo=Comite.Tipos.DELEGACION, activo=True)
+            .exclude(pk=cargo.comite_id).exists()
+        )
+        etiqueta = cargo.get_rol_display()
+        if es_central:
+            etiqueta = "Secretaría central" if cargo.rol == UsuarioApp.Roles.SECRETARIO else "Delegado"
+        responsabilidades.append(ResponsabilidadActiva(
             tipo="COMITE",
             rol=cargo.rol,
-            etiqueta_rol=cargo.get_rol_display(),
+            etiqueta_rol=etiqueta,
             comite=cargo.comite,
-        )
-        for cargo in cargos
-    )
+            operacion_comunitaria=es_central,
+        ))
 
     return responsabilidades
+
+
+def tiene_cargo_central(usuario):
+    return any(r.operacion_comunitaria for r in responsabilidades_activas(usuario))
 
 
 def tiene_responsabilidad_asignada(usuario):
@@ -161,6 +176,8 @@ def permiso_global_de_modelo(usuario, permiso):
     if not getattr(usuario, 'is_authenticated', False) or not getattr(usuario, 'is_active', False):
         return False
     if usuario.is_superuser:
+        return True
+    if permiso in PERMISOS_SECRETARIA and tiene_cargo_central(usuario):
         return True
     if tiene_responsabilidad_asignada(usuario):
         return False
